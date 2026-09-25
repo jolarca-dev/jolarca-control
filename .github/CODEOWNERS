@@ -1,0 +1,12 @@
+# CODEOWNERS — jolarca-dev marketplace fleet
+#
+# ADR-0004 R4: no mission-platform references allowed.
+# D-20: previous version referenced @journeyoflife-org/* and @jol-infrastructure/*
+# which don't exist in this org, making require_code_owner_reviews inert.
+#
+# jolarca-dev has zero teams (D-10). Until teams are created, the sole
+# operator (@JourneyOfLife) is the code owner for everything.
+#
+# When teams are created, update this file to reference them.
+
+* @JourneyOfLife
