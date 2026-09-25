@@ -1,0 +1,56 @@
+name: jolarca-dr
+description: "Disaster recovery, backup strategies, and business continuity for the jolarca-dev marketplace"
+visibility: public
+tier: platform
+criticality: tier-1
+launch_status: planned
+language: Markdown
+topics:
+- marketplace
+- disaster-recovery
+- backup
+- business-continuity
+- rpo
+- rto
+settings:
+  has_issues: true
+  has_wiki: false
+  has_projects: false
+  delete_branch_on_merge: true
+  allow_merge_commit: false
+  allow_squash_merge: true
+  allow_rebase_merge: false
+  vulnerability_alerts: true
+  archived: false
+  is_template: false
+  auto_init: false
+  web_commit_signoff_required: true
+branch_protection:
+  main:
+    pattern: main
+    required_status_checks:
+      strict: true
+      contexts:
+      - lint
+    required_pull_request_reviews:
+      required_approving_review_count: 0
+      dismiss_stale_reviews: true
+      require_code_owner_reviews: false
+      require_last_push_approval: false
+    enforce_admins: true
+    restrict_pushes: true
+    require_signed_commits: false
+    require_linear_history: true
+    require_conversation_resolution: true
+    block_force_pushes: true
+    block_deletions: true
+teams: {}
+compliance:
+  frameworks:
+  - soc2
+  - iso27001
+  - pci-dss
+  data_classification: internal
+  required_gates:
+    secret_scan: true
+    security_review: true
