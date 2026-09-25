@@ -1,0 +1,58 @@
+# Dependabot configuration for jolarca-control
+# Doc: https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  # Python dependencies (scripts, validators)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Vilnius"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "JourneyOfLife"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Vilnius"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "JourneyOfLife"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+
+  # Terraform providers
+  - package-ecosystem: "terraform"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Vilnius"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "JourneyOfLife"
+    labels:
+      - "dependencies"
+      - "terraform"
+    commit-message:
+      prefix: "infra(deps)"
+      include: "scope"
