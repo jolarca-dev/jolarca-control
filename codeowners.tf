@@ -29,21 +29,31 @@ locals {
   EOT
 }
 
-resource "github_repository_file" "codeowners" {
-  for_each = {
-    for name, def in local.repo_defs : name => def
-    if name != ".github"  # .github is managed by health-repo.tf
-  }
-
-  repository          = github_repository.repo[each.key].name
-  file                = ".github/CODEOWNERS"
-  content             = local.codeowners_content
-  commit_message      = "chore: enforce jolarca-dev-only CODEOWNERS (ADR-0004 R4, D-20)"
-  commit_author       = "jolarca-control-automation"
-  commit_email        = "jolarca-control@jolarca.dev"
-  overwrite_on_create = true
-
-  lifecycle {
-    ignore_changes = [commit_author, commit_email]
-  }
-}
+# CODEOWNERS management is DEFERRED due to branch protection requirements.
+# The fleet repos have branch protection requiring PRs and status checks,
+# which prevents Terraform from updating CODEOWNERS directly.
+#
+# To fix D-20 (cross-project CODEOWNERS references), either:
+# (a) Manually update each repo's .github/CODEOWNERS via PR, or
+# (b) Temporarily disable branch protection, run terraform apply, then re-enable, or
+# (c) Use a separate workflow that creates PRs for CODEOWNERS changes.
+#
+# The drift detection (scripts/drift_detect.py) will continue to alert on
+# cross-project references until they are removed.
+#
+# resource "github_repository_file" "codeowners" {
+#   for_each = {
+#     for name, def in local.repo_defs : name => def
+#     if name != ".github"
+#   }
+#   repository          = github_repository.repo[each.key].name
+#   file                = ".github/CODEOWNERS"
+#   content             = local.codeowners_content
+#   commit_message      = "chore: enforce jolarca-dev-only CODEOWNERS (ADR-0004 R4, D-20)"
+#   commit_author       = "jolarca-control-automation"
+#   commit_email        = "jolarca-control@jolarca.dev"
+#   overwrite_on_create = true
+#   lifecycle {
+#     ignore_changes = [commit_author, commit_email]
+#   }
+# }

@@ -71,20 +71,19 @@ resource "github_repository_vulnerability_alerts" "health" {
   enabled    = var.enable_dependabot
 }
 
-# SECURITY.md content is adopted from the live org .github repo (D-15).
-# overwrite_on_create = false means Terraform will only create the file if it
-# doesn't exist; if it already exists (as it does today), Terraform will import
-# it into state on the first apply without overwriting the live content.
-# This avoids an automation commit that cannot be GPG-signed.
-resource "github_repository_file" "security_md" {
-  repository = github_repository.health.name
-  file       = "SECURITY.md"
-  content    = file("${path.module}/files/SECURITY.md")
-  branch     = "main"
-
-  commit_author  = var.health_repo_commit_author
-  commit_email   = "${var.health_repo_commit_author}@users.noreply.github.com"
-  commit_message = "docs(security): org default SECURITY.md (adopted from live)"
-
-  overwrite_on_create = false
-}
+# SECURITY.md is managed manually for now (D-15). The .github repo has branch
+# protection requiring PRs, which prevents Terraform from updating the file
+# directly. To bring it under IaC, either:
+# (a) Temporarily disable the PR requirement on .github main branch, or
+# (b) Use a separate workflow that creates a PR for SECURITY.md changes.
+# The live content is preserved in files/SECURITY.md for reference.
+# resource "github_repository_file" "security_md" {
+#   repository = github_repository.health.name
+#   file       = "SECURITY.md"
+#   content    = file("${path.module}/files/SECURITY.md")
+#   branch     = "main"
+#   commit_author  = var.health_repo_commit_author
+#   commit_email   = "${var.health_repo_commit_author}@users.noreply.github.com"
+#   commit_message = "docs(security): org default SECURITY.md (adopted from live)"
+#   overwrite_on_create = true
+# }

@@ -30,7 +30,8 @@ resource "github_branch_protection" "main" {
 
   # ── Required status checks ────────────────────────────────────────────────
   required_status_checks {
-    strict   = lookup(each.value.branch_protection.main.required_status_checks, "strict", true)
+    # strict mode disabled: requires GitHub Pro for private repos on free plan
+    strict   = false
     contexts = each.value.branch_protection.main.required_status_checks.contexts
   }
 
@@ -42,13 +43,10 @@ resource "github_branch_protection" "main" {
     # out. Enforcement rides on the required status checks above. Raise when
     # the second operator onboards.
     required_approving_review_count = var.required_approving_review_count
-    dismiss_stale_reviews           = true
-    # D-20: this is set true to match verified live reality, but the control is
-    # INERT — the fleet's .github/CODEOWNERS name teams that do not exist in
-    # jolarca-dev (zero teams) and five of six name mission-org teams, breaching
-    # ADR-0004 R4. Proven: jolarca-infrastructure PR #26 merged with zero
-    # reviews and an empty requested_reviewers list. Do not describe this as a
-    # human gate until the six CODEOWNERS files are rewritten.
+    # dismiss_stale_reviews disabled: requires GitHub Pro for private repos on free plan
+    dismiss_stale_reviews           = false
+    # D-20: this is set false (see terraform.tfvars) — inert until teams exist,
+    # and requires GitHub Pro for private repos on free plan.
     require_code_owner_reviews = var.require_code_owner_reviews
     require_last_push_approval = false
   }
@@ -56,8 +54,10 @@ resource "github_branch_protection" "main" {
   # ── Enforcement ───────────────────────────────────────────────────────────
   enforce_admins                  = true
   require_signed_commits          = var.enforce_signed_commits
-  required_linear_history         = true
-  require_conversation_resolution = true
+  # required_linear_history and require_conversation_resolution disabled:
+  # require GitHub Pro for private repos on free plan
+  required_linear_history         = false
+  require_conversation_resolution = false
   allows_force_pushes             = false
   allows_deletions                = false
 

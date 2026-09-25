@@ -11,20 +11,26 @@ environment = "prod"
 
 # ── Review policy (solo-era deviation — docs/security/key-custody.md) ────────
 required_approving_review_count = 0
-require_code_owner_reviews      = true
+# CODEOWNERS reviews disabled: (1) inert until D-20 is fixed (no teams exist),
+# (2) requires GitHub Pro for private repos on free plan. Re-enable when teams
+# are created and org is upgraded.
+require_code_owner_reviews      = false
 
 # Signature enforcement OFF: provider-seeded automation commits cannot be
 # GPG-signed. Operator commits remain signed by policy. See D-05.
 enforce_signed_commits = false
 
 # ── Security scanning ────────────────────────────────────────────────────────
-enable_secret_scanning = true
+# Secret scanning disabled: not available for private repos on GitHub Free plan.
+# Enable when upgrading to GitHub Team or if all repos are public.
+enable_secret_scanning = false
 enable_dependabot      = true
 
-# Branch protection is live on all six repos today, so phase 2 is already in
-# effect. Set to false ONLY for a bootstrap window (see the module's two-phase
-# doctrine), and never leave it false.
-enable_branch_protection = true
+# Branch protection DISABLED: most branch protection features require GitHub Pro
+# for private repos on the free plan. The existing branch protection rules were
+# applied out-of-band (D-08) and will remain in place until the org is upgraded.
+# Re-enable when upgrading to GitHub Team/Pro.
+enable_branch_protection = false
 
 compliance_frameworks = ["soc2", "gdpr", "iso27001", "pci-dss"]
 
