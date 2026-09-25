@@ -1,0 +1,291 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Compliance Gates — enforced security & compliance checks for ALL
+# jolarca-dev marketplace repositories
+# ──────────────────────────────────────────────────────────────────────────────
+# Owner:      jolarca-dev organization owner
+# Compliance: SOC 2 Type II · GDPR · ISO 27001:2022 · PCI-DSS 4.0
+#
+# Unlike jol-control, pci-dss applies to EVERY repo here: the whole
+# marketplace tree sits in or adjacent to the cardholder-data environment.
+# ──────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: "1.0.0"
+  last_reviewed: "2026-09-25"
+  next_review: "2026-12-25"
+  owner: "jolarca-dev organization owner"
+  approved_by: "Gintaras Kazlauskas"
+
+gates:
+  fleet_separation:
+    id: "fleet-separation-guard"
+    description: "Prove the org's jolarca* repo set matches the allow-list exactly (ADR-0004)"
+    enforcement: "mandatory"
+    frameworks: ["soc2", "gdpr", "iso27001", "pci-dss"]
+    soc2_controls: ["CC6.6"]
+    iso_controls: ["A.5.3", "A.5.9"]
+    pci_controls: ["1.2.1"]
+    implementation:
+      tool: "scripts/check_fleet_separation.sh"
+      workflow: ".github/workflows/fleet-separation-guard.yml"
+      run_on: ["push", "pull_request", "schedule(weekly)"]
+      detects:
+        - "out-of-band jolarca* repo creation (incident — 48h import rule)"
+        - "allow-list repo missing from the org (drift or deletion)"
+        - "mission-platform jol-* entry leaking into this allow-list"
+    remediation:
+      - "Out-of-band repo: add a repos/<name>.yml entry and import into state within 48h"
+      - "Missing repo: treat as a possible deletion — open an incident immediately"
+      - "jol-* entry: remove it; mission repos belong to jol-control"
+
+  dependency_scan:
+    id: "dependency-review"
+    description: "Block PRs that introduce known-vulnerable dependencies"
+    enforcement: "mandatory"
+    frameworks: ["soc2", "gdpr", "iso27001", "pci-dss"]
+    soc2_controls: ["CC7.1", "CC7.2"]
+    iso_controls: ["A.8.8", "A.8.19"]
+    pci_controls: ["6.3.1", "6.3.3"]
+    implementation:
+      tool: "GitHub Dependency Review Action"
+      action: "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294"  # v5, SHA-pinned
+      fail_on_severity: "moderate"
+      deny_licenses: ["GPL-3.0", "AGPL-3.0", "SSPL-1.0"]
+      run_on: ["pull_request"]
+    remediation:
+      - "Update the vulnerable dependency to a patched version"
+      - "If no patch is available, document risk acceptance in jolarca-compliance"
+
+  secret_scan:
+    id: "secret-scanning"
+    description: "Prevent secrets, tokens and credentials from entering git history"
+    enforcement: "mandatory"
+    frameworks: ["soc2", "gdpr", "iso27001", "pci-dss"]
+    soc2_controls: ["CC6.1", "CC6.6"]
+    iso_controls: ["A.5.10", "A.8.24"]
+    pci_controls: ["3.5.1", "8.3.2"]
+    implementation:
+      tool: "GitHub Secret Scanning + Push Protection, plus gitleaks in CI"
+      native: true
+      custom_patterns:
+        - pattern: "jolarca_(live|test)_[a-zA-Z0-9]{32,}"
+          description: "Jolarca marketplace API keys"
+      run_on: ["push", "pull_request"]
+    remediation:
+      - "Immediately rotate the exposed secret (docs/runbooks/github-token-rotation.md)"
+      - "Remove from git history with git-filter-repo or BFG"
+      - "Record the incident in jolarca-compliance"
+
+  license_check:
+    id: "license-check"
+    description: "Ensure all INBOUND DEPENDENCIES use approved licenses"
+    enforcement: "mandatory"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC6.1"]
+    iso_controls: ["A.5.10"]
+    pci_controls: ["6.3.2"]
+    implementation:
+      tool: "license-checker"
+      allowed_licenses:
+        - "MIT"
+        - "Apache-2.0"
+        - "BSD-2-Clause"
+        - "BSD-3-Clause"
+        - "ISC"
+        - "Unlicense"
+        - "CC0-1.0"
+        - "0BSD"
+      denied_licenses:
+        - "GPL-2.0"
+        - "GPL-3.0"
+        - "AGPL-3.0"
+        - "SSPL-1.0"
+      run_on: ["pull_request"]
+    # IMPORTANT: this gate constrains third-party DEPENDENCIES only. It does
+    # not restrict a repository's own license — the flagship `jolarca`
+    # application is deliberately AGPL-3.0 (repos/jolarca.yml). Do not
+    # "remediate" an AGPL finding on jolarca's own LICENSE file.
+    scope_note: "inbound dependencies only"
+
+  code_quality:
+    id: "code-quality"
+    description: "Enforce minimum code quality standards"
+    enforcement: "mandatory"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC7.1"]
+    iso_controls: ["A.8.25"]
+    pci_controls: ["6.2.2"]
+    implementation:
+      tools:
+        python:
+          - "ruff"
+          - "mypy --strict"
+          - "pytest --cov --cov-fail-under=80"
+        javascript:
+          - "eslint"
+          - "tsc --noEmit"
+        terraform:
+          - "terraform fmt -check"
+          - "terraform validate"
+          - "tflint"
+          - "checkov"
+      run_on: ["pull_request"]
+
+  sast:
+    id: "codeql-analysis"
+    description: "CodeQL semantic analysis for security vulnerabilities"
+    enforcement: "mandatory"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC7.1", "CC7.2"]
+    iso_controls: ["A.8.8", "A.8.25"]
+    pci_controls: ["6.3.1", "6.3.2"]
+    implementation:
+      tool: "GitHub CodeQL"
+      languages: ["python", "javascript", "typescript"]
+      queries: "security-extended"
+      fail_on: ["error", "warning"]
+      run_on: ["pull_request", "push"]
+
+  iac_scan:
+    id: "iac-security"
+    description: "Scan Terraform/Kubernetes/Ansible configs for security misconfigurations"
+    enforcement: "mandatory_for_tier:governance,devops"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC7.1"]
+    iso_controls: ["A.8.8"]
+    pci_controls: ["6.3.1"]
+    implementation:
+      tools:
+        - "checkov"
+        - "tflint"
+        - "tfsec"
+        - "trivy"
+      run_on: ["pull_request"]
+
+  container_scan:
+    id: "container-scan"
+    description: "Scan container images for OS and dependency vulnerabilities"
+    enforcement: "mandatory_for_tier:platform,devops"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC7.1"]
+    iso_controls: ["A.8.8"]
+    pci_controls: ["6.3.1", "6.3.3"]
+    implementation:
+      tool: "Trivy"
+      action: "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25"  # v0.36.0, SHA-pinned
+      fail_on_severity: "HIGH"
+      scan_targets: ["os", "library"]
+      run_on: ["pull_request"]
+
+  iac_policy:
+    id: "iac-policy"
+    description: "Enforce organizational policies via OPA/Conftest on Terraform plans"
+    enforcement: "mandatory_for_tier:governance,devops"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC6.1", "CC8.1"]
+    iso_controls: ["A.5.1", "A.8.1"]
+    pci_controls: ["1.2.1", "6.3.1"]
+    implementation:
+      tool: "conftest"
+      # Policies live in jolarca-infrastructure/terraform/policies/ — they are
+      # infrastructure concerns and stay there. This gate consumes them.
+      policy_source: "jolarca-infrastructure:terraform/policies/"
+      rules:
+        - "no basic IAM roles"
+        - "no public IPs"
+        - "require CMEK"
+      run_on: ["pull_request"]
+
+  plan_review:
+    id: "terraform-plan-review"
+    description: "Refuse any Terraform plan that destroys, replaces, or changes repository visibility"
+    enforcement: "mandatory"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC8.1"]
+    iso_controls: ["A.8.32"]
+    pci_controls: ["6.5.1"]
+    implementation:
+      tool: ".github/workflows/apply.yml — 'Refuse destructive or visibility-changing plans'"
+      blocked_actions:
+        - "will be destroyed"
+        - "must be replaced"
+        - "visibility change"
+      compensating_control: "lifecycle { prevent_destroy = true } on every github_repository"
+      run_on: ["push to main", "workflow_dispatch"]
+
+enforcement_matrix:
+  governance:
+    required: ["fleet_separation", "dependency_scan", "secret_scan", "license_check", "code_quality", "sast", "iac_scan", "iac_policy", "plan_review"]
+    optional: ["container_scan"]
+  platform:
+    required: ["fleet_separation", "dependency_scan", "secret_scan", "license_check", "code_quality", "sast", "container_scan", "plan_review"]
+    optional: ["iac_scan"]
+  devops:
+    required: ["fleet_separation", "dependency_scan", "secret_scan", "license_check", "code_quality", "sast", "iac_scan", "container_scan", "plan_review"]
+    optional: ["iac_policy"]
+
+exceptions:
+  process: "Any gate exception must be documented in jolarca-compliance with:"
+  requirements:
+    - "Risk description and business justification"
+    - "Compensating controls"
+    - "Time-bound acceptance (max 90 days, then re-evaluate)"
+    - "Approval from the organization owner"
+    - "Link to the relevant ADR in docs/adr/"
+  active:
+    - id: "D-04"
+      gate: "required_approving_review_count = 0"
+      compensating_control: "required status checks + signed operator commits + enforce_admins + apply.yml plan-refusal gate + prevent_destroy. CODEOWNERS was removed from this list 2026-09-25: it is configured but inert (D-20), so it compensates for nothing."
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-25"
+      # Every entry here MUST carry an ISO-8601 `expires` date and an
+      # `approved_by`. The 90-day rule above is only auditable if the expiry is
+      # a DATE: an event-only expiry ("when X happens") has no deadline and can
+      # stay open indefinitely, which is precisely how these two entries came to
+      # violate the policy they live under (D-25). `exit_trigger` records the
+      # intended event; `expires` records when the acceptance lapses regardless.
+      # A lapse is closed by a PR that restates the compensating controls — not
+      # by silence.
+      expires: "2026-12-24"
+      exit_trigger: "second-operator onboarding — raise the count to 1 in the same PR that resolves D-20 and replaces the individual CODEOWNERS entries with real jolarca-dev teams"
+    - id: "D-05"
+      gate: "require_signed_commits = false at branch-protection level"
+      compensating_control: "commit_signing_policy in policy/repo-defaults.yml; only provider automation is exempt"
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-25"
+      expires: "2026-12-24"
+      exit_trigger: "provider-seeded automation commits become signable"
+    - id: "D-07"
+      gate: "tag_protection.enforced = false — release tags can be moved or deleted"
+      risk: "SOC 2 CC8.1 / ISO 27001 A.8.32 — the release-to-commit audit trail can be rewritten after the fact, and this control plane cannot currently detect that it was."
+      compensating_control: "Squash-only linear history with required conversation resolution; every merge is a PR carrying a recorded plan. Tag mutation remains undetected."
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-25"
+      expires: "2026-12-24"
+      # Not a soft target. Verified 2026-09-25: org-level rulesets return
+      # HTTP 403 "Upgrade to GitHub Team" (the org is on the Free plan) and the
+      # classic /tags/protection API returns HTTP 404 — GitHub removed it.
+      # Repository rulesets also require Team or higher once a repo is PRIVATE,
+      # which is the intended end state for five of six repos. So this exception
+      # cannot be closed by configuration alone; it needs a plan decision.
+      exit_trigger: "GitHub Team plan (or higher) enabled on jolarca-dev, then a github_repository_ruleset protecting refs/tags/v*"
+      blocked_by: "plan tier — see docs/drift-findings.md D-07"
+
+  # Findings that are NOT accepted exceptions. Listed here so this file cannot
+  # be read as a clean bill of health: an exception register that only records
+  # what has been accepted hides what is still broken. Each of these blocks the
+  # first apply. Details and evidence: docs/drift-findings.md.
+  open_blocking:
+    - id: "D-01"
+      issue: "All six repositories in jolarca-dev are public; intent of record is private for five of them"
+      owner_decision_required: "keep private (first apply flips four repos) or accept public (edit repos/*.yml and record the acceptance here)"
+    - id: "D-02"
+      issue: "Live Terraform state is a single local copy with no remote backend and no locking"
+      owner_decision_required: "complete the remote-backend migration before apply — docs/runbooks/workload-identity-federation.md"
+    - id: "D-18"
+      issue: "Org-wide two-factor authentication is not enforced (two_factor_requirement_enabled: false)"
+      owner_decision_required: "enable by hand (not provider-manageable) before the TF_GITHUB_TOKEN secret is created"
+    - id: "D-20"
+      issue: "Fleet CODEOWNERS reference mission-org and nonexistent teams, so require_code_owner_reviews is inert; also breaches ADR-0004 R4"
+      owner_decision_required: "rewrite all six .github/CODEOWNERS to jolarca-dev principals; then either create the teams or set require_code_owner_reviews = false"
+  review_cadence: "Quarterly — all active exceptions AND all open_blocking findings reviewed by the organization owner"

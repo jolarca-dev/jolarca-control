@@ -1,0 +1,101 @@
+name: "Terraform Plan"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "repos/**"
+      - "policy/**"
+      - "*.tf"
+      - "*.tfvars"
+      - ".github/workflows/plan.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_INPUT: "0"
+
+jobs:
+  validate:
+    name: "Validate & Plan"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.1"
+
+      - name: Validate allow-list (repos/*.yml)
+        run: |
+          pip install -r requirements.txt
+          python3 scripts/validate_repos.py
+
+      - name: Terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        run: terraform init -input=false -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      # ── Live plan is GATED ─────────────────────────────────────────────────
+      # Until the state migration in docs/state-migration-runbook.md completes,
+      # this root has no state and the github_* resources are still owned by
+      # jolarca-infrastructure. A live plan would refresh against the real org
+      # and, worse, imply this root is authoritative. Flip the repo variable
+      # STATE_MIGRATION_COMPLETE to 'true' only after runbook step 7 verifies.
+      - name: Terraform Plan (gated on STATE_MIGRATION_COMPLETE)
+        id: plan
+        if: vars.STATE_MIGRATION_COMPLETE == 'true'
+        run: |
+          set -o pipefail
+          terraform plan \
+            -input=false \
+            -no-color \
+            -detailed-exitcode \
+            2>&1 | tee plan-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY }}
+
+      - name: Record skipped plan
+        if: vars.STATE_MIGRATION_COMPLETE != 'true'
+        run: |
+          cat > plan-output.txt <<'MSG'
+          terraform plan SKIPPED — STATE_MIGRATION_COMPLETE is not 'true'.
+
+          This control plane is not yet authoritative. The github_* resources it
+          declares are still owned by the live Terraform state in
+          jolarca-infrastructure (module.github_org.*). Running a live plan or
+          apply from here before the state migration completes risks dual
+          ownership of PCI-DSS-scoped repositories.
+
+          See docs/state-migration-runbook.md.
+          Validate + fmt + init + validate-only checks above DID run and passed.
+          MSG
+
+      - name: Comment plan on PR
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: terraform-plan
+          recreate: true
+          path: plan-output.txt
+
+      - name: Fail on plan error
+        if: steps.plan.outputs.exit_code == '1'
+        run: exit 1

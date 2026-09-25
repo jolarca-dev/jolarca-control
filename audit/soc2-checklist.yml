@@ -1,0 +1,273 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# SOC 2 Type II — Trust Service Criteria Checklist
+# ──────────────────────────────────────────────────────────────────────────────
+# Mapped to jolarca-control enforcement points.
+# Organization: jolarca-dev (marketplace scope)
+# Review cadence: Quarterly
+# Last reviewed: 2026-09-25
+#
+# STATUS VOCABULARY — read before citing any row as evidence
+#   implemented       control verified live against the GitHub API on the
+#                     verification date, and owned by this control plane
+#   pending-adoption  control verified LIVE on GitHub but not yet owned by this
+#                     root's Terraform state (D-08 / D-13). The control works;
+#                     the IaC claim does not yet. Do not describe these as
+#                     "infrastructure as code enforced" until the state
+#                     migration completes.
+#   declared          present in this repo's configuration, never applied —
+#                     this control plane does not own state yet
+#   gap               required control is ABSENT. A finding ID is given.
+#   accepted          risk accepted with named compensating controls
+#
+# This checklist deliberately does not claim controls that do not exist. An
+# inaccurate compliance assertion is a worse audit outcome than an honest gap.
+# ──────────────────────────────────────────────────────────────────────────────
+
+framework: "SOC 2 Type II"
+version: "2017 Trust Services Criteria"
+owner: "jolarca-dev organization owner (single operator — D-10)"
+verification_date: "2026-09-25"
+verification_method: "gh api read-only queries against jolarca-dev + inspection of jolarca-infrastructure production terraform.tfstate"
+
+trust_service_criteria:
+  CC6.1:
+    title: "Logical and Physical Access Controls"
+    controls:
+      - id: "CC6.1-01"
+        description: "GitHub organization access is restricted to authorized personnel"
+        evidence: "gh api orgs/jolarca-dev/members -> exactly one member (JourneyOfLife)"
+        enforcement: "GitHub org membership (manual; not provider-managed)"
+        status: "implemented"
+        note: "Least privilege is trivially satisfied by a single-member org, but there is no segregation of duties — see D-10 and A.5.3."
+      - id: "CC6.1-02"
+        description: "Branch protection prevents unauthorized direct pushes to main"
+        evidence: "protection verified on all six repos: enforce_admins=true, allow_force_pushes=false, allow_deletions=false"
+        enforcement: "branch-protection.tf (declared) / currently applied out-of-band"
+        status: "pending-adoption"
+        finding: "D-08"
+      - id: "CC6.1-03"
+        description: "Multi-factor authentication required for all org members"
+        evidence: "gh api orgs/jolarca-dev -> two_factor_requirement_enabled = FALSE"
+        enforcement: "GitHub org setting — NOT provider-managed, must be set by hand"
+        status: "gap"
+        finding: "D-18"
+        severity: "blocking"
+      - id: "CC6.1-04"
+        description: "Signed commits enforced at the branch-protection layer"
+        evidence: "required_signature = null on all six repos"
+        enforcement: "var.enforce_signed_commits = false"
+        status: "accepted"
+        finding: "D-05"
+        compensating_controls:
+          - "commit_signing_policy.required_for_human_operators = true (policy/repo-defaults.yml)"
+          - "signature is the attribution control that compensates for D-04"
+      - id: "CC6.1-05"
+        description: "Approving review required before merge"
+        evidence: "required_approving_review_count = 0 on all six repos"
+        enforcement: "var.required_approving_review_count = 0"
+        status: "accepted"
+        finding: "D-04"
+        compensating_controls:
+          - "non-empty required status checks on all five jolarca* repos"
+          - "enforce_admins = true"
+          - "squash-only, linear history"
+          - "apply.yml plan-refusal gate + prevent_destroy on every repository"
+        withdrawn_compensating_control: >-
+          "require_code_owner_reviews = true" was previously listed here.
+          REMOVED 2026-09-25 — D-20 proves it is inert: the CODEOWNERS teams do
+          not exist in jolarca-dev, and jolarca-infrastructure PR #26 merged with
+          zero reviews and zero requested reviewers. A control that never fires
+          compensates for nothing, and citing it would misrepresent the position
+          to an auditor.
+      - id: "CC6.1-06"
+        description: "Repository visibility matches its data classification"
+        evidence: "4 of 6 repos are public while classified confidential"
+        enforcement: "scripts/validate_repos.py coherence rule"
+        status: "gap"
+        finding: "D-01"
+        severity: "blocking"
+
+  CC6.6:
+    title: "Logical Access Security — Boundary Protection"
+    controls:
+      - id: "CC6.6-01"
+        description: "Marketplace and mission-platform scopes are technically separated"
+        evidence: "Separate GitHub orgs (jolarca-dev / journeyoflife-org), separate host trees (/opt/jolarca / /opt/jol), separate control planes"
+        enforcement: "ADR-0004; repositories.tf precondition; validate_repos.py; check_fleet_separation.sh"
+        status: "implemented"
+        note: "Three independent guards, all in this repo."
+      - id: "CC6.6-02"
+        description: "No cross-scope resource handles in marketplace state"
+        evidence: "predecessor state holds module.github_org.github_repository.dot_github -> full_name = journeyoflife-org/.github"
+        enforcement: "none yet"
+        status: "gap"
+        finding: "D-03"
+        severity: "high"
+
+  CC6.7:
+    title: "Transmission and Removal of Confidential Information"
+    controls:
+      - id: "CC6.7-01"
+        description: "Secret scanning prevents credentials from entering git"
+        evidence: "declared via security_and_analysis on every repo in repositories.tf"
+        enforcement: "var.enable_secret_scanning = true"
+        status: "declared"
+        note: "Not yet applied by this root. Verify per-repo live status before citing."
+      - id: "CC6.7-02"
+        description: "No secrets stored in Terraform state or variable files"
+        evidence: "terraform.tfvars contains no secrets; tokens come from GITHUB_TOKEN at runtime; *.tfstate gitignored"
+        enforcement: "policy/repo-defaults.yml data_handling.secrets_in_git = prohibited"
+        status: "implemented"
+      - id: "CC6.7-03"
+        description: "Terraform state protected at rest with access control"
+        evidence: "state is a plaintext gitignored file on one operator host; no backend, no encryption, no locking"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-02"
+        severity: "blocking"
+
+  CC7.1:
+    title: "System Operations — Detection of Configuration Changes and Vulnerabilities"
+    controls:
+      - id: "CC7.1-01"
+        description: "Dependency vulnerability scanning on every PR"
+        evidence: "dependency_scan gate; Dependabot alerts verified enabled on all five fleet repos in state"
+        enforcement: "github_repository_vulnerability_alerts + CI gate"
+        status: "pending-adoption"
+      - id: "CC7.1-02"
+        description: "SAST on every PR and push to main"
+        evidence: "sast gate; jolarca requires the 'codeql' context (verified live)"
+        enforcement: "CI gate declared in policy/compliance-gates.yml"
+        status: "implemented"
+        note: "Enforced through required status checks, not through this repo's Terraform."
+      - id: "CC7.1-03"
+        description: "IaC security scanning on every PR"
+        evidence: "iac_scan gate; jolarca requires 'trivy'; jolarca-infrastructure runs checkov/tflint"
+        enforcement: "CI gate"
+        status: "implemented"
+      - id: "CC7.1-04"
+        description: "Configuration drift detected against declared state"
+        evidence: "scripts/drift_detect.py compares repos/*.yml with the live org, including visibility"
+        enforcement: "compliance-scan.yml weekly + on PR"
+        status: "implemented"
+      - id: "CC7.1-05"
+        description: "Out-of-band repository creation detected"
+        evidence: "check_fleet_separation.sh R2 compares live org jolarca* set with the allow-list"
+        enforcement: "fleet-separation-guard.yml, weekly cron 41 4 * * 1"
+        status: "implemented"
+        note: "Detection, not prevention: members_can_create_repositories is still true — D-19."
+
+  CC7.2:
+    title: "System Operations — Incident Response"
+    controls:
+      - id: "CC7.2-01"
+        description: "Incident response procedures documented"
+        evidence: "docs/runbooks.md RB-03 (secret exposure), RB-06 (fleet violation), RB-07 (state compromise); SECURITY.md incident table"
+        enforcement: "documented procedure"
+        status: "implemented"
+      - id: "CC7.2-02"
+        description: "Secret exposure triggers immediate rotation"
+        evidence: "RB-03 step 1 rotates before cleaning; docs/runbooks/github-token-rotation.md"
+        enforcement: "policy/compliance-gates.yml secret_scan.remediation"
+        status: "implemented"
+      - id: "CC7.2-03"
+        description: "Incidents are recorded and retained as evidence"
+        evidence: "jolarca-compliance repository"
+        enforcement: "manual"
+        status: "implemented"
+        note: "has_issues is false on jolarca-compliance (D-09) — records are files, not issues."
+
+  CC8.1:
+    title: "Change Management"
+    controls:
+      - id: "CC8.1-01"
+        description: "All changes arrive through a pull request"
+        evidence: "branch protection on all six repos; enforce_admins = true means the owner is not exempt"
+        enforcement: "github_branch_protection"
+        status: "pending-adoption"
+        finding: "D-08"
+      - id: "CC8.1-02"
+        description: "CODEOWNERS review required on governance changes"
+        evidence: "require_code_owner_reviews = true is set live on all five jolarca* repos and .github/CODEOWNERS exists in all six — BUT the control does not function. jolarca-dev has zero teams; the CODEOWNERS entries name @journeyoflife-org/* teams and a nonexistent @jol-infrastructure org. Verified: jolarca-infrastructure PR #26 merged 2026-09-18 with zero reviews and an empty requested_reviewers list, as did every other sampled merged PR in the fleet."
+        enforcement: "var.require_code_owner_reviews = true (configuration only — not effective)"
+        status: "gap"
+        finding: "D-20, D-08"
+        note: >-
+          Previously recorded as pending-adoption on the strength of the flag
+          being set. Reclassified to GAP on 2026-09-25: a flag that GitHub does
+          not act on is not a control. Two separate defects: (1) the setting is
+          inert because no resolvable code owner exists; (2) naming mission-org
+          teams in five PCI-scope marketplace repositories is a live breach of
+          ADR-0004 R4 (see RA-07). Remediation requires a PR in each of the six
+          repositories, not a change in this control plane.
+      - id: "CC8.1-03"
+        description: "Terraform plan posted for review before merge"
+        evidence: ".github/workflows/plan.yml, sticky PR comment"
+        enforcement: "CI: plan workflow"
+        status: "declared"
+        note: "Gated on STATE_MIGRATION_COMPLETE; currently emits an explicit skip notice rather than a misleading empty diff."
+      - id: "CC8.1-04"
+        description: "Production apply requires manual approval"
+        evidence: "apply.yml uses environment: production"
+        enforcement: "GitHub environment required reviewers"
+        status: "declared"
+        note: "The 'production' environment does not exist yet — runbook step 2 creates it."
+      - id: "CC8.1-05"
+        description: "Destructive and visibility-changing plans are refused automatically"
+        evidence: "apply.yml 'Refuse destructive or visibility-changing plans' step; lifecycle prevent_destroy on every github_repository"
+        enforcement: "CI gate + Terraform lifecycle"
+        status: "declared"
+      - id: "CC8.1-06"
+        description: "Changes are recorded with an audit trail"
+        evidence: "squash-only merges, linear history required, compliance snapshot uploaded as a 90-day artifact, docs/change-management.md requires a change record"
+        enforcement: "branch protection + apply.yml"
+        status: "pending-adoption"
+      - id: "CC8.1-07"
+        description: "Release tags are immutable"
+        evidence: "gh api repos/jolarca-dev/{jolarca,jolarca-infrastructure}/rulesets -> 0"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-07"
+
+  CC9.2:
+    title: "Risk Mitigation"
+    controls:
+      - id: "CC9.2-01"
+        description: "Known control gaps are registered with severity and owner"
+        evidence: "docs/drift-findings.md — 22 findings, each with verified evidence"
+        enforcement: "quarterly review RB-05 step 6"
+        status: "implemented"
+      - id: "CC9.2-02"
+        description: "Risk acceptances are explicit, compensating controls named, expiry dated"
+        evidence: "docs/threat-model.md risk acceptance register; policy/compliance-gates.yml exceptions.active"
+        enforcement: "RB-05 step 7"
+        status: "implemented"
+      - id: "CC9.2-03"
+        description: "Audit-log streaming configured"
+        evidence: "org-settings.tf declares github_organization_webhook, count-gated on var.audit_webhook_url != \"\""
+        enforcement: "terraform: org-settings.tf"
+        status: "gap"
+        note: "audit_webhook_url is empty, so no webhook exists. The org audit log is still queryable by hand (RB-06 step 2) but is not streamed or retained independently."
+
+summary:
+  total_controls: 29
+  implemented: 12
+  pending_adoption: 4
+  declared: 4
+  gap: 7
+  accepted: 2
+  blocking_gaps: ["CC6.1-03 (D-18)", "CC6.1-06 (D-01)", "CC6.7-03 (D-02)", "CC8.1-02 (D-20)"]
+  revision_note: >
+    2026-09-25 — CC8.1-02 reclassified from pending-adoption to gap on the
+    evidence in D-20 (CODEOWNERS review is configured but does not fire). Counts
+    adjusted accordingly: pending_adoption 5 to 4, gap 6 to 7. CC8.1-02 added to
+    blocking_gaps because change approval over a PCI-scope control plane cannot
+    rest on a control that never executes.
+  auditor_note: >
+    Four 'pending-adoption' rows describe controls that genuinely operate on
+    GitHub today but are not yet owned by this control plane's Terraform state.
+    They become 'implemented' when docs/state-migration-runbook.md step 9
+    completes. Until then, describe them as manually applied with IaC adoption
+    in progress — not as infrastructure-as-code enforced. Separately: this
+    organization currently has NO effective human review gate. Do not accept
+    'require_code_owner_reviews = true' as evidence of one; see D-20 and RA-07.

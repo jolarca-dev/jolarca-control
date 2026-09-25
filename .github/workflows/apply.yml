@@ -1,0 +1,140 @@
+name: "Terraform Apply"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Single-stage production apply with a manual approval gate.
+#
+# This deliberately does NOT replicate jol-control's dev → staging → prod
+# promotion. A GitHub-organization control plane has exactly ONE target: the
+# jolarca-dev org. There is no dev or staging org to promote through, so
+# running the same plan three times would apply identical changes to the same
+# real repositories three times. One gated apply is the correct shape.
+#
+# Auth: the default GITHUB_TOKEN cannot manage org-level resources or
+# repositories other than the one it runs in. This workflow requires a
+# fine-grained PAT stored as the `TF_GITHUB_TOKEN` secret, scoped to
+# 'Administration: read/write' + 'Contents: read' on jolarca-dev.
+# Rotation: docs/runbooks/github-token-rotation.md
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "repos/**"
+      - "policy/**"
+      - "*.tf"
+      - "*.tfvars"
+      - ".github/workflows/apply.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Never run two applies concurrently — concurrent writers to org state is how
+# repositories get destroyed. cancel-in-progress: false makes the second run
+# QUEUE, not cancel.
+concurrency:
+  group: "terraform-apply-jolarca-dev"
+  cancel-in-progress: false
+
+env:
+  TF_INPUT: "0"
+
+jobs:
+  prod-apply:
+    name: "Production — Apply"
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://github.com/orgs/jolarca-dev/repositories
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # ── HARD GATE ──────────────────────────────────────────────────────────
+      # Refuses to touch the live org until the state migration is complete and
+      # verified. Without migrated state this root would try to CREATE
+      # repositories that already exist while jolarca-infrastructure still owns
+      # them — dual ownership of PCI-DSS-scoped production repos.
+      - name: Assert state migration complete
+        if: vars.STATE_MIGRATION_COMPLETE != 'true'
+        run: |
+          echo "::error::Refusing to apply: STATE_MIGRATION_COMPLETE is not 'true'."
+          echo "This control plane does not yet own the github_* state."
+          echo "Complete docs/state-migration-runbook.md first."
+          exit 1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.16.1"
+
+      - name: Validate allow-list (repos/*.yml)
+        run: |
+          pip install -r requirements.txt
+          python3 scripts/validate_repos.py
+
+      - name: Fleet separation guard (ADR-0004)
+        run: bash scripts/check_fleet_separation.sh
+        env:
+          GH_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -no-color -out=tfplan
+        env:
+          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
+
+      # ── Plan review gate ───────────────────────────────────────────────────
+      # A destroy or a visibility change is never auto-approved. `prevent_destroy`
+      # already blocks repo destruction at the Terraform level; this catches
+      # visibility flips (see docs/drift-findings.md D-01) and anything else
+      # unexpected so a human reads the plan before it lands.
+      #
+      # The patterns live in scripts/check_plan_safety.sh, NOT inline here, so
+      # they are covered by tests/test_check_plan_safety.sh. The previous inline
+      # version matched `visibility\s*:` while `terraform show` emits
+      # `visibility = `, so the gate silently never fired (D-22).
+      - name: Refuse destructive or visibility-changing plans
+        run: |
+          terraform show -no-color tfplan > plan.txt
+          bash scripts/check_plan_safety.sh plan.txt
+
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve tfplan
+        env:
+          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
+
+      - name: Post-apply compliance snapshot
+        run: |
+          pip install -r requirements.txt
+          python3 scripts/compliance_check.py --output compliance-snapshot.json
+          echo "Compliance snapshot generated."
+
+      # Post-apply verification. If this step fails, the apply has ALREADY
+      # happened — a red job here means "applied but not verified", which is
+      # the honest signal. drift_detect.py exits 2 when it cannot read live
+      # state; that is a failure, not a pass (D-23). TF_GITHUB_TOKEN_READONLY
+      # has no GITHUB_TOKEN fallback on purpose: the default token cannot read
+      # org-wide metadata, so falling back would only produce exit 2 anyway.
+      - name: Post-apply drift detection
+        run: python3 scripts/drift_detect.py
+        env:
+          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY }}
+
+      - name: Upload compliance snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: compliance-snapshot-${{ github.sha }}
+          path: compliance-snapshot.json
+          retention-days: 90

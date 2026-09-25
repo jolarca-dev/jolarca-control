@@ -1,0 +1,53 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Tool configuration — jolarca-control
+# ──────────────────────────────────────────────────────────────────────────────
+# CONTRIBUTING.md has always required "ruff check" and "mypy --strict", but
+# neither tool was configured and no CI job ran them, so the standard meant
+# "whatever the ambient ruff version defaults to" — and ruff's default rule set
+# changes between releases. Pinning the selection here makes the documented
+# standard reproducible and enforceable (policy/compliance-gates.yml
+# code_quality gate; ISO 27001 A.8.9 / A.8.25).
+#
+# This file is configuration only. There is no Python package to build: the
+# scripts in scripts/ are standalone CLI tools run by CI and by `make`.
+# ──────────────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Explicit selection — do not rely on ruff's version-dependent defaults.
+select = [
+  "E4",   # pycodestyle imports
+  "E7",   # pycodestyle statements
+  "E9",   # pycodestyle errors (syntax/undefined names)
+  "F",    # pyflakes
+  "I",    # isort
+  "SIM",  # flake8-simplify
+  "ISC",  # flake8-implicit-str-concat
+  "B",    # flake8-bugbear
+  "C4",   # flake8-comprehensions
+  "UP",   # pyupgrade
+  "RUF",  # ruff-specific
+]
+ignore = [
+  # Long compliance prose in docstrings/comments is deliberate; E501 is not
+  # selected above, and W291/W293 trailing-whitespace rules conflict with the
+  # two-space Markdown line breaks used in generated issue bodies.
+  "RUF012",  # mutable class defaults — not used, but records intent
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["scripts"]
+warn_unreachable = true
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = "yaml.*"
+ignore_missing_imports = true

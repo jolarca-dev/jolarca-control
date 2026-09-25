@@ -1,0 +1,18 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Runtime dependencies — jolarca-control
+# ──────────────────────────────────────────────────────────────────────────────
+# Pinned exactly, because every GitHub Action in .github/workflows/ is pinned to
+# a full commit SHA for the same reason (threat model T-12). An unpinned
+# `pip install pyyaml` in CI meant the control plane's validators could change
+# behaviour between runs without any diff to review.
+#
+# `requests` was previously installed here and in CI but is imported by no
+# script: drift_detect.py shells out to the `gh` CLI instead. It is deliberately
+# NOT listed — do not re-add it without a script that uses it.
+#
+# Install:  python3 -m venv .venv && . .venv/bin/activate
+#           pip install -r requirements.txt
+# Lint/type tools live in requirements-dev.txt.
+# ──────────────────────────────────────────────────────────────────────────────
+
+PyYAML==6.0.3

@@ -1,0 +1,19 @@
+Copyright (c) 2026 Journey of Life. All rights reserved.
+
+This repository is PRIVATE. It is the governance control plane for the
+jolarca-dev marketplace organization and contains control definitions,
+compliance posture, security doctrine, branch-protection configuration and
+organizational topology that must not be disclosed.
+
+INTERNAL USE ONLY. No part of this repository may be copied, distributed,
+published, mirrored, or incorporated into any public repository, artifact, or
+derivative work without prior written authorization from the Journey of Life
+security function.
+
+This notice deliberately differs from the license on the public marketplace
+application. The AGPL-3.0 license in the `jolarca` repository governs the
+application code only; it does NOT extend to this control plane, and nothing
+here may be redistributed under it.
+
+Unauthorized disclosure of this material is treated as a security incident.
+See SECURITY.md and docs/runbooks.md (RB-03).

@@ -1,0 +1,285 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# PCI-DSS 4.0 — Control Checklist (governance-plane subset)
+# ──────────────────────────────────────────────────────────────────────────────
+# Mapped to jolarca-control enforcement points.
+# Organization: jolarca-dev (marketplace scope)
+# Review cadence: Quarterly
+# Last reviewed: 2026-09-25
+#
+# SCOPE NOTE — read first.
+# The authoritative CDE scope determination is NOT in this repository. It lives
+# in jolarca-infrastructure `security/pci-dss-scope.md` and in the DPIAs held in
+# jolarca-compliance. This checklist covers only the subset of PCI-DSS 4.0 that
+# a GitHub-organization control plane can actually implement: secure
+# configuration of system components (Req 2), access control (Req 7),
+# identification and authentication (Req 8), logging (Req 10), secure
+# development and change control (Req 6), testing (Req 11) and policy (Req 12).
+#
+# Requirements 1, 3, 4, 5 and 9 concern networks, stored account data,
+# transmission encryption, anti-malware and physical media. They are satisfied
+# (or not) in the application and infrastructure layers, and are deliberately
+# NOT claimed here. Asserting them from a governance repo would be a false
+# compliance statement.
+#
+# Status vocabulary is shared with audit/soc2-checklist.yml, plus one addition
+# used only here: `out-of-scope` — the requirement is real but is satisfied (or
+# not) in another layer, and is recorded so the omission is visibly deliberate
+# rather than an oversight.
+# ──────────────────────────────────────────────────────────────────────────────
+
+framework: "PCI-DSS 4.0"
+version: "v4.0.1"
+owner: "jolarca-dev organization owner (single operator — D-10)"
+verification_date: "2026-09-25"
+scope_authority: "jolarca-infrastructure security/pci-dss-scope.md"
+
+requirements:
+  Req2:
+    title: "Apply secure configurations to all system components"
+    controls:
+      - id: "2.1-01"
+        description: "Vendor-supplied defaults are changed or removed for in-scope components"
+        evidence: "policy/repo-defaults.yml overrides GitHub defaults: has_wiki=false, allow_merge_commit=false, auto_init=false, delete_branch_on_merge=true, enforce_admins=true"
+        enforcement: "github_repository + github_branch_protection"
+        status: "pending-adoption"
+        finding: "D-08"
+      - id: "2.2-01"
+        description: "Configuration standards exist, are documented and are enforced"
+        evidence: "policy/repo-defaults.yml (machine-readable baseline) + docs/data-classification.md"
+        enforcement: "scripts/validate_repos.py, scripts/compliance_check.py"
+        status: "implemented"
+      - id: "2.2-02"
+        description: "Primary functions are isolated — payment/marketplace scope separated from other scopes"
+        evidence: "separate GitHub org, host tree, SOPS identity, control plane and Terraform state for marketplace vs mission platform"
+        enforcement: "ADR-0004; repositories.tf precondition; check_fleet_separation.sh R1/R2/R3"
+        status: "implemented"
+        note: "One live violation exists in the predecessor state — D-03."
+      - id: "2.3-01"
+        description: "Configuration of primary functions is not left at insecure platform defaults"
+        evidence: "members_can_create_repositories = true; default_repository_permission = read"
+        enforcement: "none — org owner settings, not provider-managed"
+        status: "gap"
+        finding: "D-19"
+
+  Req6:
+    title: "Develop and maintain secure systems and software"
+    controls:
+      - id: "6.2-01"
+        description: "Bespoke software is developed securely"
+        evidence: "code_quality + sast + iac_scan gates; per-repo lint/typecheck contexts verified live on jolarca"
+        enforcement: "policy/compliance-gates.yml enforcement_matrix"
+        status: "implemented"
+      - id: "6.3-01"
+        description: "Security vulnerabilities are identified and ranked before release"
+        evidence: "dependency_scan gate fails on moderate+ severity; Dependabot alerts verified enabled on all five fleet repos"
+        enforcement: "CI dependency-review + github_repository_vulnerability_alerts"
+        status: "pending-adoption"
+      - id: "6.3.1-01"
+        description: "Vulnerability identification uses automated scanning"
+        evidence: "CodeQL (security-extended) on jolarca; trivy + docker-scan required contexts verified live"
+        enforcement: "CI required status checks"
+        status: "implemented"
+      - id: "6.4-01"
+        description: "Public-facing web applications are protected against attacks"
+        evidence: "WAF rules and rate limiting templates in jolarca-infrastructure ansible/roles/nginx"
+        enforcement: "outside this repository"
+        status: "out-of-scope"
+      - id: "6.5-01"
+        description: "Changes follow a documented procedure with separation of test and production"
+        evidence: "docs/change-management.md categories, approval matrix and rollback procedure"
+        enforcement: "policy + CI"
+        status: "implemented"
+        note: "There is no dev/staging GitHub org to separate; A.8.25-03 in the ISO checklist records the accepted rationale."
+      - id: "6.5.1-01"
+        description: "Change control procedures are enforced for all changes to system components"
+        evidence: "branch protection on all six repos with enforce_admins=true — the owner is NOT exempt"
+        enforcement: "github_branch_protection"
+        status: "pending-adoption"
+        finding: "D-08"
+      - id: "6.5.2-01"
+        description: "Documentation and audit trail of all changes"
+        evidence: "squash-only merges, required linear history, compliance snapshot retained 90 days as an Actions artifact"
+        enforcement: "branch protection + apply.yml"
+        status: "pending-adoption"
+      - id: "6.5.3-01"
+        description: "Pre-production changes are tested and approved before going live"
+        evidence: "plan.yml posts the plan for review; apply.yml refuses destroy/replace/visibility changes"
+        enforcement: "CI gates"
+        status: "declared"
+        note: "Gated on STATE_MIGRATION_COMPLETE — not yet live."
+      - id: "6.5.4-01"
+        description: "Back-out procedures exist"
+        evidence: "docs/change-management.md Rollback Procedure; docs/runbooks.md RB-07"
+        enforcement: "documented procedure"
+        status: "implemented"
+      - id: "6.5.5-01"
+        description: "Separation of duties between development and production changes"
+        evidence: "one operator performs both"
+        enforcement: "none possible in the solo era"
+        status: "gap"
+        finding: "D-04, D-10"
+        compensating_controls:
+          - "non-empty required status checks"
+          - "manual production environment approval before apply (enforceability unconfirmed — key-custody deviation 2)"
+          - "signed operator commits for attribution"
+        withdrawn_compensating_control: >-
+          "CODEOWNERS review forces changes through a PR" was previously listed.
+          REMOVED 2026-09-25 — D-20: inert setting, and PR #26 merged with zero
+          reviews. Do not cite CODEOWNERS as a PCI-DSS Req 6.3 separation-of-
+          duties control in this organization.
+
+  Req7:
+    title: "Restrict access to system components and cardholder data by business need to know"
+    controls:
+      - id: "7.1-01"
+        description: "An access control model is defined and enforced"
+        evidence: "no teams exist; policy/repo-defaults.yml declares teams: {} honestly rather than inventing an RBAC model"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-10"
+      - id: "7.2-01"
+        description: "Access is assigned by role with least privilege"
+        evidence: "default_repository_permission = read grants all members read on all repos automatically"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-19"
+      - id: "7.3-01"
+        description: "An access control system restricts access based on need to know"
+        evidence: "repositories are declared with per-repo visibility in repos/*.yml; 4 of 6 are live-public against a private declaration"
+        enforcement: "github_repository visibility + validate_repos.py coherence rule"
+        status: "gap"
+        finding: "D-01"
+        severity: "blocking"
+
+  Req8:
+    title: "Identify users and authenticate access to system components"
+    controls:
+      - id: "8.2-01"
+        description: "All access is assigned to a unique user, not shared"
+        evidence: "one org member (JourneyOfLife); GITHUB_TOKEN attributed per identity; automation commits use a distinct author identity (jolarca-control-automation)"
+        enforcement: "health-repo.tf var.health_repo_commit_author"
+        status: "implemented"
+      - id: "8.3-01"
+        description: "All user access is authenticated by at least one factor"
+        evidence: "GitHub platform authentication (at least one factor for every user and token); branch protection enforces PR flow + non-empty required status checks. CODEOWNERS deliberately NOT cited here — it is configured but inert, see D-20."
+        enforcement: "platform + github_branch_protection"
+        status: "pending-adoption"
+      - id: "8.3.1-01"
+        description: "Multi-factor authentication is required for ALL access into the CDE"
+        evidence: "gh api orgs/jolarca-dev -> two_factor_requirement_enabled = FALSE"
+        enforcement: "GitHub org setting — manual, not provider-managed"
+        status: "gap"
+        finding: "D-18"
+        severity: "blocking"
+        note: "Highest-priority single remediation in this checklist: one org setting, no code change, no state migration, and it closes a blocking gap in SOC 2 CC6.1, ISO A.5.17, GDPR Art. 32 and PCI Req 8.3.1 simultaneously."
+      - id: "8.6-01"
+        description: "System and application accounts are tightly controlled"
+        evidence: "TF_GITHUB_TOKEN and TF_GITHUB_TOKEN_READONLY held as Actions secrets, split read/write, least scope documented in main.tf; rotation runbook with a 90-day cadence"
+        enforcement: "docs/runbooks/github-token-rotation.md"
+        status: "declared"
+        note: "Secrets are created at runbook step 2. Read/write split is deliberate: planning and auditing never need write access."
+
+  Req10:
+    title: "Log and monitor all access to system components and cardholder data"
+    controls:
+      - id: "10.1-01"
+        description: "Audit trails are implemented and linked to individual users"
+        evidence: "GitHub org audit log; commit attribution via signed commits"
+        enforcement: "platform + commit_signing_policy"
+        status: "accepted"
+        finding: "D-05"
+        note: "Signature enforcement is off at the protection layer; attribution rests on policy."
+      - id: "10.2-01"
+        description: "Audit logs capture all actions by individuals with administrative privileges"
+        evidence: "org audit log queryable by owner (RB-06 step 2); enforce_admins=true means admin actions on protected branches still traverse the PR path"
+        enforcement: "platform"
+        status: "implemented"
+      - id: "10.3-01"
+        description: "Audit logs are protected from modification and retained"
+        evidence: "org-settings.tf declares github_organization_webhook for audit streaming, count-gated on var.audit_webhook_url which is EMPTY — no webhook exists"
+        enforcement: "none active"
+        status: "gap"
+        note: "The GitHub audit log has a limited retention window and is not exported. For a KYC/AML scope, Req 10.5.1 (12 months, 3 immediately available) cannot currently be evidenced from this control plane."
+      - id: "10.4-01"
+        description: "Logs are reviewed regularly"
+        evidence: "RB-05 quarterly review step 5 re-verifies org-level settings; compliance-scan.yml runs weekly"
+        enforcement: "RB-05 + CI"
+        status: "implemented"
+      - id: "10.5-01"
+        description: "Terraform state — the record of who owns what — is protected and retained"
+        evidence: "single unencrypted gitignored local file plus one .backup, both on one host"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-02"
+        severity: "blocking"
+
+  Req11:
+    title: "Test security of systems and networks regularly"
+    controls:
+      - id: "11.3-01"
+        description: "Configuration is tested against declared intent"
+        evidence: "scripts/drift_detect.py diffs the allow-list with the live org (membership, visibility, wiki, archive state) on every PR and weekly"
+        enforcement: "compliance-scan.yml"
+        status: "implemented"
+      - id: "11.3-02"
+        description: "Scope boundaries are tested, not merely asserted"
+        evidence: "scripts/check_fleet_separation.sh queries the live org and fails on any undeclared jolarca* repo or any jol-* entry"
+        enforcement: "fleet-separation-guard.yml, weekly cron"
+        status: "implemented"
+      - id: "11.6-01"
+        description: "The full delivery chain is audited end to end"
+        evidence: "scripts/org_delivery_audit.sh captures visibility, merge policy, protection flags, required contexts, open PRs and main CI health for all six repos plus .github"
+        enforcement: "RB-05 step 3"
+        status: "implemented"
+
+  Req12:
+    title: "Support information security with organizational policies and programs"
+    controls:
+      - id: "12.1-01"
+        description: "An information security policy is established and reviewed"
+        evidence: "policy/repo-defaults.yml + policy/compliance-gates.yml with metadata.last_reviewed 2026-09-25 and next_review 2026-12-25"
+        enforcement: "RB-05 step 8"
+        status: "implemented"
+      - id: "12.3-01"
+        description: "Risks are formally accepted with compensating controls and an expiry"
+        evidence: "docs/threat-model.md risk acceptance register; policy/compliance-gates.yml exceptions.active with named compensating controls"
+        enforcement: "RB-05 step 7"
+        status: "implemented"
+      - id: "12.5-01"
+        description: "PCI-DSS scope is documented and confirmed"
+        evidence: "jolarca-infrastructure security/pci-dss-scope.md is the scope authority; this repo applies pci-dss to all six repositories"
+        enforcement: "policy/compliance-gates.yml — every gate lists pci-dss"
+        status: "implemented"
+      - id: "12.10-01"
+        description: "An incident response plan exists and is actionable"
+        evidence: "SECURITY.md incident table with severity and first action; docs/runbooks.md RB-03 / RB-06 / RB-07"
+        enforcement: "documented procedure"
+        status: "implemented"
+      - id: "12.10-02"
+        description: "Personnel are trained and aware of the plan"
+        evidence: "one operator; awareness is trivially satisfied but untested"
+        enforcement: "none"
+        status: "accepted"
+        note: "Recorded honestly: a single-operator org cannot evidence training separation. Revisit at second-operator onboarding with D-10."
+
+summary:
+  total_controls: 34
+  implemented: 16
+  pending_adoption: 5
+  declared: 2
+  gap: 8
+  accepted: 2
+  out_of_scope: 1
+  blocking_gaps:
+    - "7.3-01 / Req 7 (D-01) — four CDE-adjacent repositories publicly readable"
+    - "8.3.1-01 / Req 8 (D-18) — org-wide MFA not enforced"
+    - "10.5-01 / Req 10 (D-02) — no protected, retained record of resource ownership"
+  auditor_note: >
+    Of the three blocking gaps, D-18 is a single organization setting and can
+    be closed today with no code change and no state migration. D-02 requires
+    the remote-backend work described in
+    docs/runbooks/workload-identity-federation.md and is prerequisite step 0 of
+    docs/state-migration-runbook.md. D-01 requires an explicit owner decision
+    about repository visibility and is gated by CI so it cannot be applied by
+    accident. Requirements 1, 3, 4, 5 and 9 are not claimed here — see the
+    scope note in the header.

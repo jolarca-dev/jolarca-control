@@ -1,0 +1,51 @@
+name: "Fleet Separation Guard"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ADR-0004 R1/R2/R3 enforcement for the jolarca-dev marketplace fleet.
+#
+# The org hosts TWO projects that must never mix (docs/adr/
+# 0004-mission-marketplace-separation.md):
+#   - marketplace      : jolarca*  ← this control plane's jurisdiction
+#   - mission platform : jol-*     ← governed by jol-control, never here
+#
+# This guard proves, on every relevant change and weekly, that the org's
+# jolarca* repo set matches the repos/*.yml allow-list EXACTLY:
+#   - out-of-band jolarca* creation  -> incident (48h import rule, ADR-0004 R2)
+#   - allow-list repo missing from org -> drift/deletion alarm
+#   - mission-platform repo referenced -> separation violation (ADR-0004 R3)
+#
+# Read-only against the org; runs with the read-scoped token.
+# Supersedes jolarca-infrastructure/.github/workflows/fleet-separation-guard.yml
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "repos/**"
+      - "scripts/check_fleet_separation.sh"
+      - ".github/workflows/fleet-separation-guard.yml"
+  pull_request:
+    paths:
+      - "repos/**"
+      - "scripts/check_fleet_separation.sh"
+      - ".github/workflows/fleet-separation-guard.yml"
+  schedule:
+    - cron: "41 4 * * 1"   # weekly: catch out-of-band creation even without code changes
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fleet-guard:
+    name: "Fleet Separation Guard"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fleet separation check (ADR-0004)
+        env:
+          GH_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY || secrets.GITHUB_TOKEN }}
+        run: bash scripts/check_fleet_separation.sh

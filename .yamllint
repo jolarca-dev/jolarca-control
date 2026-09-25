@@ -1,0 +1,38 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# yamllint configuration — jolarca-control
+# ──────────────────────────────────────────────────────────────────────────────
+# CONTRIBUTING.md has always required "YAML must pass yamllint with the project
+# defaults", but no project config existed, so that meant yamllint's *built-in*
+# defaults — an 80-character line limit. Run against this repository that
+# produced 345 findings, essentially all of them `line-length` on prose-heavy
+# compliance text (audit checklists, policy rationale, findings registers).
+# Reflowing that prose to 80 columns would make it worse to read and would not
+# make it more correct.
+#
+# 160 columns matches the limit already used by jolarca-infrastructure, so the
+# two repositories in this org do not disagree about what a long line is.
+# ──────────────────────────────────────────────────────────────────────────────
+
+extends: default
+
+# GitHub Actions parses `on:` as a key; YAML 1.1 reads the bare word as a
+# boolean, so yamllint's truthy rule flags every workflow file. Not a defect.
+rules:
+  truthy:
+    allowed-values: ["true", "false", "on"]
+    check-keys: false
+  line-length:
+    max: 160
+    level: warning
+  document-start:
+    present: false
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: consistent
+    indent-sequences: consistent
+
+ignore: |
+  .venv/
+  .terraform/
+  __pycache__/

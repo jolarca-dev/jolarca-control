@@ -1,0 +1,229 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# GDPR — Article-by-Article Compliance Checklist
+# ──────────────────────────────────────────────────────────────────────────────
+# Mapped to jolarca-control enforcement points.
+# Organization: jolarca-dev — marketplace scope, EU market (VAT OSS), 27 member
+# states. Scope covers KYC/AML identity verification and payment data.
+# Review cadence: Quarterly
+# Last reviewed: 2026-09-25
+#
+# Status vocabulary is shared with audit/soc2-checklist.yml — read the header
+# there.
+#
+# NOTE ON EVIDENCE: the authoritative DPIAs, RoPA/ERoPA entries and breach
+# procedures live in `jolarca-compliance`, and the legal bases, DPAs and
+# privacy notices live in `jolarca-legal`. This checklist records which control
+# in THIS repository supports which article; it does not restate the
+# processing records and must not be cited as the record of processing itself.
+# ──────────────────────────────────────────────────────────────────────────────
+
+framework: "GDPR"
+version: "Regulation (EU) 2016/679"
+owner: "jolarca-dev organization owner (single operator — D-10)"
+verification_date: "2026-09-25"
+dpo_contact: "see jolarca-legal — contact details are published there and in the org health repo SECURITY.md; deliberately not duplicated in this file"
+
+articles:
+  Art5:
+    title: "Principles relating to processing of personal data"
+    controls:
+      - id: "Art5-01"
+        description: "Lawfulness, purpose limitation and data minimisation documented per processing activity"
+        evidence: "jolarca-legal (legal bases, privacy notices) and jolarca-compliance (RoPA/ERoPA)"
+        enforcement: "manual review; repos are in the allow-list with tier=governance"
+        status: "implemented"
+        note: "Held in other repositories. This control plane's contribution is that both repos are declared, classified and protected."
+      - id: "Art5-02"
+        description: "Integrity and confidentiality (Art. 5(1)(f)) — repositories holding personal-data models are not publicly readable"
+        evidence: "jolarca-compliance, jolarca-legal, jolarca-data, jolarca-infrastructure are all LIVE PUBLIC; the allow-list declares them private"
+        enforcement: "scripts/validate_repos.py classification/visibility coherence rule"
+        status: "gap"
+        finding: "D-01"
+        severity: "blocking"
+        note: "The validator enforces the rule on the DECLARATION. It cannot see live GitHub state — scripts/drift_detect.py reports the divergence and currently returns non-zero."
+
+  Art25:
+    title: "Data protection by design and by default"
+    controls:
+      - id: "Art25-01"
+        description: "Data classification required and enforced per repository"
+        evidence: "repos/*.yml compliance.data_classification; docs/data-classification.md"
+        enforcement: "scripts/validate_repos.py"
+        status: "implemented"
+      - id: "Art25-02"
+        description: "No personal data or secrets in git"
+        evidence: "policy/repo-defaults.yml data_handling.secrets_in_git = prohibited; required gitignore patterns; secret-pattern sweep in compliance-scan.yml"
+        enforcement: "CI: secret_scan gate"
+        status: "implemented"
+        note: "jolarca-data is declared 'schemas and migrations, no production data in git'. That invariant is asserted by the repo's own policy, not technically enforced here — verify it during the quarterly review."
+      - id: "Art25-03"
+        description: "Wiki disabled on all repositories (prevents uncontrolled, unclassified storage)"
+        evidence: "has_wiki = false verified live on all six repos, 2026-09-25"
+        enforcement: "github_repository + validate_repos.py"
+        status: "implemented"
+      - id: "Art25-04"
+        description: "Privacy-by-default repository settings (issues, projects, discussions minimised)"
+        evidence: "has_issues = false and has_projects = false verified live on all five fleet repos; has_discussions = false declared"
+        enforcement: "github_repository"
+        status: "pending-adoption"
+        finding: "D-09"
+
+  Art28:
+    title: "Processor relationships"
+    controls:
+      - id: "Art28-01"
+        description: "DPAs in place with sub-processors"
+        evidence: "jolarca-legal repository (DPA templates and executed agreements)"
+        enforcement: "manual; repo declared tier=governance"
+        status: "implemented"
+      - id: "Art28-02"
+        description: "GitHub as processor covered by a DPA"
+        evidence: "GitHub Data Protection Addendum; held in jolarca-legal"
+        enforcement: "legal review"
+        status: "implemented"
+
+  Art30:
+    title: "Records of processing activities"
+    controls:
+      - id: "Art30-01"
+        description: "Processing activities recorded"
+        evidence: "jolarca-compliance (RoPA/ERoPA)"
+        enforcement: "manual review"
+        status: "implemented"
+      - id: "Art30-02"
+        description: "Repository asset inventory maintained and reconciled"
+        evidence: "repos/*.yml is the inventory (ISO 27001 A.5.9); drift_detect.py reconciles it with the live org weekly"
+        enforcement: "compliance-scan.yml"
+        status: "implemented"
+      - id: "Art30-03"
+        description: "Access logs retained independently of the platform"
+        evidence: "org-settings.tf declares github_organization_webhook gated on var.audit_webhook_url, which is EMPTY — no webhook exists"
+        enforcement: "none active"
+        status: "gap"
+        note: "The GitHub org audit log is queryable by an owner (RB-06 step 2) but is neither streamed nor retained outside GitHub's own retention window. For a KYC/AML scope this should be closed."
+
+  Art32:
+    title: "Security of processing"
+    controls:
+      - id: "Art32-01"
+        description: "Access control via role-based permissions"
+        evidence: "gh api orgs/jolarca-dev/teams -> empty; all access via single org ownership; default_repository_permission = read"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-10, D-19"
+      - id: "Art32-02"
+        description: "Multi-factor authentication for all access to the processing environment"
+        evidence: "two_factor_requirement_enabled = FALSE"
+        enforcement: "GitHub org setting — manual"
+        status: "gap"
+        finding: "D-18"
+        severity: "blocking"
+      - id: "Art32-03"
+        description: "Encryption in transit for all git operations"
+        evidence: "SSH remotes (git@github.com:jolarca-dev/*.git) and HTTPS-only GitHub endpoints"
+        enforcement: "platform + remote protocol policy"
+        status: "implemented"
+      - id: "Art32-04"
+        description: "Encryption at rest for infrastructure state and backups"
+        evidence: "Terraform state is an unencrypted local file (D-02); marketplace infra targets GCP with CMEK required by OPA policy (jolarca-infrastructure terraform/policies/require-cmek.rego)"
+        enforcement: "OPA policy for cloud resources; NONE for Terraform state"
+        status: "gap"
+        finding: "D-02"
+        severity: "blocking"
+      - id: "Art32-05"
+        description: "Vulnerability scanning on all pull requests"
+        evidence: "dependency_scan + sast + container_scan + iac_scan gates; required contexts verified live on jolarca"
+        enforcement: "policy/compliance-gates.yml + branch protection"
+        status: "implemented"
+      - id: "Art32-06"
+        description: "Integrity and non-repudiation of changes"
+        evidence: "required_signature = null on all six repos; operator signing is policy-only"
+        enforcement: "commit_signing_policy (not technical)"
+        status: "accepted"
+        finding: "D-05"
+      - id: "Art32-07"
+        description: "Restore availability and access to data in a timely manner"
+        evidence: "jolarca-infrastructure backup/restore-drill.md and borg offsite configuration"
+        enforcement: "documented + drilled outside this repository"
+        status: "implemented"
+        note: "Restore drills cover application data. Terraform state has NO backup at all — D-02."
+      - id: "Art32-08"
+        description: "Regular testing and evaluation of control effectiveness"
+        evidence: "scripts/org_delivery_audit.sh captures the live delivery chain fleet-wide; RB-05 quarterly review"
+        enforcement: "RB-05"
+        status: "implemented"
+
+  Art33:
+    title: "Notification of a personal data breach"
+    controls:
+      - id: "Art33-01"
+        description: "Breach detection and internal escalation documented"
+        evidence: "SECURITY.md incident table; docs/runbooks.md RB-03, RB-06, RB-07"
+        enforcement: "documented procedure"
+        status: "implemented"
+      - id: "Art33-02"
+        description: "72-hour supervisory-authority notification process defined"
+        evidence: "jolarca-compliance breach procedure; SECURITY.md states the 72-hour obligation"
+        enforcement: "documented procedure"
+        status: "implemented"
+      - id: "Art33-03"
+        description: "Secret exposure detected automatically"
+        evidence: "secret_scanning_push_protection declared in repositories.tf; gitleaks is a required context on jolarca (verified live)"
+        enforcement: "security_and_analysis + CI"
+        status: "pending-adoption"
+
+  Art35:
+    title: "Data Protection Impact Assessment"
+    controls:
+      - id: "Art35-01"
+        description: "DPIAs conducted for high-risk processing"
+        evidence: "jolarca-compliance DPIA records; jolarca-infrastructure docs/DPIA-template.md"
+        enforcement: "manual review"
+        status: "implemented"
+      - id: "Art35-02"
+        description: "DPIA trigger assessed before new processing begins"
+        evidence: "jolarca-infrastructure docs/compliance/dpia-trigger-check.md pattern; repos/*.yml data_classification is the trigger input"
+        enforcement: "RB-01 step 2 makes classification mandatory before a repo exists"
+        status: "implemented"
+      - id: "Art35-03"
+        description: "KYC/AML identity data treated as high-risk by default"
+        evidence: "jolarca is scoped 'PCI-DSS payments, KYC/AML, VAT OSS'; pci-dss applies to every repo in this fleet"
+        enforcement: "policy/compliance-gates.yml — pci-dss on all gates"
+        status: "implemented"
+        note: "Identity documents collected for KYC may engage Art. 9 special-category processing depending on what is verified. That determination belongs in the DPIA in jolarca-compliance, not here."
+
+  Art44:
+    title: "International transfers"
+    controls:
+      - id: "Art44-01"
+        description: "GitHub (US-based processor) transfer covered by an adequacy mechanism"
+        evidence: "EU-US Data Privacy Framework certification + GitHub DPA"
+        enforcement: "legal review; DPA held in jolarca-legal"
+        status: "accepted"
+      - id: "Art44-02"
+        description: "Cloud infrastructure resides in the EU"
+        evidence: "jolarca-infrastructure terraform/environments/production/variables.tf region default = europe-west1; policy/repo-defaults and ADR text state EU residency is mandatory"
+        enforcement: "terraform variable default + OPA policy"
+        status: "implemented"
+        note: "Corrected 2026-09-25. The inherited checklist claimed Terraform state was stored in AWS eu-central-1 with SSE. There is no AWS backend anywhere in the marketplace tree — state is a local file (D-02). A false data-residency claim is a materially worse audit finding than the underlying gap."
+      - id: "Art44-03"
+        description: "Terraform state residency is known and controlled"
+        evidence: "state lives on the operator host at /opt/jolarca; no cloud region, no declared residency"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-02"
+
+summary:
+  total_controls: 28
+  implemented: 18
+  pending_adoption: 2
+  gap: 6
+  accepted: 2
+  blocking_gaps: ["Art5-02 (D-01)", "Art32-02 (D-18)", "Art32-04 (D-02)"]
+  auditor_note: >
+    Three blocking gaps converge on the same root cause: this control plane
+    declares correct policy but does not yet own the state that would enforce
+    it, and two org-level settings (2FA, member repo creation) are not
+    provider-managed at all and must be set by hand. Art5-02 is the most
+    serious — four repositories inside a KYC/AML and PCI-DSS scope are publicly
+    readable while policy and IaC both say they should not be.

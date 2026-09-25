@@ -1,0 +1,252 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# ISO 27001:2022 — Annex A Controls Checklist
+# ──────────────────────────────────────────────────────────────────────────────
+# Mapped to jolarca-control enforcement points.
+# Organization: jolarca-dev (marketplace scope)
+# Review cadence: Quarterly
+# Last reviewed: 2026-09-25
+#
+# Status vocabulary is shared with audit/soc2-checklist.yml — read the header
+# there. `pending-adoption` means the control operates live on GitHub but is
+# not yet owned by this root's Terraform state (D-08 / D-13).
+# ──────────────────────────────────────────────────────────────────────────────
+
+framework: "ISO 27001:2022"
+version: "Annex A Controls"
+owner: "jolarca-dev organization owner (single operator — D-10)"
+verification_date: "2026-09-25"
+
+annex_a_controls:
+  A.5.1:
+    title: "Policies for information security"
+    controls:
+      - id: "A.5.1-01"
+        description: "Repository defaults define the security baseline"
+        evidence: "policy/repo-defaults.yml, reviewed 2026-09-25, next review 2026-12-25"
+        enforcement: "terraform + scripts/validate_repos.py"
+        status: "implemented"
+      - id: "A.5.1-02"
+        description: "Compliance gates define mandatory security checks"
+        evidence: "policy/compliance-gates.yml with a per-tier enforcement_matrix"
+        enforcement: "CI: compliance-scan.yml"
+        status: "implemented"
+      - id: "A.5.1-03"
+        description: "Policy documents reviewed on a defined cadence"
+        evidence: "metadata.last_reviewed / next_review in both policy files; RB-05 quarterly review"
+        enforcement: "RB-05 step 8"
+        status: "implemented"
+
+  A.5.3:
+    title: "Segregation of duties"
+    controls:
+      - id: "A.5.3-01"
+        description: "Mission-platform and marketplace scopes are segregated"
+        evidence: "Separate orgs, host trees, SOPS age identities, control planes and Terraform state"
+        enforcement: "ADR-0004 + three independent technical guards"
+        status: "implemented"
+      - id: "A.5.3-02"
+        description: "No individual can both make and approve a change"
+        evidence: "one org member; required_approving_review_count = 0; every review is self-review"
+        enforcement: "none possible in the solo era"
+        status: "gap"
+        finding: "D-04, D-10"
+        compensating_controls:
+          - "non-empty required status checks provide an automated second opinion"
+          - "signed commits attribute every change to a key holder"
+          - "docs/change-management.md forbids describing this as a two-person rule"
+        withdrawn_compensating_control: >-
+          "CODEOWNERS review forces changes through a PR" was previously listed.
+          REMOVED 2026-09-25 — D-20: the setting is inert (no resolvable code
+          owner exists in jolarca-dev) and PR #26 merged with zero reviews.
+          Changes do arrive via PR, but nothing forces that from CODEOWNERS, and
+          no human approves them. A.5.3 segregation of duties is therefore a
+          genuine gap with automated compensating controls only.
+
+  A.5.9:
+    title: "Inventory of information and other associated assets"
+    controls:
+      - id: "A.5.9-01"
+        description: "Complete inventory of all repositories"
+        evidence: "6 YAML files in repos/, plus the org health repo in health-repo.tf"
+        enforcement: "scripts/validate_repos.py + scripts/drift_detect.py"
+        status: "implemented"
+      - id: "A.5.9-02"
+        description: "Inventory reconciled against reality, not just declared"
+        evidence: "drift_detect.py diffs the allow-list with the live org on every PR and weekly"
+        enforcement: "compliance-scan.yml"
+        status: "implemented"
+
+  A.5.10:
+    title: "Acceptable use of information and other associated assets"
+    controls:
+      - id: "A.5.10-01"
+        description: "No secrets in git"
+        evidence: "policy/repo-defaults.yml data_handling.required_gitignore_patterns; *.tfstate gitignored; secret-pattern sweep in compliance-scan.yml"
+        enforcement: "CI: secret_scan gate"
+        status: "implemented"
+      - id: "A.5.10-02"
+        description: "License compliance enforced — denied licenses blocked"
+        evidence: "policy/compliance-gates.yml license_check; scope limited to inbound dependencies"
+        enforcement: "CI: license_check gate"
+        status: "implemented"
+
+  A.5.17:
+    title: "Authentication information"
+    controls:
+      - id: "A.5.17-01"
+        description: "Multi-factor authentication required for organizational access"
+        evidence: "gh api orgs/jolarca-dev -> two_factor_requirement_enabled = FALSE"
+        enforcement: "GitHub org setting — manual, not provider-managed"
+        status: "gap"
+        finding: "D-18"
+        severity: "blocking"
+        note: "This row previously read 'implemented' in the inherited checklist. It was never true of jolarca-dev. Corrected 2026-09-25."
+      - id: "A.5.17-02"
+        description: "Terraform credentials are scoped, stored outside git, and rotated"
+        evidence: "TF_GITHUB_TOKEN / TF_GITHUB_TOKEN_READONLY as Actions secrets; least scope documented in health-repo.tf and main.tf; docs/runbooks/github-token-rotation.md"
+        enforcement: "runbook + secret storage"
+        status: "declared"
+        note: "Secrets are created at runbook step 2; rotation cadence is 90 days."
+
+  A.6.1:
+    title: "Screening and roles/responsibilities"
+    controls:
+      - id: "A.6.1-01"
+        description: "Roles defined and access assigned by role"
+        evidence: "gh api orgs/jolarca-dev/teams -> empty. policy/repo-defaults.yml declares teams: {} rather than inventing teams"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-10"
+      - id: "A.6.1-02"
+        description: "Administrative access is restricted and break-glass only"
+        evidence: "single org owner; default_repository_permission = read; members_can_create_repositories = true"
+        enforcement: "none"
+        status: "gap"
+        finding: "D-19"
+
+  A.8.1:
+    title: "User endpoint devices"
+    controls:
+      - id: "A.8.1-01"
+        description: "Operator endpoint hardening documented"
+        evidence: "docs/security/isolation-model.md, docs/security/key-custody.md (carried from jolarca-infrastructure)"
+        enforcement: "documented procedure"
+        status: "implemented"
+
+  A.8.8:
+    title: "Management of technical vulnerabilities"
+    controls:
+      - id: "A.8.8-01"
+        description: "Dependency vulnerability scanning on every PR"
+        evidence: "dependency_scan gate; Dependabot alerts verified enabled on all five fleet repos"
+        enforcement: "github_repository_vulnerability_alerts + CI"
+        status: "pending-adoption"
+      - id: "A.8.8-02"
+        description: "SAST on every PR and push"
+        evidence: "sast gate; 'codeql' is a required context on jolarca (verified live)"
+        enforcement: "CI required status checks"
+        status: "implemented"
+      - id: "A.8.8-03"
+        description: "Container image scanning for platform/devops repos"
+        evidence: "container_scan gate; 'docker-scan' and 'trivy' required on jolarca (verified live)"
+        enforcement: "CI required status checks"
+        status: "implemented"
+      - id: "A.8.8-04"
+        description: "IaC security scanning"
+        evidence: "iac_scan gate; jolarca-infrastructure runs checkov/tflint/tfsec"
+        enforcement: "CI: iac_scan gate"
+        status: "implemented"
+
+  A.8.13:
+    title: "Information backup"
+    controls:
+      - id: "A.8.13-01"
+        description: "Terraform state is backed up off-host and the backup is verified"
+        evidence: "one local terraform.tfstate + one .backup, both on the operator host, both gitignored"
+        enforcement: "runbook step 0 (not yet executed)"
+        status: "gap"
+        finding: "D-02"
+        severity: "blocking"
+
+  A.8.19:
+    title: "Installation of software on operational systems"
+    controls:
+      - id: "A.8.19-01"
+        description: "CI actions are pinned to immutable references"
+        evidence: "every uses: in .github/workflows/ is a full 40-char commit SHA with a version comment"
+        enforcement: "CONTRIBUTING.md Code Standards; threat model T-12"
+        status: "implemented"
+      - id: "A.8.19-02"
+        description: "Terraform provider versions pinned"
+        evidence: "main.tf required_providers github ~> 6.0; required_version >= 1.9.0; .terraform.lock.hcl committed"
+        enforcement: "terraform init -upgrade is never implicit in CI"
+        status: "implemented"
+
+  A.8.24:
+    title: "Use of cryptography"
+    controls:
+      - id: "A.8.24-01"
+        description: "Commit signing provides integrity and non-repudiation"
+        evidence: "required_signature = null on all six repos"
+        enforcement: "policy only — commit_signing_policy.required_for_human_operators"
+        status: "accepted"
+        finding: "D-05"
+      - id: "A.8.24-02"
+        description: "Secrets encrypted with distinct identities per scope"
+        evidence: "separate SOPS age identities age-jol / age-jolarca (docs/compliance/rename-registry-jolm-to-jolarca.md in jol-infrastructure)"
+        enforcement: "SOPS configuration in jolarca-infrastructure"
+        status: "implemented"
+
+  A.8.25:
+    title: "Secure development lifecycle"
+    controls:
+      - id: "A.8.25-01"
+        description: "Code quality gates enforced"
+        evidence: "code_quality gate; per-repo lint/typecheck contexts verified live on jolarca"
+        enforcement: "CI: code_quality gate"
+        status: "implemented"
+      - id: "A.8.25-02"
+        description: "Linear git history enforced"
+        evidence: "required_linear_history = true verified live on all five jolarca* repos"
+        enforcement: "github_branch_protection"
+        status: "pending-adoption"
+      - id: "A.8.25-03"
+        description: "Separation of development and production environments"
+        evidence: "single org, single production target; no dev/staging GitHub org exists"
+        enforcement: "n/a for an org control plane"
+        status: "accepted"
+        note: "apply.yml deliberately does NOT replicate jol-control's dev->staging->prod promotion: promoting one plan three times against one org would apply identical changes to the same repositories three times."
+
+  A.8.32:
+    title: "Change management"
+    controls:
+      - id: "A.8.32-01"
+        description: "Every change is categorised, approved and recorded"
+        evidence: "docs/change-management.md categories + approval matrix; squash-only merges; compliance snapshot retained 90 days"
+        enforcement: "policy + CI"
+        status: "implemented"
+      - id: "A.8.32-02"
+        description: "Destructive changes are technically blocked, not just discouraged"
+        evidence: "lifecycle prevent_destroy on github_repository.repo and .health; apply.yml aborts on destroy/replace/visibility"
+        enforcement: "Terraform lifecycle + CI gate"
+        status: "declared"
+      - id: "A.8.32-03"
+        description: "Dated compliance evidence is immutable; superseded names resolve via a registry"
+        evidence: "jol-infrastructure docs/compliance/rename-registry-jolm-to-jolarca.md is the canonical jol-m-* -> jolarca* resolver; this repo does not rewrite dated evidence"
+        enforcement: "doctrine carried from the mission tree"
+        status: "implemented"
+
+summary:
+  total_controls: 29
+  implemented: 18
+  pending_adoption: 2
+  declared: 2
+  gap: 5
+  accepted: 2
+  blocking_gaps: ["A.5.17-01 (D-18)", "A.8.13-01 (D-02)"]
+  auditor_note: >
+    A.5.3-02 (segregation of duties) is structurally unsatisfiable in a
+    single-operator organization and is recorded as a gap with four named
+    compensating controls rather than being reported as implemented. The
+    remediation trigger is second-operator onboarding, which also closes D-04
+    and D-10.

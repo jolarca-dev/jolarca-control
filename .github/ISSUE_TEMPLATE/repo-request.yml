@@ -1,0 +1,207 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Repository lifecycle request — creation, deletion, rename, visibility change.
+#
+# The dropdowns below are bound to the SAME closed vocabularies that
+# scripts/validate_repos.py enforces against policy/repo-defaults.yml. If a
+# vocabulary changes in policy, it must change here too — a request form that
+# offers values the validator rejects wastes an approval cycle.
+#
+# Procedure: docs/runbooks.md RB-01 (create) / RB-02 (visibility).
+# Approval matrix: docs/change-management.md.
+# ──────────────────────────────────────────────────────────────────────────────
+name: "Repository lifecycle request"
+description: "Request a new jolarca-dev repository, or a change to an existing one. Creates the audit record required before repos/*.yml is edited."
+title: "[repo]: "
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before you file this
+
+        A repository in `jolarca-dev` is created **by this control plane**, never
+        in the GitHub UI. Out-of-band creation is an incident under ADR-0004 R2
+        and must be imported within 48 hours.
+
+        The name must match `jolarca` or `jolarca-<suffix>`. This is enforced
+        three independent times (Terraform precondition, `validate_repos.py`,
+        `check_fleet_separation.sh`) because it is the control that keeps
+        PCI-DSS scope away from the mission platform. **If your repo does not
+        fit that name, it does not belong in this org** — mission-platform work
+        goes to `jol-control`.
+
+        Filing this request is step 1. The change lands as a PR adding
+        `repos/<name>.yml`, which is what an auditor reads as evidence that the
+        repository was approved before it existed (SOC 2 CC8.1).
+
+  - type: dropdown
+    id: action
+    attributes:
+      label: Requested action
+      description: "Deletion is blocked by `prevent_destroy` and needs the lifecycle guard removed in a reviewed PR — see docs/change-management.md."
+      options:
+        - Create a new repository
+        - Change visibility of an existing repository
+        - Rename an existing repository
+        - Archive an existing repository
+        - Delete an existing repository
+    validations:
+      required: true
+
+  - type: input
+    id: repo-name
+    attributes:
+      label: Repository name
+      description: "Must match `jolarca` or `jolarca-<suffix>` (lowercase, hyphens)."
+      placeholder: "jolarca-notifications"
+    validations:
+      required: true
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: "What this repository is for, and why it cannot live in an existing one. This text becomes the repo `description`."
+      placeholder: "Outbound notification delivery (email/SMS) for the marketplace, including template registry and delivery audit log."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Functional tier
+      description: "Selects the compliance gates applied — see `enforcement_matrix` in policy/compliance-gates.yml."
+      options:
+        - governance
+        - platform
+        - devops
+        - site
+        - template
+    validations:
+      required: true
+
+  - type: dropdown
+    id: criticality
+    attributes:
+      label: Criticality
+      description: "Business-impact tier, defined in policy/repo-defaults.yml#asset_inventory. Used to prioritise incident response. Distinct from the functional tier above."
+      options:
+        - "tier-1 — exposes customer PII, payment data, or the controls protecting them"
+        - "tier-2 — degrades the compliance/legal position; no regulated data at rest"
+        - "tier-3 — internal tooling or docs; no regulated data"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: launch-status
+    attributes:
+      label: Launch status
+      options:
+        - planned
+        - in-development
+        - operational
+        - retired
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data-classification
+    attributes:
+      label: Data classification
+      description: "`confidential` or `restricted` FORCES `visibility: private` — validate_repos.py fails otherwise. See docs/data-classification.md."
+      options:
+        - public
+        - internal
+        - confidential
+        - restricted
+    validations:
+      required: true
+
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Requested visibility
+      description: "The org mandate is private by default. A public request needs a written justification below and is a Normal change (RB-02)."
+      options:
+        - private
+        - public
+    validations:
+      required: true
+
+  - type: textarea
+    id: public-justification
+    attributes:
+      label: Justification if public
+      description: "Required only when requesting `public`. State what is in the repo, why public exposure is acceptable, and how you verified no PII, credentials, topology or contractual terms are present."
+    validations:
+      required: false
+
+  - type: input
+    id: license
+    attributes:
+      label: License (SPDX), if any
+      description: "Leave blank for no license template. Governance repos carry none; only the flagship `jolarca` app is AGPL-3.0. Note this constrains the repo's OWN license — `denied_licenses` in terraform.tfvars governs inbound dependencies and is unrelated."
+      placeholder: "AGPL-3.0"
+    validations:
+      required: false
+
+  - type: textarea
+    id: required-contexts
+    attributes:
+      label: Required status-check contexts
+      description: |
+        The contexts this repo's workflows ACTUALLY report. A context that never
+        reports blocks every PR forever — this is the single most common way a
+        protected branch becomes unusable. Land the workflow first, confirm it
+        reports green, then list it here. Must not be empty.
+      placeholder: |
+        - ci / test
+        - security / gitleaks
+    validations:
+      required: true
+
+  - type: textarea
+    id: mandatory-files
+    attributes:
+      label: Mandatory files checklist
+      description: "Confirm which of these the repo will carry at creation."
+      value: |
+        - [ ] README.md — purpose, owner, how to run
+        - [ ] SECURITY.md — or inherits from jolarca-dev/.github
+        - [ ] CONTRIBUTING.md
+        - [ ] CHANGELOG.md
+        - [ ] LICENSE (or a recorded decision to carry none)
+        - [ ] .gitignore — including the patterns required by policy/repo-defaults.yml `data_handling.required_gitignore_patterns`
+        - [ ] .github/CODEOWNERS — referencing principals that EXIST in jolarca-dev (see D-20: unresolvable CODEOWNERS silently disables the only human review gate)
+        - [ ] .github/dependabot.yml
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Acknowledgements
+      options:
+        - label: "This repository belongs to the MARKETPLACE fleet, not the mission platform (ADR-0004)."
+          required: true
+        - label: "No secrets, credentials, certificates or Terraform state will be committed (policy/repo-defaults.yml `data_handling`)."
+          required: true
+        - label: "I understand the repo will be created by `terraform apply` from this control plane, not by hand in the GitHub UI."
+          required: true
+        - label: "I have recorded the data classification honestly, including for data this repo will hold in future."
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### What happens next
+
+        1. The organization owner reviews this request. In the solo-operator era
+           there is no second approver, and this is recorded as a **self-review**
+           rather than described as a two-person rule (docs/change-management.md).
+        2. A PR adds `repos/<name>.yml`. `make lint` must pass.
+        3. The plan is posted to the PR and read before merge.
+        4. Merge triggers apply — gated on `STATE_MIGRATION_COMPLETE` and on the
+           plan containing no destroy, replace or visibility change.
+        5. `scripts/drift_detect.py` confirms the live repo matches the allow-list.

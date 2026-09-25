@@ -1,0 +1,19 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Development / CI dependencies — jolarca-control
+# ──────────────────────────────────────────────────────────────────────────────
+# Tools that enforce the code standard CONTRIBUTING.md declares. Pinned so a
+# contributor and CI resolve the same versions; ruff's default rule set changes
+# between releases, so an unpinned ruff makes "ruff check passes" a moving
+# target. The rule selection itself lives in pyproject.toml.
+#
+# Install:  pip install -r requirements-dev.txt
+# Run:      make lint   (ruff + mypy --strict + terraform fmt/validate + allow-list)
+#           make test   (plan-gate regression tests)
+# ──────────────────────────────────────────────────────────────────────────────
+
+-r requirements.txt
+
+ruff==0.16.9
+mypy==2.3.1
+types-PyYAML==6.0.12.20260906
+yamllint==1.38.0
