@@ -2,25 +2,21 @@
 # Managed by jolarca-control — DO NOT edit outside this repo.
 # Compliance: SOC2 / GDPR / ISO 27001 / PCI-DSS 4.0
 #
-# BOOTSTRAP NOTE — this repository does NOT yet exist on GitHub (verified
-# 2026-09-25: `gh api orgs/jolarca-dev/repos` returns six repos, none named
-# jolarca-control). It is declared here first so that it is created BY this
-# control plane rather than out-of-band, which ADR-0004 R2 would otherwise
-# treat as an incident. See docs/state-migration-runbook.md step 2 for the
-# chicken-and-egg resolution.
+# License: proprietary — no LICENSE file is shipped. This is deliberate:
+# jolarca-control is the org control plane, not a distributable artifact.
+# The AGPL-3.0 license on jolarca (repos/jolarca.yml) covers the application
+# code; this repo governs it.
 
 name: jolarca-control
-description: "Central governance control plane for the jolarca-dev marketplace organization — Terraform IaC, repo allow-list, policy baselines, compliance gates and audit checklists."
+description: "GitHub org as code — fleet control plane for the jolarca-dev organization. Terraform IaC, repo allow-list, policy baselines, compliance gates, and audit checklists."
 
 visibility: private
 tier: governance
 # tier-1 per policy/repo-defaults.yml#asset_inventory: whoever controls this
 # repo controls branch protection and visibility on every PCI-scoped repo in the
-# org. launch_status is `planned`, not `operational`, because the repository does
-# not exist on GitHub yet — verified 2026-09-25, `gh api
-# repos/jolarca-dev/jolarca-control` returns HTTP 404 (D-16).
+# org. operational: the repository exists and is actively managing the fleet.
 criticality: tier-1
-launch_status: planned
+launch_status: operational
 language: HCL
 topics:
 - compliance
