@@ -58,7 +58,7 @@ provide evidence that access controls are actively monitored and enforced.
 
 ### 2026 Q3 (Baseline)
 
-> **Status:** No reviews conducted yet. Repository is in `planned` status.
+> **Status:** No reviews conducted yet. Repository is `in-development`.
 > This section will be populated after the first quarterly review following
 > the repository becoming `operational`.
 
@@ -71,7 +71,7 @@ provide evidence that access controls are actively monitored and enforced.
 | Stale accounts detected | — | Informational | — |
 
 **Notes:**
-- Repository is `planned`; no access reviews have been conducted
+- Repository is `in-development`; no access reviews have been conducted
 - `jolarca-dev` has zero teams (D-10); the first review will establish the baseline
 - D-18 (2FA not enforced) is the most critical identity-related gap
 
