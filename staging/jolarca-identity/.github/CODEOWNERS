@@ -4,14 +4,8 @@
 # jolarca-dev has zero teams (D-10). Until teams are created, the sole
 # operator (@JourneyOfLife) is the code owner for everything.
 #
-# SOC 2 CC6.1 / PCI-DSS Req 7 / ISO 27001 A.5.15: This repository defines
-# IAM policy and RBAC rules for the marketplace fleet. Changes to access-control
-# policy MUST follow the principle of least privilege. When teams are created,
-# write access MUST be restricted to personnel with a documented need for
-# identity-governance authoring.
-#
 # When teams are created, update this file to reference them.
-# Identity-policy changes SHOULD require review from a security-trained team
+# IAM policy changes SHOULD require review from a security-trained team
 # once one exists.
 
 * @JourneyOfLife

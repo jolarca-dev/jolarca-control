@@ -49,7 +49,6 @@ compliance:
   - soc2
   - iso27001
   - gdpr
-  - pci-dss
   data_classification: internal
   required_gates:
     secret_scan: true
