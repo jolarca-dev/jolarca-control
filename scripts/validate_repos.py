@@ -97,7 +97,9 @@ def validate_repo(filepath: Path, policy: dict[str, Any]) -> list[str]:
     # Name consistency
     expected_name = filepath.stem
     if data.get("name") != expected_name:
-        errors.append(f"{filepath.name}: name='{data.get('name')}' does not match filename '{expected_name}'")
+        errors.append(
+            f"{filepath.name}: name='{data.get('name')}' does not match filename '{expected_name}'"
+        )
 
     # ADR-0004 R1 — fleet naming / mission separation
     name = data.get("name", "")
@@ -111,12 +113,16 @@ def validate_repo(filepath: Path, policy: dict[str, Any]) -> list[str]:
     # Visibility
     vis = data.get("visibility", "")
     if vis not in VALID_VISIBILITIES:
-        errors.append(f"{filepath.name}: Invalid visibility '{vis}' — must be one of {sorted(VALID_VISIBILITIES)}")
+        errors.append(
+            f"{filepath.name}: Invalid visibility '{vis}' — must be one of {sorted(VALID_VISIBILITIES)}"
+        )
 
     # Tier
     tier = data.get("tier", "")
     if tier not in VALID_TIERS:
-        errors.append(f"{filepath.name}: Invalid tier '{tier}' — must be one of {sorted(VALID_TIERS)}")
+        errors.append(
+            f"{filepath.name}: Invalid tier '{tier}' — must be one of {sorted(VALID_TIERS)}"
+        )
 
     # Asset-inventory attributes (ISO 27001 A.5.9 / SOC 2 CC6.1). `tier` above
     # is the FUNCTIONAL tier that selects gates in compliance-gates.yml;
@@ -167,7 +173,9 @@ def validate_repo(filepath: Path, policy: dict[str, Any]) -> list[str]:
         # deviation stays valid instead of being silently ignored.
         want_signed = policy_main_bp(policy).get("require_signed_commits", True)
         if want_signed and not main_bp.get("require_signed_commits", False):
-            errors.append(f"{filepath.name}: main branch must require signed commits (policy/repo-defaults.yml)")
+            errors.append(
+                f"{filepath.name}: main branch must require signed commits (policy/repo-defaults.yml)"
+            )
 
         reviews = main_bp.get("required_pull_request_reviews") or {}
         if not isinstance(reviews, dict):
@@ -175,7 +183,9 @@ def validate_repo(filepath: Path, policy: dict[str, Any]) -> list[str]:
         else:
             count = reviews.get("required_approving_review_count")
             if not isinstance(count, int) or isinstance(count, bool) or count < 0:
-                errors.append(f"{filepath.name}: required_approving_review_count must be a non-negative integer")
+                errors.append(
+                    f"{filepath.name}: required_approving_review_count must be a non-negative integer"
+                )
 
         checks = main_bp.get("required_status_checks") or {}
         if not isinstance(checks, dict):
@@ -198,7 +208,9 @@ def validate_repo(filepath: Path, policy: dict[str, Any]) -> list[str]:
 
     dc = compliance.get("data_classification", "")
     if dc not in VALID_CLASSIFICATIONS:
-        errors.append(f"{filepath.name}: Invalid data_classification '{dc}' — must be one of {sorted(VALID_CLASSIFICATIONS)}")
+        errors.append(
+            f"{filepath.name}: Invalid data_classification '{dc}' — must be one of {sorted(VALID_CLASSIFICATIONS)}"
+        )
 
     # Data-classification ↔ visibility coherence (GDPR Art. 32, PCI-DSS 1.2)
     if dc in CLASSIFICATIONS_REQUIRING_PRIVATE and vis == "public":

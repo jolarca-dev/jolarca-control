@@ -1,7 +1,21 @@
+# Allow-list definition for jolarca-identity
+# Managed by jolarca-control — DO NOT edit outside this repo.
+# Compliance: SOC2 / GDPR / ISO 27001 / PCI-DSS 4.0
+#
+# IAM policy, RBAC definitions, joiner/mover/leaver automation, and access
+# review procedures for the jolarca-dev marketplace.
+# Evidence of access reviews lives in jolarca-compliance, NOT here — this repo
+# holds the machinery, not the records.
+
 name: jolarca-identity
-description: "Identity management, authentication, and authorization for the jolarca-dev marketplace"
-visibility: public
+description: "Identity management, access control, RBAC policy, and joiner/mover/leaver automation for the jolarca-dev marketplace"
+# Private: this repo defines RBAC policy and IAM procedures for a PCI-DSS-scoped
+# marketplace. Public readability of access-control rules widens the attack
+# surface. Evidence stays in jolarca-compliance (also private).
+visibility: private
 tier: platform
+# tier-1: RBAC policy defines who can access PCI-scoped systems; compromise of
+# this repo's policies could grant unauthorised access to the entire marketplace.
 criticality: tier-1
 launch_status: planned
 language: Python
@@ -10,6 +24,9 @@ topics:
 - identity
 - authentication
 - authorization
+- rbac
+- access-control
+- iam
 - oauth2
 - oidc
 settings:
@@ -33,6 +50,7 @@ branch_protection:
       contexts:
       - ci
       - security
+      - lint
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true
@@ -56,5 +74,6 @@ compliance:
   required_gates:
     dependency_scan: true
     secret_scan: true
+    license_check: true
     code_quality: true
     security_review: true

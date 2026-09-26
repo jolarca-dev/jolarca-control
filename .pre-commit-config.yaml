@@ -1,0 +1,50 @@
+# pre-commit configuration — jolarca-control
+# Mirrors the checks documented in CONTRIBUTING.md and the Makefile `lint` target:
+#   ruff check + format, mypy --strict, terraform fmt, yamllint, trailing-whitespace, etc.
+# Install:  pre-commit install
+# Run:      pre-commit run --all-files
+
+repos:
+  # ── General file hygiene ───────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # ── Python: ruff lint + format ─────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # ── Python: mypy (strict, scripts/) ────────────────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.1
+    hooks:
+      - id: mypy
+        args: [--strict]
+        files: ^scripts/
+        additional_dependencies:
+          - types-PyYAML==6.0.12.20260906
+
+  # ── Terraform formatting ───────────────────────────────────────────────────
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.97.3
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+
+  # ── YAML lint ──────────────────────────────────────────────────────────────
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        args: ["-c", ".yamllint"]

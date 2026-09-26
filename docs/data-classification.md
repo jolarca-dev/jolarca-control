@@ -70,4 +70,3 @@ machine-readable copy of this list; keep the two in sync.
 - Reclassification requires an organization-owner decision recorded in
   `docs/change-management.md`, and — when it lowers a classification — a
   written risk acceptance
-

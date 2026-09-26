@@ -111,4 +111,3 @@ as human segregation of duties. Restoring one requires the second operator
    verified off-host backup.
 5. Record the rollback in the original change record; a change record without
    its rollback outcome is incomplete evidence.
-

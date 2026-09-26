@@ -56,7 +56,9 @@ def check_fleet_separation(repos: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 def check_dependabot_coverage(repos: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Verify Dependabot vulnerability alerts are declared on every repo."""
-    gaps = [n for n, d in repos.items() if not d.get("settings", {}).get("vulnerability_alerts", False)]
+    gaps = [
+        n for n, d in repos.items() if not d.get("settings", {}).get("vulnerability_alerts", False)
+    ]
     return {
         "check": "dependabot_alerts_coverage",
         "status": "pass" if not gaps else "fail",
@@ -66,9 +68,7 @@ def check_dependabot_coverage(repos: dict[str, dict[str, Any]]) -> dict[str, Any
     }
 
 
-def check_branch_protection(
-    repos: dict[str, dict[str, Any]], want_signed: bool
-) -> dict[str, Any]:
+def check_branch_protection(repos: dict[str, dict[str, Any]], want_signed: bool) -> dict[str, Any]:
     """Verify all repos declare branch protection with the required settings."""
     hard_failures = []
     deviations = []
@@ -106,8 +106,8 @@ def check_branch_protection(
         "non_compliant": hard_failures,
         "solo_era_deviation_D04": sorted(deviations),
         "note": "solo_era_deviation_D04 lists repos relying on the documented "
-                "zero-approving-review deviation. That is a tracked risk "
-                "acceptance, not a control failure.",
+        "zero-approving-review deviation. That is a tracked risk "
+        "acceptance, not a control failure.",
     }
 
 
@@ -183,7 +183,9 @@ def check_merge_policy(repos: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run compliance checks on jolarca-control repo definitions")
+    parser = argparse.ArgumentParser(
+        description="Run compliance checks on jolarca-control repo definitions"
+    )
     parser.add_argument("--output", type=str, help="Output file path (default: stdout)")
     args = parser.parse_args()
 

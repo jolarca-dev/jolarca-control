@@ -1,0 +1,39 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# .gitattributes — jolarca-control (Python + Terraform)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Enforce LF line endings for all text files
+* text=auto eol=lf
+
+# Explicitly mark binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.tfstate binary
+
+# Python — LF, utf-8
+*.py text diff=python
+*.pyi text diff=python
+
+# Terraform — LF, utf-8
+*.tf text diff=hcl
+*.tfvars text diff=hcl
+*.hcl text diff=hcl
+
+# YAML / JSON / Markdown
+*.yml text
+*.yaml text
+*.json text
+*.md text
+
+# Shell scripts — LF (no CRLF)
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Terraform state — treat as binary, never diff
+*.tfstate.* binary
+
+# Lock files — commit but don't diff
+*.lock text

@@ -255,4 +255,3 @@ audit-log endpoint returns HTTP 404 for this org plan. Tracked as **D-01**
 
 **Compliance mapping (unchanged, now stronger):** GDPR Art. 5(1)(b)/Art. 32;
 PCI-DSS scope isolation; SOC 2 CC6.1, CC8.1; ISO 27001 A.5.2/A.5.15/A.8.13.
-

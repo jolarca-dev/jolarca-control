@@ -44,7 +44,7 @@ resource "github_branch_protection" "main" {
     # the second operator onboards.
     required_approving_review_count = var.required_approving_review_count
     # dismiss_stale_reviews disabled: requires GitHub Pro for private repos on free plan
-    dismiss_stale_reviews           = false
+    dismiss_stale_reviews = false
     # D-20: this is set false (see terraform.tfvars) — inert until teams exist,
     # and requires GitHub Pro for private repos on free plan.
     require_code_owner_reviews = var.require_code_owner_reviews
@@ -52,8 +52,8 @@ resource "github_branch_protection" "main" {
   }
 
   # ── Enforcement ───────────────────────────────────────────────────────────
-  enforce_admins                  = true
-  require_signed_commits          = var.enforce_signed_commits
+  enforce_admins         = true
+  require_signed_commits = var.enforce_signed_commits
   # required_linear_history and require_conversation_resolution disabled:
   # require GitHub Pro for private repos on free plan
   required_linear_history         = false

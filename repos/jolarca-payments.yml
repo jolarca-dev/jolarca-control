@@ -1,17 +1,16 @@
-name: jolarca-dr
-description: "Disaster recovery, backup strategies, and business continuity for the jolarca-dev marketplace"
+name: jolarca-payments
+description: "Payment processing, billing, and PCI-DSS compliance for the jolarca-dev marketplace"
 visibility: public
 tier: platform
 criticality: tier-1
 launch_status: planned
-language: Markdown
+language: Python
 topics:
 - marketplace
-- disaster-recovery
-- backup
-- business-continuity
-- rpo
-- rto
+- payments
+- billing
+- pci-dss
+- payment-processing
 settings:
   has_issues: true
   has_wiki: false
@@ -31,7 +30,8 @@ branch_protection:
     required_status_checks:
       strict: true
       contexts:
-      - lint
+      - ci
+      - security
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true
@@ -47,11 +47,12 @@ branch_protection:
 teams: {}
 compliance:
   frameworks:
-  - soc2
-  - gdpr
-  - iso27001
   - pci-dss
+  - soc2
+  - iso27001
   data_classification: internal
   required_gates:
+    dependency_scan: true
     secret_scan: true
+    code_quality: true
     security_review: true

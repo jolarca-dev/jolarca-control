@@ -1,0 +1,16 @@
+# CODEOWNERS — jolarca-payments
+#
+# ADR-0004 R4: no mission-platform references allowed.
+# jolarca-dev has zero teams (D-10). Until teams are created, the sole
+# operator (@JourneyOfLife) is the code owner for everything.
+#
+# PCI-DSS Req. 7: This repository is within the cardholder-data environment
+# (CDE) boundary. Access MUST follow the principle of least privilege. When
+# teams are created, the access list for this repo MUST be smaller than the
+# general marketplace fleet — only personnel with a documented need-to-know
+# for payment processing may be granted write access.
+#
+# When teams are created, update this file to reference them.
+# Payment/CDE changes SHOULD require review from a security-trained team.
+
+* @JourneyOfLife
