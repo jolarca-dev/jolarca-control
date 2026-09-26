@@ -1,0 +1,49 @@
+# jolarca-payments .gitignore
+# PCI-DSS prohibited artifacts — these MUST NEVER enter the repository
+
+# ── Cryptographic key material (PCI-DSS Req. 3) ─────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# ── Credentials and secrets ──────────────────────────────────────────────────
+credentials.json
+secrets.json
+.env
+.env.*
+*.credentials
+api_keys.json
+
+# ── Terraform state (policy: prohibited in git) ─────────────────────────────
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# ── Cardholder data (PCI-DSS Req. 3 — NEVER store PAN) ─────────────────────
+*.pan
+*.carddata
+payment_data.csv
+payment_data.json
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

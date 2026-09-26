@@ -4,7 +4,7 @@
 
 `jolarca-control` is the governance control plane for the `jolarca-dev` GitHub
 organization — the **marketplace** tree. It enforces a consistent security and
-compliance baseline across six repositories using Infrastructure as Code
+compliance baseline across the fleet using Infrastructure as Code
 (Terraform), a declarative YAML allow-list, and automated compliance gates.
 
 It is the marketplace counterpart of `jol-control`, which governs the
@@ -40,7 +40,7 @@ is scoped to payment-related repos only.
 │  repos/*.yml              policy/                 Terraform         │
 │  ───────────              ──────                  ─────────         │
 │  Per-repo allow-list      repo-defaults.yml       main.tf           │
-│  (6 YAML files)           compliance-gates.yml    variables.tf      │
+│  (14 YAML files)          compliance-gates.yml    variables.tf      │
 │                                                   repositories.tf   │
 │                                                   branch-protection │
 │                                                   health-repo.tf    │
@@ -72,8 +72,9 @@ is scoped to payment-related repos only.
                │  │ legal                  │     │
                │  └────────────────────────┘     │
                │  ┌────────────────────────┐     │
-               │  │ platform (2)           │     │  status checks only (D-20)
-               │  │ jolarca, data          │     │
+               │  │ platform (3)           │     │  status checks only (D-20)
+               │  │ jolarca, data,         │     │
+               │  │ identity               │     │
                │  └────────────────────────┘     │
                │  ┌────────────────────────┐     │
                │  │ devops (1)             │     │  status checks only (D-20)
@@ -91,8 +92,15 @@ is scoped to payment-related repos only.
 | Tier | Repos | Approving reviews | Code Owners | Compliance gates |
 |------|-------|-------------------|-------------|------------------|
 | governance | 3 — `jolarca-control`, `jolarca-compliance`, `jolarca-legal` | 0 (D-04) | Required but **inert** (D-20) | All, incl. IaC scan + IaC policy + plan review |
-| platform | 2 — `jolarca`, `jolarca-data` | 0 (D-04) | Required but **inert** (D-20) | dependency, secret, license, quality, SAST, container |
+| platform | 3 — `jolarca`, `jolarca-data`, `jolarca-identity` | 0 (D-04) | Required but **inert** (D-20) | dependency, secret, license, quality, SAST, container |
 | devops | 1 — `jolarca-infrastructure` | 0 (D-04) | Required but **inert** (D-20) | dependency, secret, license, quality, SAST, IaC, container |
+
+**Planned repositories** (declared in `repos/*.yml` but not yet created on
+GitHub): `jolarca-security` (governance), `jolarca-observability`, `jolarca-dr`,
+`jolarca-consent`, `jolarca-docs`, `jolarca-runbooks`, `jolarca-vendor`.
+`jolarca-identity` (platform, tier-1) holds IAM policy, RBAC definitions, and
+JML automation — its content is staged in `staging/jolarca-identity/` pending
+repository creation.
 
 The `site` and `template` tiers used by `jol-control` do not exist here — the
 marketplace has no per-church site fleet.
@@ -177,3 +185,10 @@ RBAC model is worse than one that admits the gap. Consequences, tracked as
 
 Team creation is the second-operator onboarding task; raising D-04 to 1
 approving review is gated on it.
+
+**Target-state RBAC model:** `jolarca-identity` (platform, tier-1) defines the
+role catalogue, permission matrix, and joiner/mover/leaver procedures that will
+govern team membership once teams are created. Until then, the RBAC policy
+serves as the target-state definition, not live enforcement. The separation
+between `jolarca-identity` (IAM machinery) and `jolarca-compliance` (access
+review evidence) is deliberate — policy and proof must not share a repository.

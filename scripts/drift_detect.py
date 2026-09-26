@@ -328,14 +328,17 @@ def check_codeowners(repos: list[str]) -> tuple[list[dict[str, Any]], list[str]]
                 if f"@{org}/" in line:
                     # Extract the full reference
                     import re
+
                     matches = re.findall(rf"@{re.escape(org)}/\S+", line)
                     found_forbidden.extend(matches)
 
         if found_forbidden:
-            violations.append({
-                "repo": repo,
-                "forbidden_refs": sorted(set(found_forbidden)),
-            })
+            violations.append(
+                {
+                    "repo": repo,
+                    "forbidden_refs": sorted(set(found_forbidden)),
+                }
+            )
 
     return violations, unverifiable
 
@@ -355,9 +358,7 @@ def check_org_settings(baseline: dict[str, Any]) -> tuple[list[dict[str, Any]], 
         expected = baseline[setting]
         actual = live[setting]
         if actual != expected:
-            violations.append(
-                {"setting": setting, "expected": expected, "live": actual}
-            )
+            violations.append({"setting": setting, "expected": expected, "live": actual})
 
     return violations, unverifiable
 
@@ -384,8 +385,14 @@ def render_issue_body(report: dict[str, Any]) -> str:
     ]
 
     sections = [
-        ("Repos declared but missing from the org", report["fleet"]["declared_but_missing_from_org"]),
-        ("Repos in the org but not declared (ADR-0004 R2 incident)", report["fleet"]["in_org_but_not_declared"]),
+        (
+            "Repos declared but missing from the org",
+            report["fleet"]["declared_but_missing_from_org"],
+        ),
+        (
+            "Repos in the org but not declared (ADR-0004 R2 incident)",
+            report["fleet"]["in_org_but_not_declared"],
+        ),
         ("Wiki enabled contrary to policy", report["fleet"]["wiki_drift"]),
         ("Unexpectedly archived", report["fleet"]["unexpectedly_archived"]),
         ("Branch protection MISSING entirely", report["branch_protection"]["missing"]),
@@ -404,11 +411,15 @@ def render_issue_body(report: dict[str, Any]) -> str:
             "Confidential-classified content is world-readable. Assess under "
             "GDPR Art. 33 before treating this as routine drift."
         )
-        lines += [f"- `{d['repo']}`: declared `{d['declared']}`, live `{d['live']}`" for d in exposure]
+        lines += [
+            f"- `{d['repo']}`: declared `{d['declared']}`, live `{d['live']}`" for d in exposure
+        ]
         lines.append("")
     if other_vis:
         lines.append("### Visibility mismatch")
-        lines += [f"- `{d['repo']}`: declared `{d['declared']}`, live `{d['live']}`" for d in other_vis]
+        lines += [
+            f"- `{d['repo']}`: declared `{d['declared']}`, live `{d['live']}`" for d in other_vis
+        ]
         lines.append("")
 
     if report["branch_protection"]["weakened"]:
@@ -485,8 +496,7 @@ def summarise(report: dict[str, Any]) -> list[str]:
 
     for item in report["unexpected_admins"]:
         out.append(
-            f"DRIFT: {item['repo']} has unexpected admin(s): "
-            f"{', '.join(item['unexpected_admins'])}"
+            f"DRIFT: {item['repo']} has unexpected admin(s): {', '.join(item['unexpected_admins'])}"
         )
 
     for item in report["codeowners_violations"]:
@@ -534,7 +544,11 @@ def main() -> int:
     # ── Fatal-if-unreadable: the fleet listing is the root of every check ────
     status, live_list = try_get(f"orgs/{ORG}/repos?per_page=100")
     if status != 200 or not isinstance(live_list, list):
-        detail = live_list.get("error", "unexpected payload") if isinstance(live_list, dict) else "unexpected payload"
+        detail = (
+            live_list.get("error", "unexpected payload")
+            if isinstance(live_list, dict)
+            else "unexpected payload"
+        )
         print(
             f"ERROR: could not list {ORG} repositories (HTTP {status}): {detail}",
             file=sys.stderr,
@@ -554,8 +568,13 @@ def main() -> int:
         return 2
 
     live_names = {str(r["name"]) for r in live_list if isinstance(r, dict) and r.get("name")}
-    live = {name: r for name, r in ((str(r["name"]), r) for r in live_list if isinstance(r, dict)
-                                    and r.get("name")) if name != HEALTH_REPO}
+    live = {
+        name: r
+        for name, r in (
+            (str(r["name"]), r) for r in live_list if isinstance(r, dict) and r.get("name")
+        )
+        if name != HEALTH_REPO
+    }
 
     fleet = check_fleet(defined, live)
 

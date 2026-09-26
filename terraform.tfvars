@@ -14,7 +14,7 @@ required_approving_review_count = 0
 # CODEOWNERS reviews disabled: (1) inert until D-20 is fixed (no teams exist),
 # (2) requires GitHub Pro for private repos on free plan. Re-enable when teams
 # are created and org is upgraded.
-require_code_owner_reviews      = false
+require_code_owner_reviews = false
 
 # Signature enforcement OFF: provider-seeded automation commits cannot be
 # GPG-signed. Operator commits remain signed by policy. See D-05.

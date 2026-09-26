@@ -1,7 +1,7 @@
 # ADR-0006: Remote Terraform state backend for jolarca-control
 
-**Status:** Accepted  
-**Date:** 2026-09-25  
+**Status:** Accepted
+**Date:** 2026-09-25
 **Deciders:** org owner (solo era)
 
 ## Context
@@ -92,7 +92,7 @@ Add to `main.tf`:
 terraform {
   cloud {
     organization = "jolarca-dev"
-    
+
     workspaces {
       name = "jolarca-control"
     }
