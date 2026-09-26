@@ -2,10 +2,7 @@
 
 This repository is the governance control plane for `jolarca-dev`. It holds a
 Terraform token capable of rewriting branch protection, visibility and
-Dependabot settings on the fleet — 16 repositories as of 2026-09-26, of which
-the PCI-DSS-scoped ones are private. Treat it accordingly. Note that the token
-cannot currently *restore* branch protection on a private repository: the org is
-on the Free plan, where protection is unavailable for private repos (**D-33**).
+Dependabot settings on six PCI-DSS-scoped repositories. Treat it accordingly.
 
 ## Reporting a vulnerability
 
@@ -33,7 +30,7 @@ is implicated.
 |---|---|---|
 | `TF_GITHUB_TOKEN` or `GITHUB_TOKEN` exposed | P1 | Rotate immediately — `docs/runbooks/github-token-rotation.md`; then RB-03 |
 | Terraform state file leaked or lost | P1 | RB-07; treat as loss of the sole ownership record (D-02) |
-| Branch protection removed or weakened out-of-band | P1 | Restore from `repos/*.yml`; open a change record. **Currently true fleet-wide on private repos — D-33 — and not restorable without a plan upgrade** |
+| Branch protection removed or weakened out-of-band | P1 | Restore from `repos/*.yml`; open a change record |
 | A `jolarca*` repo appears that is not in the allow-list | P2 | RB-06 — ADR-0004 R2, 48 h import rule |
 | A repo's visibility changed outside a PR | P1 | RB-02 / RB-06; check D-01 |
 | A mission-platform (`jol-*`) resource in this state | P1 | ADR-0004 R3 violation; precedent already exists — see D-03 |
@@ -59,22 +56,6 @@ Open and **not accepted** as of 2026-09-25:
 - **D-18** — org-wide two-factor authentication is **not** enforced.
 - **D-19** — members may create repositories; default repository permission is
   `read`.
-- **D-33** *(verified 2026-09-26)* — branch protection is unenforceable on every
-  private repository: the protection endpoint returns HTTP 403 on the Free plan
-  and the branch reports `.protected: false`. Only `jolarca` and `.github` are
-  guarded, so `main` on this control plane and on the four PCI-DSS-scoped repos
-  accepts direct pushes, force-pushes and deletion. Terraform manages zero
-  protection rules (`enable_branch_protection = false`).
-
-> **Staleness note (2026-09-26):** the D-01 and D-19 entries above no longer
-> match the live org — `jolarca-compliance`, `jolarca-data`,
-> `jolarca-infrastructure` and `jolarca-legal` now return
-> `visibility: private`, and `members_can_create_repositories` is `false` with
-> `default_repository_permission: none`. Closing them needs a change record and
-> a register update (D-01 also depends on the GDPR Art. 33 assessment in D-31);
-> until then treat those two bullets as unverified, not as current state.
-> `jolarca-observability` is the one live visibility drift: declared `private`
-> and `confidential`, actually public (still empty, so nothing is exposed yet).
 
 Accepted with compensating controls and an expiry: **D-04** (zero approving
 reviews), **D-05** (signature enforcement off), **D-07** (tag protection
@@ -93,11 +74,9 @@ unenforced).
   on humans is unchanged and it is the compensating control for D-04.
 - **Every GitHub Action pinned to a full commit SHA**, never a tag or branch.
   See `CONTRIBUTING.md` → Code Standards.
-- **No `--force` push to `main`**, ever. Branch protection blocks it on the two
-  public repos that still have a rule (`jolarca`, `.github`) — on every private
-  repository, including this one, **nothing blocks it** (D-33), so the rule is
-  currently obligation, not enforcement. If you are in a position to remove that
-  protection you are inside RB-03 and need a change record.
+- **No `--force` push to `main`**, ever. Branch protection blocks it; if you
+  are in a position to remove that protection you are inside RB-03 and need a
+  change record.
 
 ## Scope boundary
 

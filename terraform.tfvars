@@ -26,18 +26,10 @@ enforce_signed_commits = false
 enable_secret_scanning = false
 enable_dependabot      = true
 
-# Branch protection DISABLED: branch protection is not available for PRIVATE
-# repos below GitHub Team/Pro, so these resources would fail on the seven
-# private repos in the fleet.
-# CORRECTION 2026-09-26: the out-of-band rules from D-08 do NOT "remain in
-# place" once a repo is private. They are neither readable (HTTP 403) nor
-# enforced (.protected = false); only jolarca and .github are still guarded, so
-# 2 of 16 repos have enforceable protection and none of the private ones do.
-# The flag is also fleet-wide, so it withholds protection from the nine PUBLIC
-# repos where branch protection IS free on this plan.
-# Open blocking gap: docs/drift-findings.md D-33 (also compliance-gates.yml
-# exceptions.open_blocking). Re-enable after a GitHub Team upgrade, per repo,
-# and reconcile branch-protection.tf with policy/repo-defaults.yml first.
+# Branch protection DISABLED: most branch protection features require GitHub Pro
+# for private repos on the free plan. The existing branch protection rules were
+# applied out-of-band (D-08) and will remain in place until the org is upgraded.
+# Re-enable when upgrading to GitHub Team/Pro.
 enable_branch_protection = false
 
 compliance_frameworks = ["soc2", "gdpr", "iso27001", "pci-dss"]
