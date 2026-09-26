@@ -11,6 +11,25 @@
 # Supersedes: jolarca-infrastructure/terraform/modules/github-org/
 #             branch-protection.tf
 # ──────────────────────────────────────────────────────────────────────────────
+# STATUS 2026-09-26 — THESE RESOURCES CREATE NOTHING. terraform.tfvars sets
+# var.enable_branch_protection = false, so local.protected_repos is empty and
+# github_branch_protection.health has count = 0; local state holds zero
+# github_branch_protection instances. On the Free plan protection is also
+# unavailable for PRIVATE repos (HTTP 403 on the protection endpoint,
+# .protected = false on the branch), so the "verified live / no-op plan" note
+# above no longer holds for the seven private repos — only jolarca and .github
+# are still guarded. Two further defects are recorded with this file:
+#   1. The five attributes hardcoded false below contradict
+#      policy/repo-defaults.yml#branch_protection.main, which requires strict,
+#      dismiss_stale_reviews, require_code_owner_reviews, required_linear_history
+#      and require_conversation_resolution to be TRUE. Enabling protection with
+#      this HCL would make scripts/drift_detect.py report every repo `weakened`.
+#      The "requires GitHub Pro" rationale is a PRIVATE-repo limitation and does
+#      not apply to the nine public repos.
+#   2. The fleet-wide flag cannot express "protect the public repos now, the
+#      private ones after an upgrade"; it needs per-repo granularity.
+# Open blocking gap: docs/drift-findings.md D-33.
+# ──────────────────────────────────────────────────────────────────────────────
 
 locals {
   # Repos that declare branch protection in their allow-list entry. The org
