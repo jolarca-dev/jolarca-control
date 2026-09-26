@@ -17,7 +17,24 @@ tier: platform
 # tier-1: RBAC policy defines who can access PCI-scoped systems; compromise of
 # this repo's policies could grant unauthorised access to the entire marketplace.
 criticality: tier-1
-launch_status: planned
+# in-development — verified against the live repo 2026-09-26.
+# No longer `planned`: created 2026-09-25, 3 commits, 19 files, private.
+# Not yet `operational` under the policy/repo-defaults.yml#asset_inventory
+# rubric ("actively relied on … authoritative record for a live obligation"):
+# only policies/access-control-policy.md and policies/authentication-standards.md
+# are "Effective upon publication"; policies/rbac.md is "Effective upon
+# population", and roles/role-definitions.md, access-reviews/procedure.md and
+# lifecycle/joiner-mover-leaver.md are "Effective upon team creation" —
+# jolarca-dev still has ZERO teams and one member (D-10). Nothing has relied on
+# the procedures yet: jolarca-compliance/audits/access-reviews/ holds only the
+# convention README, no executed review.
+# Rubric caveat, recorded rather than papered over: `in-development` assumes "CI
+# runs", and it does not — the repo has no CI workflow (only Dependabot's
+# dynamic/dependabot/update-graph), main HEAD has zero check runs, so the
+# `ci` / `security` / `lint` contexts declared below cannot report.
+# Promote to `operational` when teams exist AND the first signed access review
+# lands in jolarca-compliance.
+launch_status: in-development
 language: Python
 topics:
 - marketplace

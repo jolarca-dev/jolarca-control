@@ -1,6 +1,7 @@
 # Drift & Findings Register — jolarca-dev control plane
 
 **Created:** 2026-09-25
+**Last verified:** 2026-09-26 (D-33 and the dated corrections to D-04 / D-08)
 **Method:** every row below was verified empirically against the live GitHub
 API (`gh api`, read-only) and against
 `jolarca-infrastructure/terraform/environments/production/terraform.tfstate`.
@@ -65,7 +66,7 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 |---|---|
 | Evidence | State contains `github_branch_protection.main` for **`jolarca` only** (1 of 5). Live API shows protection on **all six** repos including `.github`. `docs/superpowers/plans/2026-09-17-delivery-chain-audit-all-repos.md` documents the mechanism: `gh api .../branches/main/protection -X PUT --input`. |
 | Impact | Five of six protection rules are unmanaged. Config also disagrees with reality: the old module passed `require_code_owner_reviews = false`, live value is `true` on all five `jolarca*` repos. A refresh-and-apply from the old root would have *weakened* CODEOWNERS enforcement. |
-| Fix applied | `jolarca-control` encodes the **verified live** values per repo (`require_code_owner_reviews = true`, `strict = true`, per-repo contexts). Runbook step 5 imports all six protection rules into the new state. **Note:** encoding the live value faithfully reproduces the defect described in **D-20** — `require_code_owner_reviews = true` is currently unsatisfiable fleet-wide. Fixing it is a deliberate decision, not a migration side effect. |
+| Fix applied | `jolarca-control` encodes the **verified live** values per repo (`require_code_owner_reviews = true`, `strict = true`, per-repo contexts). Runbook step 5 imports all six protection rules into the new state. **Note:** encoding the live value faithfully reproduces the defect described in **D-20** — `require_code_owner_reviews = true` is currently unsatisfiable fleet-wide. Fixing it is a deliberate decision, not a migration side effect. **Correction (2026-09-26):** the premise above — and the `terraform.tfvars` comment derived from it — that the out-of-band rules "remain in place" is **false for private repositories**. Since four of the six repos were flipped private inside a Free-plan org, their protection is neither readable (HTTP 403) nor enforced (`.protected = false`), and there are no six rules left for runbook step 5 to import: two survive, on `jolarca` and `.github`. See **D-33**. |
 
 ### D-20 · CODEOWNERS is fleet-wide unresolvable and points at the MISSION org — **FIXED**
 | | |
@@ -109,7 +110,7 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 |---|---|
 | Evidence | `required_approving_review_count = 0` on all six repos (live API). Declared `0` in the old `environments/production/main.tf` with a `checkov:skip=CKV_GIT_5` rationale. |
 | Impact | SOC 2 CC8.1 change approval rests entirely on automated gates. |
-| Compensating controls | Required status checks non-empty and reporting, squash-only linear history, `enforce_admins = true`, signed operator commits, and the CI policy/drift gates in this repo. **Correction (2026-09-25):** this row previously also claimed "CODEOWNERS review ON (all five `jolarca*`)". That was **false as a control** — see **D-20**. Code-owner review is *enabled* but *unsatisfiable*, because no referenced team exists in `jolarca-dev`. It provides no compensating assurance and has been removed from this list. The residual position is therefore weaker than first recorded: change approval rests on automated gates alone. |
+| Compensating controls | Required status checks non-empty and reporting, squash-only linear history, `enforce_admins = true`, signed operator commits, and the CI policy/drift gates in this repo. **Correction (2026-09-25):** this row previously also claimed "CODEOWNERS review ON (all five `jolarca*`)". That was **false as a control** — see **D-20**. Code-owner review is *enabled* but *unsatisfiable*, because no referenced team exists in `jolarca-dev`. It provides no compensating assurance and has been removed from this list. The residual position is therefore weaker than first recorded: change approval rests on automated gates alone. **Correction (2026-09-26):** two of the controls still listed in this row — "required status checks non-empty and reporting" and "`enforce_admins = true`" — hold only on the two public repos (`jolarca`, `.github`). Every private repository, including all four PCI-DSS-scoped ones, has **no enforceable branch protection at all** (**D-33**), so on the regulated fleet the automated gates still *run* but nothing *requires* them: `jolarca-security` has 14 commits directly on `main` and zero pull requests. Squash-only linear history is likewise a repository setting, not an enforced rule, wherever protection is absent. |
 | Encoded as | `var.required_approving_review_count = 0` with validation allowing 0 only under this documented deviation; registered in `policy/compliance-gates.yml` `exceptions.active`. The exception record must cite D-20 as well, since one of its stated compensating controls is void. |
 
 ### D-07 · Tag protection declared in policy but unenforced
@@ -280,6 +281,33 @@ could complete with **no** verification and the workflow still report green.
 
 ---
 
+## Findings added by the 2026-09-26 plan-tier verification
+
+Added after the fleet grew from six to sixteen repositories and seven of them
+(including the four PCI-DSS-scoped ones) were made private. Every row below was
+re-verified against the live GitHub API on 2026-09-26, read-only. Numbering
+continues from D-32.
+
+### D-33 · Branch protection is unenforceable on every private repo — only 2 of 16 repositories are guarded — **S1, BLOCKING, OPEN**
+| | |
+|---|---|
+| Evidence — plan tier | `gh api orgs/jolarca-dev -q .plan.name` → **`free`**. `GET /repos/jolarca-dev/{repo}/branches/main/protection` returns **HTTP 403 `{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature."}`** for all seven private repositories: `jolarca-infrastructure`, `jolarca-compliance`, `jolarca-legal`, `jolarca-data`, `jolarca-control`, `jolarca-security`, `jolarca-identity`. The 403 is a plan-tier refusal, not a token-scope failure — the same token reads those repositories without error. |
+| Evidence — enforcement signal | The dedicated endpoint is unreadable, but `GET …/branches/main` is not: it reports **`.protected = false` on all seven** private repos. `.protected = true` only on `jolarca` and `.github` — the two public repos still carrying the out-of-band rules from D-08 (`jolarca`: 9 required contexts, `enforce_admins = true`, `strict = false`). |
+| Evidence — rest of the fleet | The remaining seven public repos (`jolarca-observability`, `-dr`, `-consent`, `-docs`, `-runbooks`, `-vendor`, `-payments`) are still empty (`size: 0`; `GET …/branches/main` → HTTP 404 "Branch not found"), so there is no branch to protect yet and `drift_detect.py` correctly reports them as `missing`. **Net: enforceable branch protection exists on 2 of 16 repositories, and on none of the private ones.** |
+| Evidence — no substitute mechanism | `gh api orgs/jolarca-dev/rulesets` → HTTP 403 "Upgrade to GitHub Team"; `gh api repos/jolarca-dev/jolarca-control/rulesets` → HTTP 403 "Upgrade to GitHub Pro or make this repository public". Rulesets cannot be used instead — the same constraint recorded for tag protection in D-07. |
+| Evidence — Terraform manages none | `terraform.tfvars` sets `enable_branch_protection = false` (the `variables.tf` default is `true`), so `local.protected_repos` resolves to an empty map and `github_branch_protection.health` has `count = 0`. Local state (serial 128, TF 1.16.1) holds 7 `github_repository` and 7 `github_repository_vulnerability_alerts` instances and **zero `github_branch_protection`**. |
+| Evidence — proven by behaviour, not inferred | `jolarca-security` (private) has **0 pull requests in any state** and 14 commits sitting directly on `main`. `jolarca-control` (private) took 7 of its 9 commits as direct pushes to `main` — only #2 and #3 came through a PR — and although its HEAD reports `Fleet Separation Guard` and `Production — Apply` check runs, nothing requires them to pass. Direct pushes to `main` therefore succeed on private repos today, which is the only claim that matters: a 403 could in principle mean "configured but unreadable", and `jolarca-security`'s history proves it does not. |
+| Impact | `main` on the four PCI-DSS-scoped repositories, on this control plane, and on `jolarca-security` / `jolarca-identity` can be force-pushed, deleted, or pushed to directly — no review, no required check, no admin enforcement. A history rewrite also destroys the signed-commit attribution that **D-04** and **D-05** cite as their compensating control, so the compensation for the zero-review deviation is itself unguarded. `policy/compliance-gates.yml` maps SOC 2 CC6.1 to "Branch protection + required status checks + CODEOWNERS": on the private fleet all three are absent or inert (CODEOWNERS — D-20). ISO 27001 A.8.32 / A.5.1; PCI-DSS Req 6.3 / 6.5. |
+| How it happened | This is a **consequence of remediating D-01**, not an unrelated oversight. Branch protection is free for public repositories and unavailable for private ones below Team/Pro. The four regulated repos are private as of 2026-09-26 — the outcome D-31 recommended, given the publicly readable RoPA / KYC / contract material — and that flip silently withdrew the change-control layer from exactly the repositories that hold regulated records. Nothing in this repo noticed: a security fix produced a compliance regression. |
+| Rows this voids | **D-08**: "the existing rules … will remain in place until the org is upgraded" is false for private repos, and runbook step 5 can import two rules, not six. **D-04**: "required status checks non-empty and reporting" and "`enforce_admins = true`" hold only on `jolarca` and `.github`. Both rows carry a dated correction above. `SECURITY.md`'s "No `--force` push to `main`, ever. Branch protection blocks it" was also false and is corrected in this change. |
+| Detection is blind | `scripts/drift_detect.py` maps the 403 to `unverifiable` (7 entries) and exits **2** with the message "Pass `--allow-unverifiable` only if the token genuinely lacks scope". The token is not the problem — the plan tier is — so the guidance names the wrong remedy, and anyone who clears the exit 2 with that flag drops all seven private repos from the check silently. The script never reads the `.protected` boolean, which *is* readable on Free and would report the absence directly. Consequence: the mandated signal "alert if a repository loses branch protection" (D-26) cannot fire for any private repo. |
+| Encoded vs declared baseline | `policy/repo-defaults.yml#branch_protection.main` requires `strict: true`, `dismiss_stale_reviews: true`, `require_code_owner_reviews: true`, `require_linear_history: true`, `require_conversation_resolution: true`; `branch-protection.tf` hardcodes **all five to `false`**, each annotated "requires GitHub Pro for private repos on free plan" — a limitation that does not apply to the nine *public* repos. `organization_baseline.required_branch_protection` still demands code-owner review and stale-review dismissal, so the day protection is enabled with the current HCL, `drift_detect.py` will report every protected repo as `weakened`. The flag is also fleet-wide: it cannot express "protect the public repos now, the private ones after an upgrade". |
+| Why this is not "Phase 4" | `docs/action-plan.md` records the gap as Step 4.2 "Re-enable advanced branch protection", priority **OPTIONAL**, "when budget approved". It is not an enhancement to an existing control; it is the absence of the control on 14 of 16 repositories, including every private one. Cross-referenced there in this change. |
+| Required — owner decision | **(a)** Upgrade `jolarca-dev` to GitHub Team, then set `enable_branch_protection = true`, reconcile `branch-protection.tf` with `policy/repo-defaults.yml` before applying (otherwise D-26's `weakened` check fires immediately), and import the two surviving rules on `jolarca` / `.github`. This also unblocks D-07, secret scanning and real code-owner enforcement. **(b)** Do **not** close it by making the repositories public again — D-31 records why that is the worse failure. **(c)** If the upgrade is not funded now, record a dated acceptance in `policy/compliance-gates.yml` `exceptions.active` with `approved_by`, an ISO-8601 `expires`, an `exit_trigger` and `blocked_by: plan tier` — the D-07 pattern — and stand up the interim controls below. What is not acceptable is leaving it filed as an optional enhancement. |
+| Interim — available without an upgrade | 1. **Fix detection first**: read `.protected` from `branches/main` and classify the private-repo 403 as a plan-tier finding rather than `unverifiable`, so the daily run reports "unguarded" instead of "could not check". 2. **Protect the public repos** — branch protection is free there — verifying the per-attribute availability of `strict` / linear history / conversation resolution on one repo (`jolarca`) before applying fleet-wide, since none of those has been tested against a Free-plan public repo in this change. 3. Keep merges PR-based by convention, and treat signed operator commits (D-05) as *attribution*, not prevention. 4. The off-host state backup in D-02 becomes more urgent, not less: with no force-push block, recovery of rewritten history depends entirely on a copy that is not on the pushing host. |
+
+---
+
 ## Verification commands
 
 All read-only. Reproduce every row above:
@@ -393,4 +421,47 @@ gh api "repos/jolarca-dev/jolarca-legal/git/trees/main?recursive=1" \
 
 # D-28 the index must not hold IDE metadata.
 git status --short | grep -E '^A.*(\.idea/|main\.py)' && echo "FAIL" || echo "index clean"
+
+# ── D-33 branch protection on the Free plan (added 2026-09-26) ───────────────
+
+gh api orgs/jolarca-dev -q .plan.name          # -> free
+
+# The dedicated protection endpoint 403s on private repos, but the enforcement
+# signal on the branch object does not. This is the check that works on Free,
+# and the one drift_detect.py does not currently perform.
+for r in $(gh api orgs/jolarca-dev/repos -q '.[].name'); do
+  vis=$(gh api "repos/jolarca-dev/$r" -q .visibility)
+  prot=$(gh api "repos/jolarca-dev/$r/branches/main" -q .protected 2>/dev/null | tail -n1)
+  case "$prot" in true|false) ;; *) prot="n/a (no main branch yet)";; esac
+  printf '%-24s %-8s protected=%s\n' "$r" "$vis" "$prot"
+done
+# Expect: protected=false on all seven private repos, true only on jolarca and
+# .github, "n/a" on the seven still-empty public repos.
+
+# No ruleset substitute exists either.
+gh api orgs/jolarca-dev/rulesets                  # -> 403 Upgrade to GitHub Team
+gh api repos/jolarca-dev/jolarca-control/rulesets # -> 403 Upgrade to GitHub Pro
+
+# Proof by behaviour: a private repo with zero PRs and direct pushes to main.
+gh api "repos/jolarca-dev/jolarca-security/pulls?state=all" -q length   # -> 0
+gh api "repos/jolarca-dev/jolarca-security/commits?per_page=50" \
+  -q '[.[] | select((.commit.message | contains("(#")) | not)] | length'   # -> 14
+
+# Terraform manages no protection while the fleet-wide flag is false.
+grep -n enable_branch_protection terraform.tfvars variables.tf
+python3 - <<'PY'
+import json, collections
+s = json.load(open('terraform.tfstate'))
+c = collections.Counter(r['type'] for r in s['resources'] for _ in r.get('instances', []))
+print(dict(c))
+print('github_branch_protection instances:', c.get('github_branch_protection', 0))
+PY
+
+# The encoded baseline contradicts the declared one.
+grep -nE 'strict|dismiss_stale_reviews|require_code_owner_reviews|required_linear_history|require_conversation_resolution' branch-protection.tf
+grep -n -A 32 '^branch_protection:' policy/repo-defaults.yml
+
+# And the detection control files the gap as "could not check", not as drift.
+.venv/bin/python scripts/drift_detect.py 2>/tmp/d33.err >/dev/null; echo "drift exit=$? (want 2)"
+grep -c 'protection HTTP 403' /tmp/d33.err   # -> 7 private repos, all "unverifiable"
 ```

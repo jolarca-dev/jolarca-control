@@ -43,6 +43,22 @@
 - **Verification:** dependency-audit check passes on next PR
 - **Status:** PENDING
 
+### Step 2.3: Fix drift detection for the Free-plan protection gap
+- **Priority:** HIGH (the detection control is blind where it matters most)
+- **Action:** In `scripts/drift_detect.py`, read `.protected` from
+  `GET /repos/{org}/{repo}/branches/main` (readable on Free) and classify the
+  private-repo HTTP 403 on the protection endpoint as a plan-tier finding,
+  not as `unverifiable` — today all seven private repos land in `unverifiable`,
+  the run exits 2, and the error message blames token scope (D-33). Separately,
+  `check_fleet()` reads `isPrivate` / `hasWikiEnabled` / `isArchived` from a
+  **REST** payload whose fields are `private` / `has_wiki` / `archived`, so every
+  declared-private repo is reported as a false HIGH-EXPOSURE visibility drift and
+  the wiki/archive checks can never fire.
+- **Verification:** `.venv/bin/python scripts/drift_detect.py` reports the seven
+  private repos as unguarded rather than unverifiable, and reports visibility
+  drift only for `jolarca-observability` and `jolarca-security`
+- **Status:** PENDING
+
 ## Phase 3: Documentation & Tracking
 
 ### Step 3.1: Update drift-findings.md with final status
@@ -65,10 +81,20 @@
 - **Verification:** `gh api orgs/jolarca-dev -q .plan.name` returns "team"
 - **Status:** PENDING (optional)
 
-### Step 4.2: Re-enable advanced branch protection
-- **Priority:** OPTIONAL (requires GitHub Team)
-- **Action:** Set `enable_branch_protection = true` in terraform.tfvars
-- **Verification:** Branch protection managed by Terraform
+### Step 4.2: Re-enable branch protection
+- **Priority:** HIGH once 4.1 lands — **not optional.** Tracked as open blocking
+  gap **D-33**: enforceable protection currently exists on 2 of 16 repositories
+  (`jolarca`, `.github`) and on none of the private ones, so `main` on this
+  control plane and on the four PCI-DSS-scoped repos accepts direct and
+  force-pushes today. What is genuinely optional is the *timing*, not the fix.
+- **Action:** After the upgrade, reconcile `branch-protection.tf` with
+  `policy/repo-defaults.yml#branch_protection.main` (five attributes are
+  hardcoded `false` against a baseline that requires `true`), make
+  `enable_branch_protection` per-repo rather than fleet-wide, import the two
+  surviving rules, then set the flag to `true`
+- **Verification:** `gh api repos/jolarca-dev/<repo>/branches/main -q .protected`
+  returns `true` fleet-wide and `terraform.tfstate` holds one
+  `github_branch_protection` instance per repo
 - **Status:** PENDING (blocked by 4.1)
 
 ### Step 4.3: Re-enable secret scanning
@@ -92,9 +118,9 @@
 ## Execution Order
 
 1. **Phase 1** (CRITICAL) — Steps 1.1 → 1.2 → 1.3 → 1.4
-2. **Phase 2** (MEDIUM) — Steps 2.1 → 2.2
+2. **Phase 2** (MEDIUM/HIGH) — Steps 2.1 → 2.2 → 2.3
 3. **Phase 3** (LOW) — Steps 3.1 → 3.2
-4. **Phase 4** (OPTIONAL) — Steps 4.1 → 4.2 → 4.3 → 4.4 → 4.5
+4. **Phase 4** (upgrade-dependent) — Steps 4.1 → 4.2 → 4.3 → 4.4 → 4.5
 
 ## Success Criteria
 
@@ -103,5 +129,8 @@
 - [ ] STATE_MIGRATION_COMPLETE variable set
 - [ ] trivy and dependency-audit failures resolved
 - [ ] drift-findings.md reflects current state
+- [ ] Branch protection gap (D-33) has an owner decision: GitHub Team upgrade,
+      or a dated acceptance in `policy/compliance-gates.yml` `exceptions.active`
+- [ ] Drift detection reports unguarded private repos instead of `unverifiable`
 - [ ] All gates pass (terraform validate, linters, tests)
 - [ ] Drift detection runs successfully in CI
