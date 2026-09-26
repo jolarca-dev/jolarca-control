@@ -55,8 +55,7 @@ jolarca-identity/
 ├── metrics/
 │   └── access-review-metrics.md    # KPIs and reporting for access reviews
 ├── SECURITY.md                     # Vulnerability disclosure policy
-├── README.md                       # This file
-└── LICENSE                         # License (if applicable)
+└── README.md                       # This file
 ```
 
 ## Compliance Framework Mapping
@@ -70,9 +69,13 @@ jolarca-identity/
 
 ## Current Status
 
-**Planned.** This repository is declared in the
+**In development.** This repository is declared in the
 [`jolarca-control`](https://github.com/jolarca-dev/jolarca-control) fleet
-allow-list (`repos/jolarca-identity.yml`) but is not yet populated on GitHub.
+allow-list (`repos/jolarca-identity.yml`) with `launch_status: in-development`.
+All policy and procedure files are populated; the repository is not yet
+`operational` because `jolarca-dev` has zero teams (D-10) and no signed access
+review has been executed. See `repos/jolarca-identity.yml` for the detailed
+rubric and promotion criteria.
 
 ### Known Dependencies
 
