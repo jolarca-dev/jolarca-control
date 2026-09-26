@@ -288,4 +288,20 @@ exceptions:
     - id: "D-20"
       issue: "Fleet CODEOWNERS reference mission-org and nonexistent teams, so require_code_owner_reviews is inert; also breaches ADR-0004 R4"
       owner_decision_required: "rewrite all six .github/CODEOWNERS to jolarca-dev principals; then either create the teams or set require_code_owner_reviews = false"
+    - id: "D-33"
+      issue: >-
+        Branch protection is unenforceable on every private repository (Free plan:
+        HTTP 403 on the protection endpoint, `.protected: false` on the branch).
+        Only 2 of 16 repos are guarded — `jolarca` and `.github` — and
+        `enable_branch_protection = false` in terraform.tfvars means Terraform
+        manages zero protection rules. Direct pushes to main succeed on the
+        private fleet today (verified: jolarca-security has 14 commits on main
+        and zero pull requests).
+      owner_decision_required: >-
+        Upgrade jolarca-dev to GitHub Team and re-enable protection per repo
+        (reconcile branch-protection.tf with the policy baseline first), or
+        record a dated acceptance in exceptions.active with `blocked_by: plan
+        tier` in the D-07 pattern. It must not be closed by making the repos
+        public again — see D-31 — and it must not stay filed as an optional
+        enhancement in docs/action-plan.md Step 4.2.
   review_cadence: "Quarterly — all active exceptions AND all open_blocking findings reviewed by the organization owner"
