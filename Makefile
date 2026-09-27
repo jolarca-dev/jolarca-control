@@ -2,7 +2,7 @@
 # Jolarca Control Plane — Makefile
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: help setup validate compliance drift fleet-audit org-audit \
+.PHONY: help setup validate compliance drift fleet-audit org-audit readiness \
         init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
 
@@ -57,8 +57,9 @@ sh-lint: ## shellcheck over every shell script
 yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 	yamllint -c .yamllint .
 
-test: ## Regression tests for the plan-safety gate (D-22)
+test: ## Regression tests: plan-safety gate (D-22) + readiness gate
 	bash tests/test_check_plan_safety.sh
+	python3 -m pytest tests/ -q
 
 # ── Live checks (read-only, need gh / GITHUB_TOKEN) ──────────────────────────
 drift: ## Diff the allow-list against the live jolarca-dev org
@@ -69,6 +70,18 @@ fleet-audit: ## ADR-0004 fleet separation guard (R1/R2/R3)
 
 org-audit: ## Capture the org-wide delivery chain into an evidence bundle
 	bash scripts/org_delivery_audit.sh
+
+# Pre-first-commit readiness gate. Registry-driven (repos/*.yml), read-only, and
+# the only tool that inspects the LOCAL working copy — the gap that let D-28
+# (an index holding .idea/ while every real file was untracked) reach commit.
+#   make readiness                      # whole allow-list, JSON + table
+#   make readiness REPO=jolarca-payments REPORT=/tmp/payments.md OUT=/tmp/payments.json
+# Exit 0 all READY · 1 findings · 2 could not verify (never a silent pass).
+readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
+	python3 scripts/repo_readiness_audit.py \
+	  $(if $(REPO),--repo $(REPO)) \
+	  $(if $(OUT),--output $(OUT)) \
+	  $(if $(REPORT),--markdown $(REPORT)) >/dev/null
 
 # ── Terraform ────────────────────────────────────────────────────────────────
 init: ## Initialize Terraform

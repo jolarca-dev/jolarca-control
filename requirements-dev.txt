@@ -8,7 +8,7 @@
 #
 # Install:  pip install -r requirements-dev.txt
 # Run:      make lint   (ruff + mypy --strict + terraform fmt/validate + allow-list)
-#           make test   (plan-gate regression tests)
+#           make test   (plan-gate + readiness-gate regression tests)
 # ──────────────────────────────────────────────────────────────────────────────
 
 -r requirements.txt
@@ -17,3 +17,7 @@ ruff==0.16.9
 mypy==2.3.1
 types-PyYAML==6.0.12.20260906
 yamllint==1.38.0
+# pytest was already present in .venv but declared nowhere, so `make test` would
+# have worked on one machine and failed on a clean checkout (the D-29 lesson:
+# an undeclared tool is an unreproducible gate).
+pytest==9.1.1
