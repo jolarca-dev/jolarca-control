@@ -59,7 +59,7 @@ yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 
 test: ## Regression tests: plan-safety gate (D-22) + readiness gate
 	bash tests/test_check_plan_safety.sh
-	python3 -m pytest tests/ -q
+	.venv/bin/python -m pytest tests/ -q
 
 # ── Live checks (read-only, need gh / GITHUB_TOKEN) ──────────────────────────
 drift: ## Diff the allow-list against the live jolarca-dev org
