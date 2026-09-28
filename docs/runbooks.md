@@ -5,7 +5,7 @@ Every one of them is read-only unless a step explicitly says otherwise.
 
 > **Until `docs/state-migration-runbook.md` completes**, RB-01 and RB-02 cannot
 > be executed — this control plane does not yet own the state. RB-03, RB-05,
-> RB-06 and RB-07 are live now.
+> RB-06, RB-07 and RB-08 are live now.
 
 ## RB-01: Add a New Repository
 
@@ -201,3 +201,40 @@ See `docs/drift-findings.md` D-02 — state is currently a single local file.
    that attempts to create existing repositories.
 5. File the incident in `jolarca-compliance`; loss of the sole record of
    resource ownership is itself reportable under ISO 27001 A.5.24.
+
+## RB-08: First-Commit Pipeline
+
+Full procedure: `docs/runbooks/first-commit-pipeline.md`.
+Tool: `scripts/first_commit_pipeline.py` — **read-only**; it verifies and prints
+the command, the operator runs it.
+
+Governs the six steps that carry a repository from a clean working tree to a
+verified commit on the default branch:
+
+```
+VERIFY FIRST → COMMIT → PUSH → REVIEW → MERGE → VERIFY AGAIN
+     A            B        C       D        E          F
+```
+
+```bash
+make first-commit REPO=<name> STEP=A SNAPSHOT=1
+make first-commit REPO=<name> STEP=B MESSAGE="feat(<scope>): <what and why>"
+make first-commit REPO=<name> STEP=F ATTEST="<Your Full Name>" \
+  EXPECTED_SHA=<sha> EVIDENCE=/tmp/<name>-evidence.md
+```
+
+Step A **consumes** `make readiness` rather than re-implementing it, so the two
+gates cannot drift apart. Exit codes are three-valued: `0` all PASS, `1` findings
+or tracked exceptions, `2` **could not verify** — never a silent pass.
+
+Where the Free plan cannot enforce a control (D-04 zero approvals, D-05 unsigned
+automation commits, D-33 no branch protection), the step reports a
+`TRACKED-EXCEPTION` naming the finding, its compensating control and its expiry
+date, read live from `policy/compliance-gates.yml`. An acceptance past its expiry
+blocks on its own. `--strict` refuses every exception — the posture to adopt once
+GitHub Team lands.
+
+> RB-08 currently reports an OPEN S0 against this repository: the readiness gate's
+> secret sweep and gitleaks both match synthetic fixtures in
+> `tests/test_repo_readiness_audit.py`. Rotation is not applicable — they were
+> never issued. See *Known issue* in the runbook before attempting a fix.

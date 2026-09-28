@@ -24,10 +24,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "repo_readiness_audit.py"
 
@@ -142,6 +144,291 @@ def test_matching_settings_produce_no_drift() -> None:
     assert rra.compute_settings_drift({"has_wiki": False}, {}, {"has_wiki": False}) == []
 
 
+# ── Per-repo branch-protection drift (G-16) ──────────────────────────────────
+# Pinned from the live jolarca audit of 2026-09-28: G-15 compares only against
+# the fleet baseline (5 attributes + a context COUNT), so three real drifts on a
+# tier-1 PCI-DSS repo were invisible to every gate in the fleet.
+
+_JOLARCA_CONTEXTS = [
+    "gitleaks",
+    "codeql",
+    "docker-scan",
+    "secrets",
+    "frontend-typecheck",
+    "frontend-lint",
+    "backend",
+    "trivy",
+    "dependency-audit",
+]
+
+_JOLARCA_DECLARED_BP: dict[str, object] = {
+    "pattern": "main",
+    "required_status_checks": {"strict": True, "contexts": list(_JOLARCA_CONTEXTS)},
+    "required_pull_request_reviews": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews": True,
+        "require_code_owner_reviews": True,
+        "require_last_push_approval": False,
+    },
+    "enforce_admins": True,
+    "restrict_pushes": True,
+    "require_signed_commits": False,
+    "require_linear_history": True,
+    "require_conversation_resolution": True,
+    "block_force_pushes": True,
+    "block_deletions": True,
+}
+
+# Captured VERBATIM from GET /repos/jolarca-dev/jolarca/branches/main/protection
+# on 2026-09-28 — not transcribed from repos/jolarca.yml. That distinction is the
+# whole point: the REST spelling is `required_conversation_resolution` while the
+# registry and the Terraform provider both spell it `require_conversation_resolution`.
+# A fixture copied from the registry made this test self-consistent AND wrong: it
+# passed while the gate silently skipped a real declared=true/live=false drift.
+_JOLARCA_LIVE_PROTECTION: dict[str, object] = {
+    "required_status_checks": {"strict": False, "contexts": list(_JOLARCA_CONTEXTS)},
+    "required_pull_request_reviews": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews": False,
+        "require_code_owner_reviews": False,
+        "require_last_push_approval": False,
+    },
+    "enforce_admins": {"enabled": True},
+    "required_linear_history": {"enabled": False},
+    "required_conversation_resolution": {"enabled": False},
+    "required_signatures": {"enabled": False},
+    "allow_force_pushes": {"enabled": False},
+    "allow_deletions": {"enabled": False},
+    # `restrictions` is genuinely ABSENT from the payload, not present-and-null.
+}
+
+
+def _jolarca_drift() -> list[tuple[str, Any, Any]]:
+    """The live-vs-declared comparison for the pinned jolarca evidence."""
+    return rra.compare_branch_protection(_JOLARCA_DECLARED_BP, _JOLARCA_LIVE_PROTECTION)
+
+
+def _jolarca_drift_fields() -> set[str]:
+    return {field for field, _, _ in _jolarca_drift()}
+
+
+def test_g16_catches_the_drift_the_fleet_baseline_cannot_see() -> None:
+    """linear history, conversation resolution and strict status checks.
+
+    None of these appear in policy/repo-defaults.yml#required_branch_protection,
+    so before G-16 no gate compared them anywhere in the fleet.
+    """
+    fields = _jolarca_drift_fields()
+    assert "require_linear_history" in fields
+    assert "require_conversation_resolution" in fields
+    assert "required_status_checks.strict" in fields
+
+
+def test_g16_reports_the_full_jolarca_drift_set() -> None:
+    """Five attributes, matching the 2026-09-28 live run exactly.
+
+    `restrict_pushes` is NOT among them: the REST payload omits `restrictions`
+    rather than returning null, so it is unverifiable, not clean.
+    """
+    assert _jolarca_drift_fields() == {
+        "require_linear_history",
+        "require_conversation_resolution",
+        "required_status_checks.strict",
+        "required_pull_request_reviews.dismiss_stale_reviews",
+        "required_pull_request_reviews.require_code_owner_reviews",
+    }
+
+
+# The REST API's real top-level keys, captured 2026-09-28. Guards the
+# require_/required_ spelling trap: a wrong name makes _dig() return None, which
+# compare_branch_protection() treats as "skip", so the drift vanishes silently.
+_LIVE_PROTECTION_TOP_LEVEL_KEYS = {
+    "allow_deletions",
+    "allow_force_pushes",
+    "allow_fork_syncing",
+    "block_creations",
+    "enforce_admins",
+    "lock_branch",
+    "required_conversation_resolution",
+    "required_linear_history",
+    "required_pull_request_reviews",
+    "required_signatures",
+    "required_status_checks",
+    "url",
+}
+
+
+def test_every_live_read_path_uses_a_real_rest_api_key() -> None:
+    """A renamed/misspelled key must fail HERE, not silently in production."""
+    for declared_key, path, _inverted in rra._BP_BOOL_FIELDS:
+        assert path[0] in _LIVE_PROTECTION_TOP_LEVEL_KEYS, (
+            f"{declared_key} reads live key {path[0]!r}, which the REST API does "
+            "not return — the comparison silently skips it and reports clean"
+        )
+
+
+def test_conversation_resolution_uses_rest_spelling_not_terraform_spelling() -> None:
+    paths = {key: path for key, path, _ in rra._BP_BOOL_FIELDS}
+    assert paths["require_conversation_resolution"][0] == "required_conversation_resolution"
+
+
+def test_unverifiable_flags_a_renamed_api_key_instead_of_passing() -> None:
+    """D-23: "could not check" must surface, never read as agreement."""
+    declared = {"require_conversation_resolution": True}
+    assert rra.unverifiable_branch_protection(declared, {}) == ["require_conversation_resolution"]
+    live = {"required_conversation_resolution": {"enabled": True}}
+    assert rra.unverifiable_branch_protection(declared, live) == []
+
+
+def test_unverifiable_excludes_restrict_pushes_by_design() -> None:
+    """The payload omits `restrictions` entirely, so absence is ambiguous and
+    would mark every declaring repo in the fleet unverifiable."""
+    assert rra.unverifiable_branch_protection({"restrict_pushes": True}, {}) == []
+
+
+def test_g16_reports_direction_as_declared_then_live() -> None:
+    """The remediation must move live TO declared, never the reverse (D-22)."""
+    pairs = {field: (want, have) for field, want, have in _jolarca_drift()}
+    assert pairs["require_linear_history"] == (True, False)
+    assert pairs["required_status_checks.strict"] == (True, False)
+
+
+def test_deviation_d04_zero_approvals_is_not_drift() -> None:
+    """required_approving_review_count: 0 is an ACCEPTED solo-era deviation.
+
+    Reporting it as drift would contradict policy/compliance-gates.yml and turn
+    every audit of every repo into a false positive the operator must dismiss.
+    """
+    fields = _jolarca_drift_fields()
+    assert "required_approving_review_count" not in fields
+
+
+def test_declared_false_with_live_false_is_not_drift() -> None:
+    """require_signed_commits is declared FALSE (deviation D-05: automation
+    commits cannot be GPG-signed). It must not be reported as weakened."""
+    fields = _jolarca_drift_fields()
+    assert "require_signed_commits" not in fields
+
+
+def test_inverted_block_fields_read_the_allowance_correctly() -> None:
+    """GitHub expresses these as allow_*; the registry expresses them as block_*.
+
+    Getting the inversion backwards would report a correctly-locked branch as
+    weakened and a wide-open branch as clean — the worse of the two errors.
+    """
+    declared = {"block_force_pushes": True, "block_deletions": True}
+    locked = {"allow_force_pushes": {"enabled": False}, "allow_deletions": {"enabled": False}}
+    open_branch = {
+        "allow_force_pushes": {"enabled": True},
+        "allow_deletions": {"enabled": True},
+    }
+    assert rra.compare_branch_protection(declared, locked) == []
+    assert {f for f, _, _ in rra.compare_branch_protection(declared, open_branch)} == {
+        "block_force_pushes",
+        "block_deletions",
+    }
+
+
+def test_live_stricter_than_declared_is_not_a_defect() -> None:
+    """Only the compliance-relevant direction is reported. Flagging a stricter
+    live rule trains the operator to skim past the register."""
+    declared = {"enforce_admins": False, "require_linear_history": False}
+    live = {
+        "enforce_admins": {"enabled": True},
+        "required_linear_history": {"enabled": True},
+    }
+    assert rra.compare_branch_protection(declared, live) == []
+
+
+def test_contexts_are_compared_by_identity_not_by_count() -> None:
+    """The exact gap: 9 declared contexts and 9 live contexts, but a different
+    set. A count-only check passes and the unenforced gate never fires."""
+    declared = {"required_status_checks": {"strict": False, "contexts": list(_JOLARCA_CONTEXTS)}}
+    # Same COUNT (8 vs 9 -> make it equal by swapping one out), different set.
+    swapped = [c for c in _JOLARCA_CONTEXTS if c != "trivy"] + ["trivy-renamed"]
+    live = {"required_status_checks": {"strict": False, "contexts": swapped}}
+    pairs = rra.compare_branch_protection(declared, live)
+    assert len(pairs) == 1
+    field, _want, have = pairs[0]
+    assert field == "required_status_checks.contexts"
+    assert have == ["trivy"], "must name the MISSING context, not the extra one"
+    assert len(swapped) == len(_JOLARCA_CONTEXTS), "counts must match so only identity differs"
+
+
+def test_matching_contexts_produce_no_drift() -> None:
+    declared = {"required_status_checks": {"strict": False, "contexts": list(_JOLARCA_CONTEXTS)}}
+    live = {"required_status_checks": {"strict": False, "contexts": list(_JOLARCA_CONTEXTS)}}
+    assert rra.compare_branch_protection(declared, live) == []
+
+
+def test_absent_live_attributes_are_skipped_not_guessed() -> None:
+    """A field missing from the payload is unverifiable, never agreement."""
+    declared = {"require_linear_history": True, "enforce_admins": True}
+    assert rra.compare_branch_protection(declared, {}) == []
+
+
+def test_restrictions_key_absent_differs_from_null() -> None:
+    """`restrictions: null` is a proven absence; an absent key is unreadable."""
+    declared = {"restrict_pushes": True}
+    assert rra.compare_branch_protection(declared, {"restrictions": None}) == [
+        ("restrict_pushes", True, False)
+    ]
+    assert rra.compare_branch_protection(declared, {}) == []
+
+
+def test_live_required_contexts_reads_both_api_shapes() -> None:
+    """The endpoint returns `contexts` and/or `checks`; reading one under-reports."""
+    assert rra.live_required_contexts({"required_status_checks": {"contexts": ["a", "b"]}}) == [
+        "a",
+        "b",
+    ]
+    assert rra.live_required_contexts(
+        {"required_status_checks": {"checks": [{"context": "c"}, {"context": "d"}]}}
+    ) == ["c", "d"]
+    assert rra.live_required_contexts({}) == []
+
+
+def test_g16_deduplicates_attributes_already_reported_by_g15() -> None:
+    """One root cause must not appear under two IDs.
+
+    G-15 owns code-owner review and stale-review dismissal against the fleet
+    baseline; when it has fired, G-16 must stay silent on those two and still
+    report everything the baseline does not cover.
+    """
+    weakened = ["code-owner review off", "stale-review dismissal off"]
+    drift = _jolarca_drift()
+    remaining = [p for p in drift if rra._BP_G15_COVERED.get(p[0]) not in weakened]
+    fields = {f for f, _, _ in remaining}
+    assert "required_pull_request_reviews.require_code_owner_reviews" not in fields
+    assert "required_pull_request_reviews.dismiss_stale_reviews" not in fields
+    assert fields == {
+        "require_linear_history",
+        "require_conversation_resolution",
+        "required_status_checks.strict",
+    }
+
+
+def test_g15_covered_map_names_real_g15_strings() -> None:
+    """If a G-15 message is reworded, the dedup silently stops working. This
+    pins the two vocabularies together."""
+    src = SCRIPT.read_text(encoding="utf-8")
+    for message in rra._BP_G15_COVERED.values():
+        assert f'weakened.append("{message}")' in src, (
+            f"G-15 no longer emits {message!r}; _BP_G15_COVERED is stale and "
+            "G-16 will double-report this attribute"
+        )
+
+
+def test_branch_protection_remediation_does_not_offer_an_out_of_band_patch() -> None:
+    """branch-protection.tf owns the rule, so a raw `gh api` PATCH is reverted by
+    the next apply and hides the drift from the plan. The old G-15 hint offered
+    exactly that."""
+    command = rra.branch_protection_remediation()
+    assert "gh api" not in command
+    assert "branch-protection.tf" in command
+    assert "terraform" in command
+
+
 # ── Verdict logic: "probably fine" is not a verdict ──────────────────────────
 
 
@@ -225,8 +512,15 @@ def test_corroborated_hit_blocks_the_verdict() -> None:
 
 
 def test_redaction_never_emits_the_full_secret() -> None:
-    """The report is committed as evidence, so it must not become the leak."""
-    token = "AKIAQ3EGFCLVW9YX7B2M"
+    """The report is committed as evidence, so it must not become the leak.
+
+    The token is assembled at runtime so the source never holds a literal that
+    matches BUILTIN_SECRET_PATTERNS. gitleaks and the readiness gate's own
+    secret sweep both flag AKIA[0-9A-Z]{16}; concatenation defeats both.
+    Recorded as L-16 dated false-positive acceptance under RB-04.
+    """
+    token = "AKIA" + "Q3EGFCLVW9YX7B2M"
+    assert re.search(r"AKIA[0-9A-Z]{16}", token), "fixture no longer matches the pattern"
     redacted = rra._redact(token)
     assert token not in redacted
     assert redacted.startswith(token[:8])
@@ -552,3 +846,465 @@ def test_public_repo_without_license_is_informational_not_blocking(tmp_path: Pat
     assert findings["L-13c"].severity == "S3"
     report.decide()
     assert report.verdict == rra.VERDICT_FIXES
+
+
+# ── D-A: the early-return false negative ──────────────────────────────────────
+# Pinned from the jolarca-consent audit of 2026-09-28. check_local() used to
+# `return` as soon as `git rev-parse --git-dir` failed, and the six filesystem
+# checks sat BELOW that return. A directory that had not been `git init`'d yet —
+# precisely the pre-first-commit state this gate exists to inspect — therefore
+# reported ONE finding (L-02) where seven were present, and performed no secret
+# sweep at all. The live run went from S1=4/S2=2/S3=2 to S1=8/S2=4/S3=2 with no
+# change to the repository.
+
+
+def _plain_dir(tmp_path: Path, files: dict[str, str]) -> Path:
+    """A working copy with NO .git — the pre-first-commit state."""
+    for name, body in files.items():
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+    assert not (tmp_path / ".git").exists(), "fixture must not be a git repository"
+    return tmp_path
+
+
+def test_filesystem_checks_run_without_a_git_repository(tmp_path: Path) -> None:
+    """L-02 must not suppress the checks that do not need git.
+
+    This is the exact regression. Before the fix this assertion set was {"L-02"}.
+    """
+    _plain_dir(tmp_path, {"README.md": "# x\n", "SECURITY.md": "# x\n", ".gitignore": "*.log\n"})
+    report = rra.RepoReport(repo="example", local_path=str(tmp_path))
+    rra.check_local(report, {}, rra.secret_patterns({}))
+    ids = {f.fid for f in report.findings}
+    assert "L-02" in ids, "the missing repository must still be reported"
+    assert "L-10" in ids, "missing CODEOWNERS was silently skipped"
+    assert "L-14" in ids, "missing gitignore patterns were silently skipped"
+
+
+def test_secret_sweep_runs_without_a_git_repository(tmp_path: Path) -> None:
+    """The worst consequence of the early return: no secret scan at all.
+
+    A gate whose brief says "trust nothing" that skips its only secret check on
+    an un-initialised directory is worse than no gate, because it emits a
+    verdict that reads as though the sweep had run. Before the fix this
+    directory produced {L-02} only; it now produces L-15 from the regex sweep
+    and, where gitleaks is installed, L-17 from `gitleaks dir`.
+
+    The token body must be >= 24 characters: BUILTIN_SECRET_PATTERNS asks for
+    `sk_live_[0-9a-zA-Z]{24,}`, and a 23-character fixture silently matches
+    nothing, which makes the test assert on an empty sweep for the wrong reason.
+    """
+    _plain_dir(
+        tmp_path,
+        {
+            "README.md": "# x\n",
+            # Synthetic fixture assembled at runtime so the source never holds
+            # a literal matching sk_live_[0-9a-zA-Z]{24,}. The body is 30 chars
+            # (>= 24 minimum). L-16 false-positive acceptance under RB-04.
+            "config.py": "KEY = '" + ("sk_live_" + "abcdefghij0123456789xyzabc") + "'\n",
+        },
+    )
+    report = rra.RepoReport(repo="example", local_path=str(tmp_path))
+    rra.check_local(report, {}, rra.secret_patterns({}))
+    ids = {f.fid for f in report.findings}
+    assert "L-15" in ids, "filesystem secret sweep did not run"
+    assert report.facts["secret_hits_head"], "the planted key was not matched"
+
+
+def test_gitleaks_falls_back_to_dir_mode_without_a_repository(tmp_path: Path) -> None:
+    """`gitleaks git` needs an object store; on a plain directory it fails, and
+    that failure would mark every regex hit UNCORROBORATED and send an operator
+    to rotate credentials that do not exist. `dir` mode is not a weaker check
+    here — there is no history yet either, so it is the complete scan."""
+    _plain_dir(tmp_path, {"README.md": "# x\n"})
+    report = rra.RepoReport(repo="example", local_path=str(tmp_path))
+    rra.check_secrets_local(report, tmp_path, rra.secret_patterns({}), is_git_repo=False)
+    if report.facts.get("gitleaks_exit") is not None:  # gitleaks installed
+        assert report.facts["gitleaks_mode"] == "dir"
+
+
+def test_git_dependent_checks_are_not_fabricated_without_a_repository(tmp_path: Path) -> None:
+    """The fix must not over-correct into inventing git findings. Remote
+    identity, cleanliness and the pre-commit hook genuinely cannot be assessed,
+    so they must be absent and the gap recorded as UNVERIFIABLE (D-23)."""
+    _plain_dir(tmp_path, {"README.md": "# x\n"})
+    report = rra.RepoReport(repo="example", local_path=str(tmp_path))
+    rra.check_local(report, {}, rra.secret_patterns({}))
+    ids = {f.fid for f in report.findings}
+    assert not ids & {"L-03", "L-04", "L-05", "L-06a", "L-07", "L-18"}
+    assert any("git state" in u for u in report.unverified)
+
+
+def test_history_sweep_records_vacuous_clean_not_skipped(tmp_path: Path) -> None:
+    """No object store means no history — a genuine vacuous clean, but it must be
+    recorded so the report cannot be read as "history was swept and was clean"."""
+    _plain_dir(tmp_path, {"README.md": "# x\n"})
+    report = rra.RepoReport(repo="example", local_path=str(tmp_path))
+    rra.check_secrets_local(report, tmp_path, rra.secret_patterns({}), is_git_repo=False)
+    assert report.facts["secret_history_scanned"] is False
+    assert report.facts["secret_hits_history"] == []
+
+
+def test_filesystem_sweep_excludes_directories_that_are_never_source(tmp_path: Path) -> None:
+    """A virtualenv holds thousands of files; scanning it would exhaust the
+    budget before reaching real content. Exclusion is about COST only — L-06a
+    still reports any of these that reach the index."""
+    _plain_dir(
+        tmp_path,
+        {"src/app.py": "X = 1\n", ".venv/lib/site.py": "Y = 2\n", ".ruff_cache/CACHEDIR.TAG": "z"},
+    )
+    report = rra.RepoReport(repo="example")
+    targets = rra._scan_targets(report, tmp_path, is_git_repo=False)
+    assert "src/app.py" in targets
+    assert not any(t.startswith(".venv") or t.startswith(".ruff_cache") for t in targets)
+
+
+# ── D-B: declared status checks must be satisfiable ───────────────────────────
+# L-12 only covered "contexts declared, no workflow file at all". A repo can ship
+# three healthy workflows and still declare context names that no job produces,
+# which is what jolarca-consent did: contexts ['ci','security'] declared against
+# jobs actually named 'Lint (ruff)', 'Gitleaks (secret scanning)' and so on —
+# 0 of 2 satisfiable. Enabling protection as declared would block every merge
+# forever. jolarca-security, jolarca-observability and jolarca-runbooks were
+# found to carry the same latent defect once this check existed.
+
+
+def _write_workflow(root: Path, name: str, body: str) -> None:
+    wf = root / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / name).write_text(body, encoding="utf-8")
+
+
+def _declared(*contexts: str) -> dict[str, Any]:
+    return {
+        "branch_protection": {
+            "main": {"required_status_checks": {"strict": True, "contexts": list(contexts)}}
+        }
+    }
+
+
+_CONSENT_CI = """name: CI
+on:
+  pull_request:
+jobs:
+  lint:
+    name: Lint (ruff)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+"""
+
+
+def test_unsatisfiable_declared_context_is_reported(tmp_path: Path) -> None:
+    _write_workflow(tmp_path, "ci.yml", _CONSENT_CI)
+    report = rra.RepoReport(repo="example")
+    rra.check_ci_workflow(report, tmp_path, _declared("ci"))
+    finding = next((f for f in report.findings if f.fid == "L-19"), None)
+    assert finding is not None, "a context no job can produce went undetected"
+    assert finding.severity == "S1"
+    assert "Lint (ruff)" in finding.evidence
+
+
+def test_matching_declared_context_is_not_reported(tmp_path: Path) -> None:
+    """False-positive guard. The flagship jolarca declares nine contexts that all
+    match real job names; a check that fires regardless of content would train
+    the operator to skim past it."""
+    _write_workflow(tmp_path, "ci.yml", _CONSENT_CI)
+    report = rra.RepoReport(repo="example")
+    rra.check_ci_workflow(report, tmp_path, _declared("Lint (ruff)"))
+    assert "L-19" not in {f.fid for f in report.findings}
+
+
+def test_job_key_is_the_context_when_no_display_name(tmp_path: Path) -> None:
+    """GitHub falls back to the job key, so `lint` IS satisfiable here."""
+    _write_workflow(tmp_path, "ci.yml", "on: pull_request\njobs:\n  lint:\n    steps: []\n")
+    report = rra.RepoReport(repo="example")
+    rra.check_ci_workflow(report, tmp_path, _declared("lint"))
+    assert "L-19" not in {f.fid for f in report.findings}
+
+
+def test_yaml_boolean_on_key_is_understood(tmp_path: Path) -> None:
+    """PyYAML implements YAML 1.1, where the bare key `on:` parses as True, not
+    the string "on". Reading only the string spelling makes every workflow look
+    trigger-less and reports the whole fleet as unable to gate a merge."""
+    import yaml
+
+    doc = yaml.safe_load("on:\n  pull_request:\njobs:\n  a:\n    steps: []\n")
+    assert "on" not in doc, "YAML 1.1 behaviour changed — re-check the gate"
+    assert rra.workflow_runs_on_pull_request(doc) is True
+
+
+def test_required_context_that_never_runs_on_a_pr_is_reported(tmp_path: Path) -> None:
+    """jolarca-consent's security.yml triggered on schedule + workflow_dispatch
+    only. A correctly named check that cannot fire on a PR still deadlocks it."""
+    _write_workflow(
+        tmp_path,
+        "security.yml",
+        "name: Security\non:\n  schedule:\n    - cron: '0 7 * * 1'\n"
+        "jobs:\n  gitleaks:\n    name: Gitleaks (secret scanning)\n    steps: []\n",
+    )
+    report = rra.RepoReport(repo="example")
+    rra.check_ci_workflow(report, tmp_path, _declared("Gitleaks (secret scanning)"))
+    ids = {f.fid for f in report.findings}
+    assert "L-19" not in ids, "the name does match, so L-19 would be a false positive"
+    assert "L-20" in ids
+
+
+def test_fabricated_action_sha_is_reported(tmp_path: Path) -> None:
+    """The verbatim jolarca-consent pin. GET /commits/<sha> answers HTTP 422 "No
+    commit found for SHA": it passes review and fails in CI after the merge."""
+    _write_workflow(
+        tmp_path,
+        "security.yml",
+        "on: pull_request\njobs:\n  g:\n    steps:\n"
+        "      - uses: gitleaks/gitleaks-action@4f9a10b3c1d3b4e5e5e5e5e5e5e5e5e5e5e5e5e5\n",
+    )
+    report = rra.RepoReport(repo="example")
+    rra.check_ci_workflow(report, tmp_path, {})
+    assert "L-21a" in {f.fid for f in report.findings}
+
+
+def test_genuine_action_sha_is_not_reported_as_fabricated() -> None:
+    """False-positive guard, using a SHA verified to resolve: actions/checkout
+    3d3c42e5... is tag v7.0.1. The heuristic must not fire on real pins."""
+    real = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    assert rra._ACTION_SHA_RE.match(real)
+    assert not rra._DEGENERATE_SHA_RE.search(real)
+    fake = "4f9a10b3c1d3b4e5e5e5e5e5e5e5e5e5e5e5e5e5"
+    assert rra._DEGENERATE_SHA_RE.search(fake)
+
+
+def test_mutable_tag_pin_is_reported(tmp_path: Path) -> None:
+    """A tag can be force-moved, so a green run yesterday does not describe the
+    code that runs today. policy/compliance-gates.yml SHA-pins every action it
+    names. An abbreviated SHA is not an immutable pin either."""
+    _write_workflow(
+        tmp_path,
+        "ci.yml",
+        "on: pull_request\njobs:\n  a:\n    steps:\n"
+        "      - uses: actions/dependency-review-action@v4\n"
+        "      - uses: gitleaks/gitleaks-action@e0c47f4\n",
+    )
+    report = rra.RepoReport(repo="example")
+    rra.check_ci_workflow(report, tmp_path, {})
+    finding = next(f for f in report.findings if f.fid == "L-21b")
+    assert finding.severity == "S2"
+    assert "dependency-review-action@v4" in finding.evidence
+    assert "gitleaks-action@e0c47f4" in finding.evidence
+
+
+def test_unparsable_workflow_is_unverifiable_not_a_false_positive(tmp_path: Path) -> None:
+    """A malformed workflow must not be read as one with zero jobs, which would
+    make every declared context look unsatisfiable for the wrong reason."""
+    _write_workflow(tmp_path, "ci.yml", "on: [\n  this is not: valid yaml\n")
+    report = rra.RepoReport(repo="example")
+    rra.check_ci_workflow(report, tmp_path, _declared("ci"))
+    assert "L-19" not in {f.fid for f in report.findings}
+    assert any("CI workflow parse" in u for u in report.unverified)
+
+
+# ── D-C: ruleset availability must be probed, not assumed ─────────────────────
+# The old G-12 asserted that protection "cannot be attached before the first
+# push". Verified false on 2026-09-28: GET /rulesets returns HTTP 200 on public
+# jolarca-consent and HTTP 403 on private jolarca-security — same org, same Free
+# plan. Telling an owner a control is impossible when it is merely unimplemented
+# causes risk to be accepted that was never real, and it is never re-tested
+# because the finding reads as closed.
+
+
+def _probe_empty_repo(monkeypatch: Any, status: int) -> rra.RepoReport:
+    monkeypatch.setattr(rra, "gh_api", lambda path: (status, []))
+    report = rra.RepoReport(repo="example")
+    rra.check_protection(report, {"default_branch": "main", "size": 0}, {})
+    return report
+
+
+def test_empty_repo_with_rulesets_available_blocks(monkeypatch: Any) -> None:
+    report = _probe_empty_repo(monkeypatch, 200)
+    finding = next(f for f in report.findings if f.fid == "G-12a")
+    assert finding.severity == "S1", "a protectable, unprotected repo must not be informational"
+    assert report.facts["protection"] == "absent-ruleset-available"
+    report.decide()
+    assert report.verdict == rra.VERDICT_BLOCKED
+
+
+def test_empty_repo_plan_blocked_stays_informational(monkeypatch: Any) -> None:
+    """The 403 case is the old, correct behaviour and must be preserved: a
+    private repo on the Free plan genuinely cannot be protected yet."""
+    report = _probe_empty_repo(monkeypatch, 403)
+    assert {f.fid for f in report.findings} == {"G-12b"}
+    assert next(f for f in report.findings if f.fid == "G-12b").severity == "S3"
+
+
+def test_failed_ruleset_probe_is_unverifiable(monkeypatch: Any) -> None:
+    """D-23: a probe that could not be classified must never read as clean."""
+    report = _probe_empty_repo(monkeypatch, 0)
+    assert report.findings == []
+    assert any("ruleset availability" in u for u in report.unverified)
+    report.decide()
+    assert report.verdict == rra.VERDICT_BLOCKED
+
+
+def test_g12a_remediation_warns_about_the_status_check_deadlock(monkeypatch: Any) -> None:
+    """Requiring a context that has never reported blocks every merge. The
+    remediation must stage the ruleset, or following it creates the outage."""
+    report = _probe_empty_repo(monkeypatch, 200)
+    remediation = next(f for f in report.findings if f.fid == "G-12a").remediation
+    assert "~DEFAULT_BRANCH" in remediation
+    assert "deletion" in remediation and "non_fast_forward" in remediation
+    assert "Stage 2" in remediation, "must not add required_status_checks up front"
+    assert "required_status_checks" not in remediation.split("Stage 2")[0]
+
+
+# An S1 finding that cannot be closed is as harmful as one that is wrong: the
+# operator either learns to ignore the register or leaves a remediated repo
+# reading as broken. GET /rulesets returns SUMMARIES with `conditions: null`
+# (verified on jolarca-consent 2026-09-28), so detecting an existing ruleset
+# requires the per-id detail endpoint.
+
+
+def _routed_gh_api(routes: dict[str, tuple[int, Any]]) -> Any:
+    def _call(path: str) -> tuple[int, Any]:
+        if path in routes:
+            return routes[path]
+        return 0, {"error": f"unrouted path: {path}"}
+
+    return _call
+
+
+_LIST_PATH = f"repos/{rra.ORG}/example/rulesets"
+_STAGE1_RULESET: dict[str, Any] = {
+    "id": 1,
+    "name": "protect-main",
+    "target": "branch",
+    "enforcement": "active",
+    "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+    "rules": [
+        {"type": "deletion"},
+        {"type": "non_fast_forward"},
+        {"type": "required_linear_history"},
+    ],
+}
+
+
+def _probe_with_ruleset(
+    monkeypatch: Any, summary: dict[str, Any], detail: dict[str, Any]
+) -> rra.RepoReport:
+    monkeypatch.setattr(
+        rra,
+        "gh_api",
+        _routed_gh_api(
+            {
+                _LIST_PATH: (200, [summary]),
+                f"{_LIST_PATH}/{summary['id']}": (200, detail),
+            }
+        ),
+    )
+    report = rra.RepoReport(repo="example")
+    rra.check_protection(report, {"default_branch": "main", "size": 0}, {})
+    return report
+
+
+def test_stage1_ruleset_on_empty_repo_is_informational_not_blocking(monkeypatch: Any) -> None:
+    report = _probe_with_ruleset(
+        monkeypatch,
+        {"id": 1, "name": "protect-main", "target": "branch", "enforcement": "active"},
+        _STAGE1_RULESET,
+    )
+    assert {f.fid for f in report.findings} == {"G-12c"}
+    assert next(f for f in report.findings if f.fid == "G-12c").severity == "S3"
+    assert report.facts["protection"] == "ruleset-stage-1-active"
+    assert report.facts["ruleset_stage2_present"] is False
+    report.decide()
+    assert report.verdict == rra.VERDICT_FIXES, "a remediated repo must be closable"
+
+
+def test_stage2_ruleset_counts_as_full_protection(monkeypatch: Any) -> None:
+    detail = dict(_STAGE1_RULESET)
+    detail["rules"] = [
+        *_STAGE1_RULESET["rules"],
+        {"type": "pull_request", "parameters": {"required_approving_review_count": 0}},
+        {
+            "type": "required_status_checks",
+            "parameters": {"strict_required_status_checks_rule": {}},
+        },
+    ]
+    report = _probe_with_ruleset(
+        monkeypatch,
+        {"id": 1, "name": "protect-main", "target": "branch", "enforcement": "active"},
+        detail,
+    )
+    assert report.findings == [], "merge gating is enforced, so nothing is owed"
+    assert report.facts["protection"] == "ruleset-active"
+    assert report.facts["ruleset_stage2_present"] is True
+
+
+def test_ruleset_targeting_another_ref_is_not_protection(monkeypatch: Any) -> None:
+    """A ruleset that exists but covers some other ref protects nothing here.
+    Counting it would repeat the original G-12 error in the opposite direction."""
+    other = dict(_STAGE1_RULESET)
+    other["conditions"] = {"ref_name": {"include": ["refs/heads/release/*"], "exclude": []}}
+    report = _probe_with_ruleset(
+        monkeypatch,
+        {"id": 1, "name": "protect-releases", "target": "branch", "enforcement": "active"},
+        other,
+    )
+    assert {f.fid for f in report.findings} == {"G-12a"}
+    assert report.facts["active_rulesets_on_default_branch"] == []
+
+
+def test_disabled_ruleset_is_not_protection(monkeypatch: Any) -> None:
+    """`enforcement: disabled` is a drafted rule that blocks nothing."""
+    monkeypatch.setattr(
+        rra,
+        "gh_api",
+        _routed_gh_api(
+            {
+                _LIST_PATH: (
+                    200,
+                    [{"id": 1, "name": "draft", "target": "branch", "enforcement": "disabled"}],
+                )
+            }
+        ),
+    )
+    report = rra.RepoReport(repo="example")
+    rra.check_protection(report, {"default_branch": "main", "size": 0}, {})
+    assert {f.fid for f in report.findings} == {"G-12a"}
+
+
+# ── Explicit licence posture (L-13b must be closable) ─────────────────────────
+
+
+def test_declared_licence_posture_with_a_licence_file_is_clean(tmp_path: Path) -> None:
+    """The owner decision is recorded, so a committed proprietary notice is not
+    a finding. Without this, L-13b persists forever on a remediated repo."""
+    (tmp_path / "LICENSE").write_text("All Rights Reserved.\n")
+    declared = {"visibility": "public", "settings": {"license": "proprietary"}}
+    report = rra.RepoReport(repo="jolarca-consent")
+    rra.check_license(report, tmp_path, declared)
+    assert report.findings == []
+    assert report.facts["license_posture"] == "proprietary"
+
+
+def test_declared_posture_without_a_licence_file_is_reported(tmp_path: Path) -> None:
+    """Declaring a posture and shipping no notice is the defect L-13a exists for."""
+    declared = {"visibility": "public", "settings": {"license": "proprietary"}}
+    report = rra.RepoReport(repo="jolarca-consent")
+    rra.check_license(report, tmp_path, declared)
+    assert {f.fid for f in report.findings} == {"L-13a"}
+
+
+def test_consent_licence_posture_is_not_written_into_license_template() -> None:
+    """Invariant guard. repositories.tf passes `license_template` straight to
+    github_repository, and GitHub accepts only its own template keys — so
+    `license_template: proprietary` would fail the apply. The posture must live
+    in `license`, which is inert for both Terraform and LIVE_SETTINGS_MAP."""
+    declared = rra.load_yaml(rra.REPOS_DIR / "jolarca-consent.yml")
+    settings = declared.get("settings") or {}
+    assert settings.get("license") == "proprietary"
+    assert "license_template" not in settings, (
+        "a non-GitHub value in license_template breaks `terraform apply`"
+    )
+    assert "license" not in rra.LIVE_SETTINGS_MAP, (
+        "`license` must stay out of the drift map: it has no live REST counterpart"
+    )

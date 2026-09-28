@@ -3,6 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: help setup validate compliance drift fleet-audit org-audit readiness \
+        first-commit \
         init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
 
@@ -57,7 +58,7 @@ sh-lint: ## shellcheck over every shell script
 yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 	yamllint -c .yamllint .
 
-test: ## Regression tests: plan-safety gate (D-22) + readiness gate
+test: ## Regression tests: plan-safety (D-22) + readiness gate + first-commit gate
 	bash tests/test_check_plan_safety.sh
 	.venv/bin/python -m pytest tests/ -q
 
@@ -82,6 +83,32 @@ readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
 	  $(if $(REPO),--repo $(REPO)) \
 	  $(if $(OUT),--output $(OUT)) \
 	  $(if $(REPORT),--markdown $(REPORT)) >/dev/null
+
+# Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
+# STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target
+# can verify and instruct but cannot commit, push or merge. The operator runs the
+# printed commands. Step A CONSUMES `make readiness` instead of re-implementing
+# it, so the two gates cannot drift apart.
+#   make first-commit REPO=jolarca-payments STEP=A SNAPSHOT=1
+#   make first-commit REPO=jolarca-payments STEP=B MESSAGE="feat: add token vault"
+#   make first-commit REPO=jolarca-payments STEP=all EVIDENCE=/tmp/pay-evidence.md
+#   make first-commit REPO=jolarca-payments STEP=F ATTEST="G. Kazlauskas" STRICT=1
+# Exit 0 every step PASS · 1 findings or tracked exceptions · 2 could not verify.
+first-commit: ## Phase 3 gate: VERIFY→COMMIT→PUSH→REVIEW→MERGE→VERIFY (read-only)
+	@test -n "$(REPO)" || { \
+	  echo "usage: make first-commit REPO=<name> [STEP=A|B|C|D|E|F|all]"; \
+	  echo "       [MESSAGE=\"...\"] [ATTEST=\"...\"] [EVIDENCE=<path>] [STRICT=1]"; \
+	  echo "       [SNAPSHOT=1] [NO_LIVE=1]"; exit 2; }
+	python3 scripts/first_commit_pipeline.py \
+	  --repo $(REPO) \
+	  $(if $(STEP),--step $(STEP)) \
+	  $(if $(MESSAGE),--message "$(MESSAGE)") \
+	  $(if $(ATTEST),--attest "$(ATTEST)") \
+	  $(if $(EVIDENCE),--evidence $(EVIDENCE)) \
+	  $(if $(EXPECTED_SHA),--expected-sha $(EXPECTED_SHA)) \
+	  $(if $(SNAPSHOT),--snapshot) \
+	  $(if $(STRICT),--strict) \
+	  $(if $(NO_LIVE),--no-live) >/dev/null
 
 # ── Terraform ────────────────────────────────────────────────────────────────
 init: ## Initialize Terraform
