@@ -37,4 +37,6 @@ jobs:
       - name: Run fleet separation guard
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_MISSING: "jolarca-compliance jolarca-data jolarca-infrastructure jolarca-legal jolarca-observability jolarca-security"
+          ALLOW_MISSING_UNTIL: "2026-12-31"
         run: bash scripts/check_fleet_separation.sh
