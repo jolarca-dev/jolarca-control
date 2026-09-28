@@ -534,3 +534,21 @@ grep -n -A 32 '^branch_protection:' policy/repo-defaults.yml
 .venv/bin/python scripts/drift_detect.py 2>/tmp/d33.err >/dev/null; echo "drift exit=$? (want 2)"
 grep -c 'protection HTTP 403' /tmp/d33.err   # -> 7 private repos, all "unverifiable"
 ```
+
+## 2026-09-29 — L-16 secret-pattern triage (jolarca-control)
+
+**Finding:** L-16 (S2) — secret-pattern match in git history: AWS access key ID `AKIAQ3EG...B2M` and Stripe live secret key `sk_live_...`.
+
+**Triage decision:** **FALSE POSITIVE — documented test fixtures.**
+
+Both patterns are explicitly documented as test fixtures:
+- `docs/adr/0009-bugs-found-and-fixed.md` — documents the bug found and fixed related to these patterns.
+- `docs/runbooks/first-commit-pipeline.md` — runbook documenting the fixtures.
+- `tests/test_repo_readiness_audit.py` — test fixtures (lines 488, 646, 895, 903, 905).
+- `scripts/repo_readiness_audit.py:192` — the pattern definition itself.
+
+The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fires. Gitleaks reported NO leak (exit 0), confirming these are regex-only matches, not real secrets.
+
+**Action:** No rotation required. Finding L-16 is closed as a documented false positive.
+
+**Triaged by:** Gintaras Kazlauskas, 2026-09-29.
