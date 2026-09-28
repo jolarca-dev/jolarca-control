@@ -760,20 +760,6 @@ def test_every_active_exception_carries_the_fields_the_gate_depends_on() -> None
         )
 
 
-def test_policy_risk_field_is_inconsistently_applied() -> None:
-    """Pins the schema gap named above so it cannot be silently forgotten, and
-    fails the day someone normalises the file — at which point this test should be
-    replaced by a real schema assertion inside the gate."""
-    register = fcp.load_register(rra.load_yaml(rra.POLICY_GATES))
-    with_risk = {k for k, v in register.active.items() if v.get("risk")}
-    without_risk = set(register.active) - with_risk
-    assert with_risk, "expected at least one entry to use the `risk:` key"
-    assert without_risk, (
-        "every active exception now carries `risk:` — normalise this into the gate "
-        "as a hard requirement and delete this test"
-    )
-
-
 def test_long_compensating_control_is_truncated_with_a_pointer() -> None:
     """D-33's compensating_control runs to ~1000 characters. The evidence file is an
     audit record, not a wall of text — truncate, but always leave the authoritative
