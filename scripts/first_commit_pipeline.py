@@ -79,6 +79,7 @@ import argparse
 import json
 import re
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -1145,7 +1146,9 @@ def run_pipeline(
         readiness = rra.audit_repo(repo_name, defined, policy, patterns, org_findings, live)
         readiness.decide()
 
-    snap_path = snapshot_path or Path(f"/tmp/{repo_name}-readiness-snapshot.json")
+    snap_path = (
+        snapshot_path or Path(tempfile.gettempdir()) / f"{repo_name}-readiness-snapshot.json"
+    )
 
     for step_id in steps:
         result = report.step(step_id)
