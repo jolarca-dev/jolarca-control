@@ -1,8 +1,9 @@
 # ADR-0008: SOC 2 Type II Observation Window Decision
 
 **Date:** 2026-09-28
-**Status:** Proposed — requires owner decision
+**Status:** Accepted
 **Deciders:** Gintaras Kazlauskas (organization owner)
+**Decision date:** 2026-09-28
 
 ---
 
@@ -53,14 +54,20 @@ The pre-deployment compliance checklist (B7) flags this:
 
 ## Decision
 
-**[OWNER DECISION REQUIRED]**
+**Option C accepted** (2026-09-28, Gintaras Kazlauskas).
 
-The organization owner must select one of the three options above. The
-selection determines:
-1. Whether "Aligned" claims in governance documents are accurate or must be
-   changed.
-2. Whether the observation period clock starts now or later.
-3. The audit engagement timeline and budget.
+The organization will pursue a SOC 2 Type I report now (controls suitably
+designed as of a point in time), then begin Type II observation after the
+Type I report is issued and the control suite has stabilised.
+
+**Next steps:**
+1. Engage auditor for Type I within 30 days (by 2026-10-28).
+2. Remediate any design deficiencies found in Type I.
+3. Begin Type II observation period after Type I issuance AND after
+   2-3 months of steady-state control operation (estimated 2027-Q1).
+4. All "Aligned" references in governance documents are accurate for
+   Type I (design suitability) but must not be cited as Type II
+   (operating effectiveness) until the observation period completes.
 
 ## Consequences
 

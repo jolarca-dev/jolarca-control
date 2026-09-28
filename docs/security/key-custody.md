@@ -25,6 +25,7 @@ custodians; no single person may hold, use, or rotate it alone. See deviation 3
 | GitHub PAT — TF read-only | CI secret, 1 operator | **repo** secret `TF_GITHUB_TOKEN_READONLY` on `jolarca-control` | 90d | `../runbooks/github-token-rotation.md` |
 | GitHub PAT — TF write | CI environment secret, 1 operator | **environment** secret `TF_GITHUB_TOKEN` on the `production` environment | 90d | same runbook; applies require re-review |
 | Operator GitHub account (`JourneyOfLife`) — org owner | 1 operator *(should be dual)* | GitHub, with account-level 2FA | on personnel change or compromise | account recovery + org owner transfer; this is the **root of trust** for everything below |
+| AGE identity for state backup encryption | 1 operator | operator workstation `~/.config/age/state-backup-key.txt` (mode 600) | on personnel change or compromise | regenerate keypair with `age-keygen`, update `.state-backup-pubkey.txt` and `AGE_SECRET_KEY_CI` repo secret |
 | Local Terraform state (`terraform.tfstate`) | 1 operator host | operator workstation only | n/a — see D-02 | restore from the off-host verified backup taken in `../state-migration-runbook.md` step 0 |
 
 ### Why the operator account is the real crown jewel

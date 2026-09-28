@@ -235,6 +235,7 @@ exceptions:
   active:
     - id: "D-04"
       gate: "required_approving_review_count = 0"
+      risk: "SOC 2 CC8.1 / ISO 27001 A.8.32 — a single operator can merge their own change without review, bypassing the four-eyes principle."
       compensating_control: "required status checks + signed operator commits + enforce_admins + apply.yml plan-refusal gate + prevent_destroy. CODEOWNERS was removed from this list 2026-09-25: it is configured but inert (D-20), so it compensates for nothing."
       approved_by: "Gintaras Kazlauskas"
       approved_on: "2026-09-25"
@@ -250,6 +251,7 @@ exceptions:
       exit_trigger: "second-operator onboarding — raise the count to 1 in the same PR that resolves D-20 and replaces the individual CODEOWNERS entries with real jolarca-dev teams"
     - id: "D-05"
       gate: "require_signed_commits = false at branch-protection level"
+      risk: "SOC 2 CC6.1 / ISO 27001 A.5.10 — unsigned commits cannot be attributed to a specific operator, so the audit trail for who changed what is weaker than intended."
       compensating_control: "commit_signing_policy in policy/repo-defaults.yml; only provider automation is exempt"
       approved_by: "Gintaras Kazlauskas"
       approved_on: "2026-09-25"

@@ -8,7 +8,7 @@
 #   1. Verifies terraform.tfstate exists and is valid JSON.
 #   2. Computes SHA-256 digest of the state file.
 #   3. Encrypts with age (public key from STATE_BACKUP_PUBKEY env var or
-#      the file at .state-backup-pubkey.txt — operator-managed, NOT in git).
+#      the file at .state-backup-pubkey.txt — public key, safe to commit).
 #   4. Writes the encrypted backup to the designated off-host path.
 #   5. Records the backup in the backup log with hash, timestamp, size.
 #
