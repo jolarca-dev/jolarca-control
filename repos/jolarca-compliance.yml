@@ -62,6 +62,10 @@ branch_protection:
       - lint
       - governance
       - security
+      - retention-tests
+      # Gap 2.1 (pre-deployment review 2026-09-28): retention-tests was the
+      # fourth CI job not declared in required-contexts. An undeclared check
+      # is a check nobody is accountable for (SOC 2 CC8.1).
     required_pull_request_reviews:
       # SOLO-ERA DEVIATION — docs/drift-findings.md D-04
       required_approving_review_count: 0
