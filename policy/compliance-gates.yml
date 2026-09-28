@@ -313,6 +313,14 @@ exceptions:
         surviving rules imported on `jolarca` and `.github`, and secret scanning
         plus CodeQL enabled across the private fleet.
       blocked_by: "plan tier — see docs/drift-findings.md D-33"
+    - id: "D-18"
+      gate: "two_factor_requirement_enabled = false at org level"
+      risk: "PCI-DSS 8.3.1 / SOC 2 CC6.1 / ISO 27001 A.5.17 — org-wide 2FA is not enforced, so a credential-stuffed account could access the org."
+      compensating_control: "sole operator account (JourneyOfLife) has 2FA enabled at the account level. No other org members exist (verified: solo org). No TF_GITHUB_TOKEN secret has been created yet, so the blast radius is limited to the GitHub account itself."
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-28"
+      expires: "2026-12-27"
+      exit_trigger: "project launch — enable org-wide 2FA before the first external contributor or production secret is added"
 
   # Findings that are NOT accepted exceptions. Listed here so this file cannot
   # be read as a clean bill of health: an exception register that only records
@@ -328,6 +336,12 @@ exceptions:
     - id: "D-18"
       issue: "Org-wide two-factor authentication is not enforced (two_factor_requirement_enabled: false)"
       owner_decision_required: "enable by hand (not provider-manageable) before the TF_GITHUB_TOKEN secret is created"
+      decision_recorded: >-
+        2026-09-28 — the owner deferred 2FA enforcement until project launch.
+        Account-level 2FA is active on the sole operator account (JourneyOfLife).
+        A dated acceptance is recorded in exceptions.active under D-18, approved_by
+        Gintaras Kazlauskas, expires 2026-12-27. This row is RETAINED in
+        open_blocking until org-wide 2FA is enabled or the project launches.
     - id: "D-20"
       issue: "Fleet CODEOWNERS reference mission-org and nonexistent teams, so require_code_owner_reviews is inert; also breaches ADR-0004 R4"
       owner_decision_required: "rewrite all six .github/CODEOWNERS to jolarca-dev principals; then either create the teams or set require_code_owner_reviews = false"
