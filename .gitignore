@@ -45,9 +45,11 @@ Thumbs.db
 
 # Secrets and credentials — never commit
 *.pem
+*.p12
 *.key
 secrets.json
 credentials.json
+.env.*
 
 # Terraform
 .terraform/
