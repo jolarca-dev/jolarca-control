@@ -25,6 +25,7 @@ settings:
   is_template: false
   auto_init: false
   web_commit_signoff_required: true
+  license: proprietary
 branch_protection:
   main:
     pattern: main
