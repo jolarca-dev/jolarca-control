@@ -68,8 +68,8 @@ resource "github_branch_protection" "main" {
   # ── Enforcement ───────────────────────────────────────────────────────────
   enforce_admins         = true
   require_signed_commits = var.enforce_signed_commits
-  # required_linear_history and require_conversation_resolution disabled:
-  # require GitHub Pro for private repos on free plan
+  # required_linear_history and require_conversation_resolution: enabled for
+  # public repos (Free plan). Private repos need GitHub Pro (D-33).
   # Works on Free for PUBLIC repos; private repos need Pro (D-33).
   required_linear_history = true
   # Works on Free for PUBLIC repos; private repos need Pro (D-33).
