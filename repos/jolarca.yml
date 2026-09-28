@@ -31,7 +31,7 @@ topics:
 - typescript
 - vat-oss
 settings:
-  has_issues: false
+  has_issues: true
   has_wiki: false
   has_projects: false
   delete_branch_on_merge: true
@@ -66,7 +66,15 @@ branch_protection:
       # SOLO-ERA DEVIATION — docs/drift-findings.md D-04
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      require_code_owner_reviews: true
+      # SOLO-ERA DEVIATION — docs/drift-findings.md D-20, pre-deployment audit B3.
+      # require_code_owner_reviews is OFF: with * @JourneyOfLife CODEOWNERS and a
+      # single operator, GitHub cannot satisfy the requirement (PR author cannot
+      # approve their own PR). D-20 records this as inert (not a lockout) because
+      # GitHub doesn't enforce it when no code owner can review. The pre-deployment
+      # audit recommends the "safe four" only (strict, dismiss_stale, linear_history,
+      # conversation_resolution) plus a dated deviation for this flag.
+      # Re-enable when teams are created and second operator onboards.
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true

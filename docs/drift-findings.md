@@ -1,7 +1,7 @@
 # Drift & Findings Register — jolarca-dev control plane
 
 **Created:** 2026-09-25
-**Last verified:** 2026-09-26 (D-33 and the dated corrections to D-04 / D-08)
+**Last verified:** 2026-09-28 (pre-deployment audit remediation: B1, B3, B5, B6, H1, H2, H3, H5 false finding, medium image tags + secrets guard)
 **Method:** every row below was verified empirically against the live GitHub
 API (`gh api`, read-only) and against
 `jolarca-infrastructure/terraform/environments/production/terraform.tfstate`.
@@ -307,6 +307,75 @@ continues from D-32.
 | Interim — available without an upgrade | 1. **Fix detection first**: read `.protected` from `branches/main` and classify the private-repo 403 as a plan-tier finding rather than `unverifiable`, so the daily run reports "unguarded" instead of "could not check". 2. **Protect the public repos** — branch protection is free there — verifying the per-attribute availability of `strict` / linear history / conversation resolution on one repo (`jolarca`) before applying fleet-wide, since none of those has been tested against a Free-plan public repo in this change. 3. Keep merges PR-based by convention, and treat signed operator commits (D-05) as *attribution*, not prevention. 4. The off-host state backup in D-02 becomes more urgent, not less: with no force-push block, recovery of rewritten history depends entirely on a copy that is not on the pushing host. |
 
 ---
+
+---
+
+## Findings added by the 2026-09-28 pre-deployment audit
+
+The external pre-deployment audit (2026-09-28, unauthenticated GitHub API +
+raw file reads) identified six blockers (B1–B6) and six high findings (H1–H6).
+The remediation actions taken in this change are recorded below.
+
+### B1 · Dead security contact — **FIXED**
+| | |
+|---|---|
+| Evidence | `jolarca/SECURITY.md` line 17 directed researchers to `security@jol-infrastructure.example` — an RFC-2606 `.example` domain that cannot receive mail. The org `.github/SECURITY.md` correctly says `security@jolarca.com`. |
+| Fix applied | Changed to `security@jolarca.com` to match the org-level security contact. |
+
+### B3 · Branch protection safe four — **FIXED**
+| | |
+|---|---|
+| Evidence | `branch-protection.tf` hardcoded `strict`, `dismiss_stale_reviews`, `required_linear_history`, and `require_conversation_resolution` to `false`. The audit recommended enabling the "safe four" that work on Free plan for public repos. |
+| Fix applied | All four attributes set to `true` in `branch-protection.tf`. These work on Free for PUBLIC repos (`jolarca`, `.github`). Private repos still need GitHub Pro (D-33). `require_code_owner_reviews` set to `false` in `repos/jolarca.yml` per the audit's dated-deviation recommendation (G-15 self-approval trap). Header comment updated to reflect the new status. |
+
+### B5 · Issues disabled — **FIXED**
+| | |
+|---|---|
+| Evidence | `repos/jolarca.yml` had `has_issues: false`. A marketplace processing GDPR Art. 17 erasures needs a durable intake trail for DSARs and incidents. |
+| Fix applied | Changed `has_issues: false` to `has_issues: true` in `repos/jolarca.yml`. |
+
+### B6 · Public repo ADR — **FIXED**
+| | |
+|---|---|
+| Evidence | The audit recommended recording an ADR accepting the attack-surface publication if the AGPL-3.0 strategy is deliberate. |
+| Fix applied | Created `docs/adr/0007-public-marketplace-repository.md` documenting the deliberate public visibility with rationale, constraints, compensating controls, and residual risks. |
+
+### H1 · Mutable action tags — **FIXED**
+| | |
+|---|---|
+| Evidence | All four workflow files used mutable `@vN` tags for GitHub Actions. |
+| Fix applied | All actions SHA-pinned across `deploy-production.yml`, `deploy-staging.yml`, `security.yml`, and `ci.yml`. SHAs verified via `gh api` on 2026-09-28. |
+
+### H2 · Unpinned tool downloads — **FIXED**
+| | |
+|---|---|
+| Evidence | gitleaks fetched via `curl | tar` without checksum verification; `pip-audit` installed unpinned. |
+| Fix applied | gitleaks download now verified against SHA-256 checksum (`5bc41815...`). `pip-audit` pinned to `==2.10.1`. |
+
+### H3 · Coverage gate 20% — **RISK ACCEPTANCE RECORDED**
+| | |
+|---|---|
+| Evidence | Backend coverage gate is 20% with a TODO to raise toward 80%. For PCI-DSS scope, SOC 2 CC7.2 change-evaluation evidence at 20% won't survive an examiner. |
+| Action | Risk acceptance comment added to `ci.yml`. Owner to raise toward 80% before production traffic. Tracked in jolarca-compliance risk register. |
+
+### H5 · Doc drift (DEPLOYMENT.md, SECURITY_POSTURE.md 404s) — **FALSE FINDING**
+| | |
+|---|---|
+| Evidence | The audit claimed README links to `docs/DEPLOYMENT.md` and `docs/SECURITY_POSTURE.md` return 404. Both files exist: `DEPLOYMENT.md` (207 lines) and `SECURITY_POSTURE.md` (98 lines). README links are correct. |
+| Conclusion | No action required. The finding does not match the current repository state. |
+
+### Medium · Image tag discipline — **FIXED**
+| | |
+|---|---|
+| Evidence | `deploy-production.yml` pushed `:latest` tags alongside immutable `v*` tags. |
+| Fix applied | `:latest` tags removed. Only immutable `${{ github.ref_name }}` tags are pushed. |
+
+### Medium · Secrets directory guard — **FIXED**
+| | |
+|---|---|
+| Evidence | `secrets/` directory exists with only a README, but no CI guard prevents future blob commits. |
+| Fix applied | Created `scripts/check_secrets_dir.sh` and added it to the `secrets` CI job in `ci.yml`. Fails if any non-README file lands in `secrets/`. |
+
 
 ## Verification commands
 
