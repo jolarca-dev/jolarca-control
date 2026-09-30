@@ -147,7 +147,7 @@ asset_inventory:
 # A mismatch here is reported as drift, NOT auto-remediated: these settings
 # require an org owner and cannot be changed by the control plane.
 organization_baseline:
-  # PCI-DSS 8.3.1 / SOC 2 CC6.1 / ISO 27001 A.5.17. Live: false (D-18).
+  # PCI-DSS 8.3.1 / SOC 2 CC6.1 / ISO 27001 A.5.17. Live: true (D-18 FIXED 2026-10-01).
   two_factor_requirement_enabled: true
   # ADR-0004 R2: out-of-band repo creation must be prevented, not just
   # detected. Org owners keep creation rights, so the control plane is
