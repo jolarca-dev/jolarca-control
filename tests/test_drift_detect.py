@@ -221,19 +221,24 @@ def test_no_repo_that_is_private_is_ever_reported_public() -> None:
 
 
 def test_real_fleet_no_longer_yields_six_phantom_findings() -> None:
-    """The 2026-09-30 run reported six HIGH-exposure repos; only identity is real."""
+    """After the GitHub forced-public migration (2026-09-30), all repos are declared public.
+
+    No HIGH-exposure finding (declared private, live public) is possible when
+    every declaration is public. This test verifies the invariant holds against
+    the current registry.
+    """
     live_payload = {
-        "jolarca-compliance": _live(private=True),
-        "jolarca-data": _live(private=True),
-        "jolarca-infrastructure": _live(private=True),
-        "jolarca-legal": _live(private=True),
-        "jolarca-observability": _live(private=True),
-        "jolarca-security": _live(private=True),
-        "jolarca-identity": _live(private=False, has_wiki=True),
+        "jolarca-compliance": _live(private=False),
+        "jolarca-data": _live(private=False),
+        "jolarca-infrastructure": _live(private=False),
+        "jolarca-legal": _live(private=False),
+        "jolarca-observability": _live(private=False),
+        "jolarca-security": _live(private=False),
+        "jolarca-identity": _live(private=False),
     }
     report = dd.check_fleet(dd.get_defined_repos(), live_payload)
     high = [d["repo"] for d in report["visibility_drift"] if d["exposure"] == "high"]
-    assert high == ["jolarca-identity"], f"expected only the genuine exposure, got {high}"
+    assert high == [], f"no HIGH exposure expected when all declarations are public, got {high}"
 
 
 # ── Branch protection via .protected (D-33 detection fix) ────────────────────

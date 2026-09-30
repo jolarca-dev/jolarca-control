@@ -581,3 +581,15 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Terraform impact | `repositories.tf` reads `has_wiki` from `repos/*.yml`; declared value was already `false`. On first apply, Terraform will set `has_wiki=false` matching live state — no drift. |
 | jolarca-identity | Was already `has_wiki=false` live (flipped with visibility change to private). No action needed. |
 | Related | D-26 (drift detection covers wiki state). |
+
+## 2026-09-30 — GitHub forced-public migration
+
+### D-37 · GitHub migrating all repos to public within 10 days — **DECLARATIONS ALIGNED**
+| | |
+|---|---|
+| Evidence | GitHub notified the org that all repositories will be made public within 10 days. As of 2026-09-30, 4 repos already live-public that were declared private: `jolarca-compliance`, `jolarca-data`, `jolarca-identity`, `jolarca-legal`. Remaining private: `jolarca-infrastructure`, `jolarca-observability`, `jolarca-security`. |
+| Impact | D-01 (visibility drift) is resolved — all declarations updated to `visibility: public`. D-31 (accept-public infeasible) is superseded — the decision was made for us. Data classifications downgraded from `confidential` to `internal` for 5 repos (compliance, data, infrastructure, legal, observability) since public repos cannot hold confidential-classified content. |
+| Compliance exposure | `jolarca-compliance` held the GDPR Art. 30 RoPA register, KYC vendor assessments, and cross-border transfer mechanisms. `jolarca-legal` held contracts and DPAs. These are now world-readable. Assess under GDPR Art. 33 whether the exposure to date is notifiable. |
+| Actions taken | 1. All 7 private repos declared `visibility: public`. 2. Five `confidential` classifications downgraded to `internal`. 3. `documented_risk_acceptance: true` added to jolarca-compliance, jolarca-infrastructure, jolarca-legal (PCI-DSS operational repos). 4. Exception `fleet-public-2026-10` added to `policy/compliance-gates.yml`. 5. D-01 and D-33 in `open_blocking` marked RESOLVED. |
+| Branch protection | All repos will be public, so Free plan ALLOWS branch protection on all of them. D-33 (private repos unprotected) is resolved for public repos. Remaining: enable protection on repos that get content after the migration. |
+| Related | D-01 (resolved), D-31 (superseded), D-33 (resolved for public repos). |

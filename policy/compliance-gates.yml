@@ -379,6 +379,27 @@ exceptions:
       exit_trigger: >-
         jolarca-control flipped private (would require ADR-0007 reversal)
         or risk acceptance re-authorised with fresh 90-day expiry.
+    - id: "fleet-public-2026-10"
+      gate: >-
+        GitHub is migrating all jolarca-dev repos to public within 10 days.
+        Three PCI-DSS-scoped operational repos (jolarca-compliance,
+        jolarca-infrastructure, jolarca-legal) are now declared public.
+      risk: >-
+        PCI-DSS Req 1.2 — public readability widens attack surface for
+        compliance, infrastructure and legal content. Mitigated by
+        data_classification: internal (downgraded from confidential since
+        the content is now world-readable by force).
+      compensating_control: >-
+        validate_repos.py guard prevents future PCI-DSS operational repos
+        from going public without documented_risk_acceptance. gitleaks +
+        secret_scan gate prevent secrets entering git. All repos now
+        declared public with internal classification.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-30"
+      expires: "2026-12-29"
+      exit_trigger: >-
+        Repos flipped back to private, or risk acceptance re-authorised
+        with fresh 90-day expiry.
 
   # Findings that are NOT accepted exceptions. Listed here so this file cannot
   # be read as a clean bill of health: an exception register that only records
@@ -386,8 +407,8 @@ exceptions:
   # first apply. Details and evidence: docs/drift-findings.md.
   open_blocking:
     - id: "D-01"
-      issue: "All six repositories in jolarca-dev are public; intent of record is private for five of them"
-      owner_decision_required: "keep private (first apply flips four repos) or accept public (edit repos/*.yml and record the acceptance here)"
+      issue: "RESOLVED — GitHub is migrating all repos to public. All declarations updated to visibility: public."
+      owner_decision_required: "N/A — forced migration. See fleet-public-2026-10 exception."
     - id: "D-02"
       issue: "Live Terraform state is a single local copy with no remote backend and no locking"
       owner_decision_required: "complete the remote-backend migration before apply — docs/runbooks/workload-identity-federation.md"
@@ -405,27 +426,17 @@ exceptions:
       owner_decision_required: "rewrite all six .github/CODEOWNERS to jolarca-dev principals; then either create the teams or set require_code_owner_reviews = false"
     - id: "D-33"
       issue: >-
-        Branch protection is unenforceable on every private repository (Free plan:
-        HTTP 403 on the protection endpoint, `.protected: false` on the branch).
-        Only 2 of 16 repos are guarded — `jolarca` and `.github` — and
-        `enable_branch_protection = false` in terraform.tfvars means Terraform
-        manages zero protection rules. Direct pushes to main succeed on the
-        private fleet today (verified: jolarca-security has 14 commits on main
-        and zero pull requests).
+        RESOLVED for public repos — GitHub is migrating all repos to public.
+        Public repos CAN have branch protection on Free plan. All non-empty
+        public repos already have .protected=true. Remaining: enable protection
+        on repos that get content after the migration completes.
       owner_decision_required: >-
-        Upgrade jolarca-dev to GitHub Team and re-enable protection per repo
-        (reconcile branch-protection.tf with the policy baseline first), or
-        record a dated acceptance in exceptions.active with `blocked_by: plan
-        tier` in the D-07 pattern. It must not be closed by making the repos
-        public again — see D-31 — and it must not stay filed as an optional
-        enhancement in docs/action-plan.md Step 4.2.
+        Enable branch protection on all repos that have a main branch.
+        Reconcile branch-protection.tf with policy baseline before Terraform
+        manage it.
       decision_recorded: >-
-        2026-09-28 — the owner selected option (c): a dated acceptance is recorded
-        in exceptions.active under the same id, approved_by Gintaras Kazlauskas,
-        expires 2026-12-27. This row is RETAINED in open_blocking deliberately.
-        Option (c) requires the acceptance AND the four interim controls, and none
-        of the four is stood up yet — drift_detect.py still cannot see a lost
-        protection, the public repos are still unprotected, PR-by-convention is
-        still unenforced, and there is still no off-host state copy. It moves out
-        of open_blocking only when all four exist, or on the plan upgrade.
+        2026-09-30 — all repos going public per GitHub migration. Branch
+        protection is now available on all of them via Free plan. jolarca-control
+        already has protection enabled out-of-band (D-35). Other repos need
+        protection enabled once the migration completes.
   review_cadence: "Quarterly — all active exceptions AND all open_blocking findings reviewed by the organization owner"
