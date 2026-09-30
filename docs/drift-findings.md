@@ -26,13 +26,14 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 | Impact | The sole record of what Terraform believes it owns for six PCI-DSS-scoped repositories exists as one file on one machine. Host loss = permanent inability to reason about ownership; the only recovery path is `terraform import` of every resource by hand. |
 | Required before any apply | Copy the state off-host **and** verify the copy, then complete the remote-backend migration (`docs/runbooks/workload-identity-federation.md`). Runbook step 0. |
 
-### D-13 · Dual-ownership window between the two roots
+### D-13 · Dual-ownership window between the two roots — **FIXED**
 | | |
 |---|---|
 | Evidence | `module.github_org.*` is live in `jolarca-infrastructure` production state. `jolarca-control/{repositories,branch-protection,health-repo}.tf` now declares the same real resources. |
 | Impact | Two Terraform roots claiming the same GitHub objects. An apply from either side can undo the other; a `destroy` from the old root deletes real repositories. |
 | Control in place | `lifecycle { prevent_destroy = true }` on every `github_repository`; `apply.yml` refuses plans containing destroy/replace; `vars.STATE_MIGRATION_COMPLETE` gate blocks apply entirely until the runbook completes. |
-| Required | Execute `docs/state-migration-runbook.md` — the old root's GitHub section must be retired in the **same** change window that this one takes ownership. |
+| Fix applied | **2026-10-01:** All 12 GitHub resources removed from legacy state via `terraform state rm` in `/opt/jolarca/repos/jolarca-infrastructure/terraform/environments/production/`. Removed: 1 `github_branch_protection`, 6 `github_repository` (5 repos + dot_github), 5 `github_repository_vulnerability_alerts`. Verified: legacy `terraform state list` returns empty (zero resources). Pre-cleanup backup saved as `terraform.tfstate.pre-d13-cleanup.bak`. New root (jolarca-control) unaffected: 35 resources, serial 151. |
+| Resolved | Dual ownership eliminated. The new root is now the sole Terraform authority for all fleet GitHub resources. |
 
 ---
 
