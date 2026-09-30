@@ -30,7 +30,7 @@ Setup and gates (all offline unless marked live):
 | Command | Purpose |
 |---|---|
 | `make setup` | Create `.venv`, install pinned deps |
-| `make lint` | Everything CI runs: fmt-check, tf-validate, validate, ruff, mypy, shellcheck, yamllint, tests |
+| `make lint` | fmt-check, tf-validate, validate, ruff, mypy, shellcheck, yamllint, tests. **Not** all of CI — see below |
 | `make test` | Plan-safety fixtures + `pytest` |
 | `make validate` | Validate `repos/*.yml` against policy |
 | `make readiness REPO=<name>` | Pre-first-commit verdict: READY / READY-WITH-FIXES / BLOCKED |
@@ -41,6 +41,12 @@ Setup and gates (all offline unless marked live):
 
 Run Python through the venv: `.venv/bin/python -m pytest tests/ -q`. The system
 `python3 -m pytest` can exit 1 with no output, which reads as a mystery failure.
+
+**`make lint` is not the whole CI surface.** `compliance-scan.yml` additionally
+runs `scripts/compliance_check.py` (`make compliance`) and
+`scripts/repo_readiness_audit.py --no-live`, and neither is in `lint`. Run both
+before pushing, or CI will surface failures the local gates never checked.
+As of 2026-09-30 both fail on `main` for pre-existing reasons — see §8.
 
 `make apply` is **REFUSED by design** (exit 1) and `make plan` prompts before an
 offline `-refresh=false` plan. Do not "fix" either. Both are gated on
@@ -142,6 +148,14 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`
   appears only as printed advice in `scripts/repo_readiness_audit.py`.
+- **Two required status contexts are red on `main` and cannot currently pass.**
+  `Policy Compliance Check` fails because `repos/jolarca-hermes-agents.yml`
+  omits `pci-dss`, which `policy/compliance-gates.yml` requires of every repo.
+  `Repository Secret Pattern Scan` fails because it invokes the readiness gate
+  with `--no-live`, so two inputs are unverifiable and the gate correctly exits
+  2 — a required context that is structurally incapable of going green as
+  invoked. Both predate the evidence-integrity fix; neither blocks a merge,
+  because nothing server-side enforces them.
 
 ## 9. Session discipline
 
