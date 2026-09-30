@@ -61,12 +61,12 @@ branch_protection:
       # Raise to 1 when the second operator onboards.
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      # TRUE on all five jolarca* repos, but INERT — see D-20. The fleet's
-      # .github/CODEOWNERS reference teams that do not exist in jolarca-dev
-      # (zero teams) and five of six name mission-org teams, breaching ADR-0004
-      # R4. Verified: PR #26 merged with zero reviews. Declared as live reality
-      # so migration is a no-op; NOT an operating control.
-      require_code_owner_reviews: true
+      # DEVIATION D-20 — require_code_owner_reviews is INERT fleet-wide.
+      # jolarca-dev has zero teams (D-10); no CODEOWNERS entry resolves to a
+      # team that can review a PR. Verified: PRs merge with zero reviews
+      # despite the setting being on. Set false to match live reality.
+      # Raise to true when teams are created (D-10 promotion trigger).
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true
@@ -179,7 +179,8 @@ organization_baseline:
     enforce_admins: true
     allow_force_pushes: false
     allow_deletions: false
-    require_code_owner_reviews: true
+    # D-20: inert without teams in jolarca-dev. See branch_protection.main above.
+    require_code_owner_reviews: false
     dismiss_stale_reviews: true
     minimum_required_contexts: 1
 
