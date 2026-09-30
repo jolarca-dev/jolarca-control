@@ -30,6 +30,7 @@ docs/runbooks/deployment-rehearsal.md,ce07bd6ef407b9a5850150f61fd35cf018f89d3d11
 docs/runbooks/first-commit-pipeline.md,6be2c1a9d7d5b55d649ee34a4256945c6643a82ed06923194e63fbede2b780b4,2026-09-28
 docs/runbooks/github-token-rotation.md,8ae25edeba271a2e67c2ee64f600d341dec3150a6f4414233083d2ee99b7e77f,2026-09-28
 docs/runbooks/workload-identity-federation.md,2953cc6ce183d28a7bfed099e1e515e45fd7de603b9d0e18ad0927225579510e,2026-09-28
-docs/security/dpia-marketplace-launch.md,b6ea91111e616587aa0a0b0c8347a2b48853e9441f75dfe8cb83406e75d0af65,2026-09-28
+docs/security/dpia-marketplace-launch.md,125af31733cedd11b75752d91befff024bd8e828d6233f03e1c85533626f4470,2026-09-28
 docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9ae8c43694991343c80,2026-09-28
 docs/security/key-custody.md,4ad42afab2c03472aafdd853cc2886254c1dea2b015cad15e8137e7a62f5db09,2026-09-28
+docs/security/soc2-type-i-readiness.md,5d8ba2f3f7bf4bf601f4633d0ed1ade0731718219d02ab02c72a49b2552061c8,2026-09-30

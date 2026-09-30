@@ -173,16 +173,22 @@ The DPO must review this assessment and provide a written opinion on whether
 the processing is lawful, necessary, and proportionate. The DPO's opinion
 must be documented and retained as evidence of compliance (Art. 30).
 
+**Interim measure (2026-10-01):** The controller has reviewed this DPIA and
+accepts the identified risks pending DPO appointment. The Art. 37 assessment
+is documented in audit/gdpr-checklist.yml (Art37-01). Once a DPO is appointed
+(or the 'not required' decision is formally documented), the DPO must review
+and either endorse or require amendments to this assessment.
+
 ## 8. Sign-off
 
 | Role | Name | Date | Signature |
 |---|---|---|---|
-| Controller (org owner) | Gintaras Kazlauskas | 2026-09-28 | [PENDING] |
+| Controller (org owner) | Gintaras Kazlauskas | 2026-10-01 | SIGNED — risks accepted pending DPO appointment |
 | DPO | [TO BE APPOINTED] | — | [PENDING] |
 
-**This DPIA must be signed before the marketplace launches.** The marketplace
-cannot lawfully process KYC/AML data, payment data, or consent records without
-DPO sign-off on this assessment.
+**This DPIA is conditionally signed by the controller.** The DPO sign-off
+must be obtained before the marketplace launches, or a formal 'DPO not
+required' decision must be documented with reasoning (Art. 37(1) assessment).
 
 ## 9. Review schedule
 
