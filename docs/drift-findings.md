@@ -19,12 +19,13 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 
 ## S0 — stop-work
 
-### D-02 · Live Terraform state is single-copy with no remote backend
+### D-02 · Live Terraform state is single-copy with no remote backend — **PARTIALLY FIXED**
 | | |
 |---|---|
-| Evidence | `jolarca-infrastructure/.gitignore` lines 7–8 exclude `*.tfstate` / `*.tfstate.*`; `git ls-files \| grep tfstate` returns nothing. `terraform/environments/production/main.tf` has **no backend block** (ADR-0003 migration never completed; `vars.TF_REMOTE_STATE` is not `true`). On-disk: `terraform.tfstate` (24 520 B, Aug 31 23:15) + `terraform.tfstate.backup` — both on this host only. |
-| Impact | The sole record of what Terraform believes it owns for six PCI-DSS-scoped repositories exists as one file on one machine. Host loss = permanent inability to reason about ownership; the only recovery path is `terraform import` of every resource by hand. |
-| Required before any apply | Copy the state off-host **and** verify the copy, then complete the remote-backend migration (`docs/runbooks/workload-identity-federation.md`). Runbook step 0. |
+| Evidence | `main.tf` now has `cloud {}` block (HCP Terraform, ADR-0006). Workflows (`apply.yml`, `plan.yml`) updated with `cli_config_credentials_token`. State migration (`terraform init -migrate-state`) pending HCP Terraform account creation. |
+| Impact | State file still local until migration completes. Host loss = permanent inability to reason about ownership. |
+| Fix in progress | Code changes committed (cloud block + workflow auth). **Blocked on manual step:** owner must sign up at https://portal.terraform.io/, create org `jolarca-dev`, workspace `jolarca-control`, generate API token, then run `terraform init -migrate-state`. |
+| Interim control | AGE-encrypted state backup via `scripts/state_backup.sh` (pubkey at `.state-backup-pubkey.txt`, identity at `~/.config/age/state-backup-key.txt`). |
 
 ### D-13 · Dual-ownership window between the two roots — **FIXED**
 | | |
