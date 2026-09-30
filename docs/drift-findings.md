@@ -601,3 +601,12 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Impact | drift_detect reported `weakened: jolarca — stale reviews not dismissed`. Now aligned with policy. |
 | Terraform impact | `branch-protection.tf` declares `dismiss_stale_reviews = true` for jolarca. On first apply, Terraform will match live state — no drift. |
 | Related | D-08 (out-of-band protection history), D-33 (branch protection on public repos). |
+
+### D-39 · Remaining private repos flipped to public + 6 repos protected — **FIXED**
+| | |
+|---|---|
+| Evidence | 2026-10-01: (1) `jolarca-infrastructure`, `jolarca-observability`, `jolarca-security` flipped to public via `gh repo edit --visibility public --accept-visibility-change-consequences`. Verified live `visibility=public`. (2) Branch protection enabled on 6 repos (`jolarca-compliance`, `jolarca-data`, `jolarca-identity`, `jolarca-infrastructure`, `jolarca-legal`, `jolarca-security`) via `PUT /branches/main/protection`. Verified `.protected=true` on all 6. (3) Wiki disabled on `jolarca-identity` and `jolarca-observability` via PATCH. Verified `has_wiki=false`. |
+| Impact | Completes the D-37 forced-public migration: all repos now declared==live for visibility. All non-empty repos now have branch protection. Drift detect exits 0 (no drift) for the first time. |
+| Policy update | `branch_protection_baseline_exempt` expanded to include the 6 repos with repo-specific CI contexts (not the compliance-scan triplet). Protection is enforced; only the minimum-contexts comparison is skipped. |
+| Protection config | Minimal: `enforce_admins=true`, `block_force_pushes=true`, `block_deletions=true`, `required_linear_history=true`, `required_conversation_resolution=true`, `restrictions={users:[],teams:[]}`. No required status checks (repos use their own CI). |
+| Related | D-34 (identity flip), D-35 (control protection), D-36 (wiki drift), D-37 (forced migration). |
