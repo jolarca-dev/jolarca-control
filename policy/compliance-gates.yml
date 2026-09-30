@@ -334,6 +334,51 @@ exceptions:
       approved_on: "2026-09-28"
       expires: "2026-12-27"
       exit_trigger: "project launch — enable org-wide 2FA before the first external contributor or production secret is added"
+    - id: "payments-public"
+      gate: >-
+        PCI-DSS-scoped repo (jolarca-payments) declared public. The
+        validate_repos.py guard fires only when launch_status is `operational`;
+        payments is currently `planned`. This acceptance pre-positions the
+        override so the transition to operational does not silently block.
+      risk: >-
+        PCI-DSS Req 1.2 — public readability of payment processing architecture
+        widens the attack surface. Mitigated by data_classification: internal
+        (no regulated data in the repo itself; payment secrets and cardholder
+        data live in runtime, not in git).
+      compensating_control: >-
+        data_classification: internal; payment secrets never committed to git
+        (gitleaks + secret_scan gate); the repo holds integration code and
+        PCI-DSS documentation, not cardholder data. validate_repos.py guard
+        prevents any FUTURE PCI-DSS operational repo from going public without
+        the same documented_risk_acceptance pattern.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-30"
+      expires: "2026-12-29"
+      exit_trigger: >-
+        jolarca-payments promoted to operational launch_status AND either (a)
+        flipped private, or (b) risk acceptance re-authorised with fresh
+        90-day expiry. Any new PCI-DSS operational public repo requires its
+        own entry.
+    - id: "control-plane-public"
+      gate: >-
+        PCI-DSS-scoped operational repo (jolarca-control) declared public.
+        The governance control plane is deliberately public per ADR-0007 so
+        the IaC, policy baselines and audit trail are externally verifiable.
+      risk: >-
+        PCI-DSS Req 1.2 — public readability of the control plane exposes
+        branch-protection contexts, repo inventory and policy baselines.
+        Mitigated by data_classification: internal; no regulated data, secrets
+        or cardholder data lives in this repo.
+      compensating_control: >-
+        ADR-0007 documents the deliberate public visibility. gitleaks +
+        secret_scan gate prevent secrets entering git. The control plane
+        holds Terraform definitions and YAML declarations, not payment data.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-30"
+      expires: "2026-12-29"
+      exit_trigger: >-
+        jolarca-control flipped private (would require ADR-0007 reversal)
+        or risk acceptance re-authorised with fresh 90-day expiry.
 
   # Findings that are NOT accepted exceptions. Listed here so this file cannot
   # be read as a clean bill of health: an exception register that only records

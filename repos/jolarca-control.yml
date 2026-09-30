@@ -10,6 +10,14 @@
 name: jolarca-control
 description: "GitHub org as code — fleet control plane for the jolarca-dev organization. Terraform IaC, repo allow-list, policy baselines, compliance gates, and audit checklists."
 
+# PCI-DSS public visibility risk acceptance (ADR-0007):
+# jolarca-control is the governance control plane for the fleet. It is
+# deliberately public (docs/adr/0007-public-marketplace-repository.md) so the
+# IaC, policy baselines and audit trail are externally verifiable. No regulated
+# data lives in this repo (data_classification: internal); it holds Terraform
+# definitions, YAML declarations and markdown documentation.
+# Full risk acceptance: policy/compliance-gates.yml exceptions.active.
+documented_risk_acceptance: true
 visibility: public
 tier: governance
 # tier-1 per policy/repo-defaults.yml#asset_inventory: whoever controls this

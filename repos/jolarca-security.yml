@@ -1,6 +1,6 @@
 name: jolarca-security
 description: "Security policies, threat models, and security architecture for the jolarca-dev marketplace"
-visibility: public
+visibility: private
 tier: governance
 criticality: tier-2
 launch_status: planned
