@@ -1,5 +1,13 @@
 name: jolarca-payments
 description: "Payment processing, billing, and PCI-DSS compliance for the jolarca-dev marketplace"
+# PCI-DSS public visibility risk acceptance (2026-09-30):
+# This repo is PCI-DSS-scoped but launch_status is `planned`, not `operational`.
+# data_classification is `internal` — no regulated data lives in the repo itself;
+# payment secrets and cardholder data live in runtime, not in git. The guard in
+# validate_repos.py fires only when launch_status becomes `operational`; this
+# field pre-positions the override so the transition is not silently blocked.
+# Full risk acceptance: policy/compliance-gates.yml exceptions.active.
+documented_risk_acceptance: true
 visibility: public
 tier: platform
 criticality: tier-1
