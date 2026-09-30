@@ -228,9 +228,16 @@ def check_branch_protection(
 ) -> tuple[dict[str, Any], list[str]]:
     """Verify a protection rule exists and is not weaker than the baseline.
 
-    Repos in branch_protection_baseline_exempt must still HAVE a rule; only the
-    attribute comparison is skipped. That keeps the exemption from becoming a
-    way to leave a repo unprotected.
+    Uses the ``.protected`` boolean on ``GET /branches/{branch}`` as the
+    primary detection signal because it is readable on the Free plan for both
+    public and private repos.  The dedicated ``/protection`` endpoint returns
+    HTTP 403 for private repos on Free — that is a plan-tier limitation, not
+    a token-scope failure, and must not be lumped into ``unverifiable``
+    (D-33: the old code exited 2 with a misleading "token scope" message).
+
+    Repos in branch_protection_baseline_exempt must still HAVE a rule; only
+    the attribute comparison is skipped.  That keeps the exemption from
+    becoming a way to leave a repo unprotected.
     """
     required = baseline.get("required_branch_protection") or {}
     min_contexts = int(required.get("minimum_required_contexts", 1))
@@ -238,26 +245,47 @@ def check_branch_protection(
 
     missing: list[str] = []
     weakened: list[dict[str, Any]] = []
+    plan_limited: list[str] = []
     unverifiable: list[str] = []
 
     for repo in repos:
         branch = "main"
-        status, prot = try_get(f"repos/{ORG}/{repo}/branches/{branch}/protection")
 
-        if status == 404:
-            # 404 here means "no protection rule", which is a real finding —
-            # but only if the repo itself exists. Distinguish the two.
-            repo_status, _ = try_get(f"repos/{ORG}/{repo}")
-            if repo_status == 404:
-                continue  # absent repo is already reported by the fleet check
+        # ── Step 1: does the branch exist? ───────────────────────────────
+        # Empty repos have no main branch; the branch endpoint returns 404.
+        branch_status, branch_body = try_get(f"repos/{ORG}/{repo}/branches/{branch}")
+        if branch_status == 404:
+            # No main branch — repo is empty or has a different default.
+            # Empty repos are reported by the fleet check; skip silently.
+            continue
+        if branch_status != 200:
+            unverifiable.append(f"{repo}: branch HTTP {branch_status}")
+            continue
+
+        # ── Step 2: is the branch protected? ─────────────────────────────
+        # .protected is readable on Free for both public and private repos.
+        is_protected = branch_body.get("protected") if isinstance(branch_body, dict) else False
+        if not is_protected:
             missing.append(repo)
+            continue
+
+        # ── Step 3: can we read the full protection rule? ────────────────
+        status, prot = try_get(f"repos/{ORG}/{repo}/branches/{branch}/protection")
+        if status in (403, 404):
+            # Plan-tier limitation or no detailed rule readable:
+            # protection exists (.protected=true) but attributes cannot be
+            # read. On Free, private repos get 403; some public repos may
+            # get 404 if the protection endpoint is not available.
+            plan_limited.append(repo)
             continue
         if status != 200:
             unverifiable.append(f"{repo}: protection HTTP {status}")
             continue
+
         if repo in exempt:
             continue
 
+        # ── Step 4: attribute comparison against baseline ────────────────
         issues: list[str] = []
         reviews = prot.get("required_pull_request_reviews") or {}
         checks = prot.get("required_status_checks") or {}
@@ -291,7 +319,13 @@ def check_branch_protection(
             weakened.append({"repo": repo, "issues": issues})
 
     return (
-        {"missing": missing, "weakened": weakened, "required": required, "exempt": sorted(exempt)},
+        {
+            "missing": missing,
+            "weakened": weakened,
+            "plan_limited": plan_limited,
+            "required": required,
+            "exempt": sorted(exempt),
+        },
         unverifiable,
     )
 
@@ -432,6 +466,11 @@ def render_issue_body(report: dict[str, Any]) -> str:
         ("Unexpectedly archived", report["fleet"]["unexpectedly_archived"]),
         ("Branch protection MISSING entirely", report["branch_protection"]["missing"]),
     ]
+    plan_limited = report["branch_protection"].get("plan_limited", [])
+    if plan_limited:
+        lines.append("### Branch protection present but attributes unreadable (Free plan)")
+        lines += [f"- `{i}`" for i in plan_limited]
+        lines.append("")
     for title, items in sections:
         if items:
             lines.append(f"### {title}")
@@ -528,6 +567,11 @@ def summarise(report: dict[str, Any]) -> list[str]:
         out.append(f"DRIFT: {name} has NO branch protection on main — repo is unguarded")
     for item in bp["weakened"]:
         out.append(f"DRIFT: {item['repo']} branch protection weakened: {'; '.join(item['issues'])}")
+    for name in bp.get("plan_limited", []):
+        out.append(
+            f"INFO: {name} has branch protection but attributes are unreadable "
+            "(GitHub Free plan — private repos)"
+        )
 
     for item in report["unexpected_admins"]:
         out.append(

@@ -234,3 +234,183 @@ def test_real_fleet_no_longer_yields_six_phantom_findings() -> None:
     report = dd.check_fleet(dd.get_defined_repos(), live_payload)
     high = [d["repo"] for d in report["visibility_drift"] if d["exposure"] == "high"]
     assert high == ["jolarca-identity"], f"expected only the genuine exposure, got {high}"
+
+
+# ── Branch protection via .protected (D-33 detection fix) ────────────────────
+#
+# The old code called /branches/main/protection directly, which returns HTTP 403
+# for private repos on the Free plan. Those were dumped into `unverifiable`,
+# causing exit 2 with a misleading "token scope" message. The fix reads the
+# .protected boolean on /branches/main first (always readable on Free), then
+# only calls the protection endpoint for attribute comparison.
+
+
+def _mock_try_get(responses: dict[str, tuple[int, Any]]):
+    """Return a try_get replacement that matches path prefixes against a dict.
+
+    Longer prefixes are checked first so that /branches/main/protection
+    matches before /branches/main.
+    """
+    ordered = sorted(responses.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+    def _try_get(path: str) -> tuple[int, Any]:
+        for prefix, result in ordered:
+            if path.startswith(prefix):
+                return result
+        return 404, {"error": "not found"}
+
+    return _try_get
+
+
+_BASELINE: dict[str, Any] = {
+    "required_branch_protection": {
+        "enforce_admins": True,
+        "allow_force_pushes": False,
+        "allow_deletions": False,
+        "require_code_owner_reviews": False,
+        "dismiss_stale_reviews": True,
+        "minimum_required_contexts": 1,
+    },
+}
+
+
+def test_protected_false_reported_as_missing(monkeypatch: Any) -> None:
+    """`.protected=false` on the branch endpoint is a real finding: missing."""
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": False}),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert "r" in bp["missing"]
+    assert unverified == []
+
+
+def test_protected_true_403_is_plan_limited_not_unverifiable(monkeypatch: Any) -> None:
+    """The D-33 case: private repo on Free, protection exists but 403 on detail.
+
+    The old code put this in `unverifiable` and exited 2. The fix puts it in
+    `plan_limited` — informational, not a verification failure.
+    """
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main/protection": (
+                    403,
+                    {"error": "Upgrade to GitHub Pro"},
+                ),
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": True}),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert "r" in bp["plan_limited"]
+    assert "r" not in bp["missing"]
+    assert unverified == [], "plan_limited must NOT leak into unverifiable"
+
+
+def test_protected_true_200_full_comparison(monkeypatch: Any) -> None:
+    """When the protection endpoint IS readable, full attribute comparison runs."""
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": True}),
+                f"repos/{dd.ORG}/r/branches/main/protection": (
+                    200,
+                    {
+                        "enforce_admins": {"enabled": False},
+                        "allow_force_pushes": {"enabled": False},
+                        "allow_deletions": {"enabled": False},
+                        "required_status_checks": {"contexts": ["ci"]},
+                        "required_pull_request_reviews": {
+                            "dismiss_stale_reviews": True,
+                            "require_code_owner_reviews": False,
+                        },
+                    },
+                ),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert bp["missing"] == []
+    assert bp["plan_limited"] == []
+    assert len(bp["weakened"]) == 1
+    assert "enforce_admins disabled" in bp["weakened"][0]["issues"]
+    assert unverified == []
+
+
+def test_branch_404_empty_repo_skipped(monkeypatch: Any) -> None:
+    """Empty repos have no main branch; the branch endpoint returns 404.
+
+    These are reported by the fleet check, not the protection check.
+    """
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main": (404, {"error": "Branch not found"}),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert bp["missing"] == []
+    assert bp["plan_limited"] == []
+    assert unverified == []
+
+
+def test_plan_limited_does_not_trigger_drift_detected(monkeypatch: Any) -> None:
+    """plan_limited is informational; it must not set drift_detected.
+
+    The old code's unverifiable list triggered exit 2 for every private repo.
+    With plan_limited separated out, a fleet where all repos are plan_limited
+    should NOT report drift.
+    """
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main/protection": (403, {"error": "Upgrade"}),
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": True}),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    # plan_limited must not appear in any drift_detected field
+    assert not bp["missing"]
+    assert not bp["weakened"]
+    assert unverified == []
+    # The report's drift_detected must not fire for plan_limited
+    drift = bool(bp["missing"] or bp["weakened"])
+    assert not drift
+
+
+def test_protection_404_with_protected_true_is_plan_limited(monkeypatch: Any) -> None:
+    """Public repo where .protected=true but /protection returns 404.
+
+    Some public repos on Free may have .protected=true but the protection
+    detail endpoint returns 404 (no detailed rule readable). This must be
+    plan_limited, not unverifiable.
+    """
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main/protection": (404, {"error": "Not Found"}),
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": True}),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert "r" in bp["plan_limited"]
+    assert unverified == [], "404 on protection with .protected=true must not be unverifiable"
