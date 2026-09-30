@@ -144,6 +144,20 @@ def get_defined_repos() -> dict[str, dict[str, Any]]:
     return defined
 
 
+def _live_visibility(have: dict[str, Any]) -> str | None:
+    """Read visibility from the REST /orgs/{ORG}/repos payload.
+
+    Returns None when the payload carries neither `visibility` nor `private`,
+    because a missing field is unverifiable — never evidence of agreement.
+    """
+    vis = have.get("visibility")
+    if isinstance(vis, str) and vis:
+        return vis
+    if "private" in have:
+        return "private" if have.get("private") else "public"
+    return None
+
+
 def check_fleet(
     defined: dict[str, dict[str, Any]], live: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
@@ -153,15 +167,35 @@ def check_fleet(
     matched = sorted(set(defined) & set(live))
 
     visibility_drift: list[dict[str, str]] = []
+    visibility_unverifiable: list[str] = []
     wiki_drift: list[str] = []
     archived: list[str] = []
 
     for name in matched:
         want = defined[name]
         have = live[name]
-        live_vis = "private" if have.get("isPrivate") else "public"
+        # The fleet listing comes from REST /orgs/{ORG}/repos, whose payload uses
+        # `private`, `visibility`, `has_wiki` and `archived`. This function
+        # previously read the GRAPHQL spellings — isPrivate, hasWikiEnabled,
+        # isArchived — which are ABSENT from that payload, so every .get()
+        # returned None. The consequences, verified against the live org on
+        # 2026-09-30:
+        #   * visibility resolved to "public" unconditionally, fabricating a
+        #     HIGH-exposure finding for all six declared-private repos (five of
+        #     which are in fact private) and hiding drift in the declared-public
+        #     direction entirely — jolarca-security is live PRIVATE against a
+        #     `public` declaration and was never reported;
+        #   * wiki_drift and unexpectedly_archived could never fire, so two whole
+        #     check families reported clean on every run.
+        # That makes drift_detected permanently true, so this tool could never
+        # report NO DRIFT while any repo was declared private. Same class as
+        # D-22, and it undermines the docstring claim that visibility drift is
+        # "how D-01 was found".
+        live_vis = _live_visibility(have)
         want_vis = str(want.get("visibility", ""))
-        if want_vis != live_vis:
+        if live_vis is None:
+            visibility_unverifiable.append(name)
+        elif want_vis != live_vis:
             visibility_drift.append(
                 {
                     "repo": name,
@@ -173,9 +207,9 @@ def check_fleet(
                 }
             )
         settings = want.get("settings") or {}
-        if have.get("hasWikiEnabled") and not settings.get("has_wiki", False):
+        if have.get("has_wiki") and not settings.get("has_wiki", False):
             wiki_drift.append(name)
-        if have.get("isArchived") and not settings.get("archived", False):
+        if have.get("archived") and not settings.get("archived", False):
             archived.append(name)
 
     return {
@@ -183,6 +217,7 @@ def check_fleet(
         "in_org_but_not_declared": live_only,
         "matched": matched,
         "visibility_drift": visibility_drift,
+        "visibility_unverifiable": visibility_unverifiable,
         "wiki_drift": wiki_drift,
         "unexpectedly_archived": archived,
     }
@@ -583,6 +618,10 @@ def main() -> int:
     existing = sorted(set(fleet["matched"]) | ({HEALTH_REPO} & live_names))
 
     unverifiable: list[str] = []
+    unverifiable.extend(
+        f"{repo}: visibility absent from the org listing"
+        for repo in fleet["visibility_unverifiable"]
+    )
     allowed_admins = [str(a) for a in (baseline.get("allowed_admins") or [])]
 
     try:
