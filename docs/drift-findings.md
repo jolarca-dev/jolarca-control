@@ -593,3 +593,11 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Actions taken | 1. All 7 private repos declared `visibility: public`. 2. Five `confidential` classifications downgraded to `internal`. 3. `documented_risk_acceptance: true` added to jolarca-compliance, jolarca-infrastructure, jolarca-legal (PCI-DSS operational repos). 4. Exception `fleet-public-2026-10` added to `policy/compliance-gates.yml`. 5. D-01 and D-33 in `open_blocking` marked RESOLVED. |
 | Branch protection | All repos will be public, so Free plan ALLOWS branch protection on all of them. D-33 (private repos unprotected) is resolved for public repos. Remaining: enable protection on repos that get content after the migration. |
 | Related | D-01 (resolved), D-31 (superseded), D-33 (resolved for public repos). |
+
+### D-38 · `jolarca` stale-review dismissal enabled out-of-band — **FIXED**
+| | |
+|---|---|
+| Evidence | `PUT /repos/jolarca-dev/jolarca/branches/main/protection` with `dismiss_stale_reviews: true` executed 2026-09-30. Verified: `dismiss_stale_reviews=true` live. Previously live `false`, policy baseline `true` in `policy/repo-defaults.yml#organization_baseline.required_branch_protection`. |
+| Impact | drift_detect reported `weakened: jolarca — stale reviews not dismissed`. Now aligned with policy. |
+| Terraform impact | `branch-protection.tf` declares `dismiss_stale_reviews = true` for jolarca. On first apply, Terraform will match live state — no drift. |
+| Related | D-08 (out-of-band protection history), D-33 (branch protection on public repos). |
