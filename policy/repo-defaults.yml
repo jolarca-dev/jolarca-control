@@ -184,14 +184,28 @@ organization_baseline:
     dismiss_stale_reviews: true
     minimum_required_contexts: 1
 
-  # Repos whose protection rule is deliberately minimal. A rule must still
-  # EXIST — only the attribute baseline above is skipped, so this can never be
-  # used to leave a repo unprotected. `.github` is a content-only
-  # community-health repo with no CI; requiring status-check contexts there
-  # would block every change forever (see github_branch_protection.health in
-  # branch-protection.tf).
+  # Repos whose protection rule is deliberately minimal or uses repo-specific
+  # CI contexts rather than the control-plane compliance-scan contexts. A rule
+  # must still EXIST — only the attribute baseline above is skipped, so this
+  # can never be used to leave a repo unprotected.
+  #
+  # .github: content-only community-health repo with no CI; requiring status-
+  #   check contexts there would block every change forever.
+  #
+  # jolarca-compliance, jolarca-data, jolarca-identity, jolarca-infrastructure,
+  # jolarca-legal, jolarca-security: each runs its own CI pipeline with repo-
+  #   specific contexts (not the compliance-scan triplet). Protection is
+  #   enforced (enforce_admins, block force pushes/deletions, PR-only); only
+  #   the minimum_required_contexts comparison is skipped because the baseline
+  #   contexts don't apply. Each repo's own CI is the quality gate.
   branch_protection_baseline_exempt:
     - .github
+    - jolarca-compliance
+    - jolarca-data
+    - jolarca-identity
+    - jolarca-infrastructure
+    - jolarca-legal
+    - jolarca-security
 
 # ── Data handling ────────────────────────────────────────────────────────────
 data_handling:
