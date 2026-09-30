@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: help setup validate compliance drift fleet-audit org-audit readiness \
-        first-commit \
+        first-commit evidence-check evidence-register \
         init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
 
@@ -72,6 +72,18 @@ fleet-audit: ## ADR-0004 fleet separation guard (R1/R2/R3)
 org-audit: ## Capture the org-wide delivery chain into an evidence bundle
 	bash scripts/org_delivery_audit.sh
 
+# Evidence hashing (SOC 2 CC4.1 / ISO 27001 A.5.31 / PCI-DSS 12.10.1).
+# The registry is the BASELINE OF RECORD and must be committed: verifying
+# against a registry regenerated from the same tree is a tautology that passes
+# for every input, which is what evidence-integrity.yml used to do.
+#   make evidence-check      # 0 match · 1 changed · 2 no usable baseline
+#   make evidence-register   # rewrite the CSV, then commit the diff in a PR
+evidence-check: ## Verify evidence hashes against the committed registry
+	bash scripts/hash_evidence.sh --check
+
+evidence-register: ## Regenerate docs/evidence-registry.csv (commit the diff)
+	bash scripts/hash_evidence.sh
+
 # Pre-first-commit readiness gate. Registry-driven (repos/*.yml), read-only, and
 # the only tool that inspects the LOCAL working copy — the gap that let D-28
 # (an index holding .idea/ while every real file was untracked) reach commit.
@@ -138,4 +150,5 @@ count-repos: ## Count managed repositories
 
 clean: ## Remove generated files
 	rm -f tfplan plan-output.txt plan.txt compliance-report.json \
-	      compliance-snapshot.json quarterly-report.json
+	      compliance-snapshot.json quarterly-report.json \
+	      docs/evidence-registry.csv.new

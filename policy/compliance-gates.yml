@@ -205,13 +205,26 @@ gates:
     iso_controls: ["A.8.32"]
     pci_controls: ["6.5.1"]
     implementation:
-      tool: ".github/workflows/apply.yml — 'Refuse destructive or visibility-changing plans'"
+      # The patterns live in a tested script, not inline in a workflow. They were
+      # inline until D-22: the regex was written `visibility\s*:` while `terraform
+      # show` emits `visibility = `, so the gate never fired and nothing exercised
+      # it. Extraction is what made it testable — record the script, not the caller.
+      tool: "scripts/check_plan_safety.sh"
+      tested_by: "tests/test_check_plan_safety.sh — 10 fixtures, run by `make test` and compliance-scan.yml"
+      invoked_by:
+        - ".github/workflows/plan.yml — step 'Plan safety check'"
+        - ".github/workflows/apply.yml — step 'Refuse destructive or visibility-changing plans' (pre-apply)"
+      exit_codes:
+        "0": "plan is safe to auto-apply"
+        "1": "plan contains a refused action"
+        "2": "plan could not be read — cannot-check is NEVER treated as safe"
       blocked_actions:
-        - "will be destroyed"
-        - "must be replaced"
-        - "visibility change"
+        - "# <address> will be destroyed"
+        - "# <address> must be replaced"
+        - "~ visibility = \"public\" -> \"private\" (in-place change, either direction)"
+        - "visibility = \"x\" -> \"y\" (defence in depth: transition without a change marker)"
       compensating_control: "lifecycle { prevent_destroy = true } on every github_repository"
-      run_on: ["push to main", "workflow_dispatch"]
+      run_on: ["pull_request (path-filtered)", "push to main", "workflow_dispatch"]
 
 enforcement_matrix:
   governance:
