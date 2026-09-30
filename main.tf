@@ -5,17 +5,9 @@
 # Compliance: SOC 2 Type II · GDPR · ISO 27001:2022 · PCI-DSS 4.0
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# NOT YET AUTHORITATIVE — see docs/state-migration-runbook.md
-#
-# The github_* resources declared by this root are STILL OWNED by the live
-# Terraform state in jolarca-infrastructure
-# (terraform/environments/production/terraform.tfstate, module.github_org.*).
-# Do NOT run `terraform apply` here until that state has been migrated per the
-# runbook. Applying from an empty state attempts to CREATE repositories that
-# already exist and, with the old root still wired, produces dual ownership of
-# PCI-DSS-scoped production repositories.
-#
-# `terraform init`, `validate`, `fmt` and `plan -refresh=false` are safe.
+# AUTHORITATIVE — sole Terraform root for all jolarca-dev GitHub resources.
+# Legacy state (jolarca-infrastructure) was emptied on 2026-10-01 (D-13 FIXED).
+# State is stored in HCP Terraform (ADR-0006) — see cloud block below.
 # ──────────────────────────────────────────────────────────────────────────────
 
 terraform {
@@ -28,9 +20,17 @@ terraform {
     }
   }
 
-  # State stored locally (terraform.tfstate). A remote backend is prerequisite
-  # step 0 of the migration runbook — see docs/state-migration-runbook.md and
-  # docs/runbooks/workload-identity-federation.md.
+  # HCP Terraform remote backend (ADR-0006, accepted 2026-09-25).
+  # State is stored in the `jolarca-control` workspace of the `jolarca-dev`
+  # organization on HCP Terraform (free tier). Authentication via TFC_TOKEN
+  # (GitHub secret) or TF_TOKEN_app_terraform_io (local credentials file).
+  cloud {
+    organization = "jolarca-dev"
+
+    workspaces {
+      name = "jolarca-control"
+    }
+  }
 }
 
 # ── GitHub Provider ──────────────────────────────────────────────────────────
