@@ -22,10 +22,11 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 ### D-02 · Live Terraform state is single-copy with no remote backend — **PARTIALLY FIXED**
 | | |
 |---|---|
-| Evidence | `main.tf` now has `cloud {}` block (HCP Terraform, ADR-0006). Workflows (`apply.yml`, `plan.yml`) updated with `cli_config_credentials_token`. State migration (`terraform init -migrate-state`) pending HCP Terraform account creation. |
-| Impact | State file still local until migration completes. Host loss = permanent inability to reason about ownership. |
-| Fix in progress | Code changes committed (cloud block + workflow auth). **Blocked on manual step:** owner must sign up at https://portal.terraform.io/, create org `jolarca-dev`, workspace `jolarca-control`, generate API token, then run `terraform init -migrate-state`. |
-| Interim control | AGE-encrypted state backup via `scripts/state_backup.sh` (pubkey at `.state-backup-pubkey.txt`, identity at `~/.config/age/state-backup-key.txt`). |
+| Evidence | `main.tf` has `cloud {}` block (HCP Terraform, ADR-0006). Workflows updated with `cli_config_credentials_token`. **Local state frozen:** `terraform.tfstate` (67KB, serial 151, 6 resources) exists on disk but `terraform state list` fails with "HCP Terraform initialization required" — the cloud block prevents local state access until `terraform init -migrate-state` runs. |
+| Impact | State file safe on disk but inaccessible via Terraform CLI. No `terraform plan`, `apply`, or `import` can run until the HCP account is created and state is migrated. |
+| Fix in progress | **Blocked on manual step:** owner must sign up at https://portal.terraform.io/, create org `jolarca-dev`, workspace `jolarca-control`, generate API token, set `TFC_TOKEN` GitHub secret, then run `terraform init -migrate-state`. |
+| Local state contents | 2 `github_repository`, 2 `github_repository_vulnerability_alerts`, 1 `github_branch_protection`, 1 `github_organization_webhook`. |
+| Interim control | AGE-encrypted state backup via `scripts/state_backup.sh` (pubkey at `.state-backup-pubkey.txt`, identity at `~/.config/age/state-backup-key.txt`). Legacy state (jolarca-infrastructure) is empty — D-13 fully resolved. |
 
 ### D-13 · Dual-ownership window between the two roots — **FIXED**
 | | |
