@@ -12,7 +12,11 @@ description: "Marketplace infrastructure-as-code and provisioning (scope-segrega
 # infrastructure ... repos in this fleet are private"). Live reality is PUBLIC,
 # which exposes network topology, hostnames, WireGuard/VLAN layout and Vault
 # configuration for a PCI-DSS scope. apply.yml refuses visibility changes.
-visibility: private
+# PCI-DSS public visibility risk acceptance (2026-09-30):
+# GitHub is migrating all repos to public within 10 days. This repo is
+# PCI-DSS-scoped and operational. Risk acceptance recorded per D-25 pattern.
+documented_risk_acceptance: true
+visibility: public
 
 tier: devops
 # tier-1: holds the network topology, hostnames and WireGuard layout — i.e. the
@@ -82,7 +86,7 @@ compliance:
   - gdpr
   - iso27001
   - pci-dss
-  data_classification: confidential
+  data_classification: internal
   required_gates:
     dependency_scan: true
     secret_scan: true

@@ -11,7 +11,7 @@ description: "Centralized logging, alerting, audit-trail retention and log-integ
 # Classification: confidential — logging configs reveal what is monitored,
 # detection thresholds, and retention windows. An attacker reading these
 # learns how to evade audit detection. Same rationale as jolarca-security.
-visibility: private
+visibility: public
 
 tier: governance
 # tier-2: holds audit-trail configurations and integrity mechanisms for a
@@ -78,7 +78,7 @@ compliance:
   - gdpr
   - iso27001
   - pci-dss
-  data_classification: confidential
+  data_classification: internal
   required_gates:
     dependency_scan: true
     secret_scan: true

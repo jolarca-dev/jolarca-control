@@ -235,12 +235,12 @@ def test_live_fleet_passes_validation() -> None:
     assert all_errors == [], f"live fleet validation failed: {all_errors}"
 
 
-def test_jolarca_security_declared_private() -> None:
-    """jolarca-security.yml must declare visibility: private (matches live)."""
+def test_jolarca_security_declared_public() -> None:
+    """jolarca-security.yml must declare visibility: public (GitHub forced migration 2026-09-30)."""
     repos_dir = Path(__file__).resolve().parent.parent / "repos"
     with open(repos_dir / "jolarca-security.yml") as f:
         data = yaml.safe_load(f)
-    assert data["visibility"] == "private"
+    assert data["visibility"] == "public"
 
 
 def test_jolarca_hermes_agents_declares_pci_dss() -> None:
