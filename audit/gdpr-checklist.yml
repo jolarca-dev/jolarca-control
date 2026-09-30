@@ -64,12 +64,10 @@ articles:
         note: "Held in other repositories. This control plane's contribution is that both repos are declared, classified and protected."
       - id: "Art5-02"
         description: "Integrity and confidentiality (Art. 5(1)(f)) — repositories holding personal-data models are not publicly readable"
-        evidence: "jolarca-compliance, jolarca-legal, jolarca-data, jolarca-infrastructure are all LIVE PUBLIC; the allow-list declares them private"
+        evidence: "All repos now LIVE PUBLIC per GitHub forced migration (D-37). Declarations aligned. Data classifications downgraded confidential->internal for 5 repos."
         enforcement: "scripts/validate_repos.py classification/visibility coherence rule"
-        status: "gap"
-        finding: "D-01"
-        severity: "blocking"
-        note: "The validator enforces the rule on the DECLARATION. It cannot see live GitHub state — scripts/drift_detect.py reports the divergence and currently returns non-zero."
+        status: "accepted"
+        note: "D-01 resolved via forced migration (2026-10-01). Risk acceptance in compliance-gates.yml (fleet-public-2026-10). RoPA and vendor assessments are world-readable — assess under GDPR Art. 33 whether notifiable."
       - id: "Art5-03"
         description: "Retention schedule wired to consent records — consent justification outlives the data it justifies"
         evidence: >
@@ -257,11 +255,10 @@ articles:
         finding: "D-10, D-19"
       - id: "Art32-02"
         description: "Multi-factor authentication for all access to the processing environment"
-        evidence: "two_factor_requirement_enabled = FALSE"
+        evidence: "two_factor_requirement_enabled = TRUE (verified 2026-10-01)"
         enforcement: "GitHub org setting — manual"
-        status: "gap"
-        finding: "D-18"
-        severity: "blocking"
+        status: "implemented"
+        note: "D-18 resolved. 2FA enforced org-wide."
       - id: "Art32-03"
         description: "Encryption in transit for all git operations"
         evidence: "SSH remotes (git@github.com:jolarca-dev/*.git) and HTTPS-only GitHub endpoints"
@@ -380,11 +377,11 @@ articles:
 
 summary:
   total_controls: 35
-  implemented: 18
+  implemented: 20
   pending_adoption: 2
-  gap: 13
+  gap: 11
   accepted: 2
-  blocking_gaps: ["Art5-02 (D-01)", "Art32-02 (D-18)", "Art32-04 (D-02)"]
+  blocking_gaps: ["Art32-04 (D-02 partial — cloud backend configured, state migration pending)"]
   consent_service_gaps:
     - "Art5-03 — retention schedule not enforced as code"
     - "Art7-01 — consent UX not reviewed for dark patterns"
@@ -405,12 +402,11 @@ summary:
     (Art. 7-01), the DSAR pipeline cannot meet the 30-day deadline across all
     systems (Art. 12-01), or the DPO decision is undocumented (Art. 37-01).
   control_plane_note: >
-    Three blocking gaps converge on the same root cause: this control plane
-    declares correct policy but does not yet own the state that would enforce
-    it, and two org-level settings (2FA, member repo creation) are not
-    provider-managed at all and must be set by hand. Art5-02 is the most
-    serious — four repositories inside a KYC/AML and PCI-DSS scope are publicly
-    readable while policy and IaC both say they should not be.
+    Two of three blocking gaps have been resolved: Art5-02 (D-01 resolved via
+    forced-public migration, risk accepted) and Art32-02 (D-18 resolved, 2FA
+    enforced org-wide). One blocking gap remains: Art32-04 (D-02, Terraform
+    state remote backend partially configured — cloud block added, state
+    migration pending HCP Terraform account creation).
   consent_repo_note: >
     jolarca-consent is NOT a git repository (no .git) and has never received
     a first commit. Several code-level defects were identified in the working
