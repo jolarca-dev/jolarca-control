@@ -7,7 +7,7 @@
 # in repos/jolarca-control.yml branch_protection.main.required_status_checks:
 #   1. "Validate Repo Allow-List"        — scripts/validate_repos.py
 #   2. "Policy Compliance Check"         — scripts/compliance_check.py
-#   3. "Repository Secret Pattern Scan"  — scripts/repo_readiness_audit.py --no-live
+#   3. "Repository Secret Pattern Scan"  — gitleaks (full history)
 #
 # Additional jobs (tests, lint, SAST) run alongside but are NOT branch
 # protection contexts — they are defense in depth.
@@ -51,6 +51,11 @@ jobs:
       - run: python3 scripts/compliance_check.py
 
   # ── Context 3: Repository Secret Pattern Scan ──────────────────────────────
+  # The full readiness audit (scripts/repo_readiness_audit.py) checks local
+  # state that differs between CI and a developer machine (git config,
+  # branch state, CODEOWNERS resolution). Running it as a required context
+  # deadlocked the merge gate. The secret scan itself is simpler: gitleaks
+  # covers tracked files AND history with the project's .gitleaks.toml.
   secret-scan:
     name: Repository Secret Pattern Scan
     runs-on: ubuntu-latest
@@ -58,12 +63,13 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.3.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - name: Run readiness gate secret sweep (offline, no-live)
-        run: python3 scripts/repo_readiness_audit.py --repo jolarca-control --no-live >/dev/null
+      - name: Install gitleaks
+        run: |
+          GL_VERSION="8.30.1"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz" \
+            | sudo tar xz -C /usr/local/bin gitleaks
+      - name: Run gitleaks (full history)
+        run: gitleaks git . --no-banner --redact
 
   # ── Regression tests ───────────────────────────────────────────────────────
   test:
