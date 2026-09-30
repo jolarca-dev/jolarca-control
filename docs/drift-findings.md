@@ -143,13 +143,14 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 | Impact | Bootstrap chicken-and-egg: the repo must be created by the control plane that lives inside it. Creating it by hand is an ADR-0004 R2 out-of-band creation. |
 | Encoded as | Declared in `repos/jolarca-control.yml`; `check_fleet_separation.sh` supports a time-boxed `ALLOW_MISSING` exemption; runbook step 2 resolves the ordering and records the R2 exception. |
 
-### D-18 · Org-wide two-factor authentication is NOT enforced — **BLOCKING, MANUAL ACTION REQUIRED**
+### D-18 · Org-wide two-factor authentication is NOT enforced — **FIXED**
 | | |
 |---|---|
 | Evidence | `gh api orgs/jolarca-dev` → `"two_factor_requirement_enabled": false` (2026-09-25). |
 | Impact | Any member account with a password-only login can be credential-stuffed into an organization that owns PCI-DSS-scoped repositories and holds a Terraform token capable of rewriting branch protection fleet-wide. PCI-DSS Req 8.3.1 requires multi-factor authentication for all access into the CDE; ISO 27001 A.5.17 requires authentication per policy; SOC 2 CC6.1. |
 | Why it matters more here | `docs/threat-model.md` T-02 previously asserted "2FA required" as a mitigation. That assertion was inherited from `jol-control` and was never true of this org. The threat model has been corrected to show the gap. |
-| Required | Enable org-enforced 2FA **manually in the GitHub UI** before the `TF_GITHUB_TOKEN` secret is created. This setting cannot be managed via the API (security feature). Navigate to: **Organization settings → Authentication security → Require two-factor authentication**. Note: this will immediately require all current members to have 2FA enabled or they will be removed from the org. |
+| Fix applied | Org-enforced 2FA enabled (verified 2026-10-01): `gh api orgs/jolarca-dev -q .two_factor_requirement_enabled` → `true`. This setting cannot be changed through the GitHub API (security feature); it was enabled manually in the GitHub UI. drift_detect `organization_baseline` already declared `two_factor_requirement_enabled: true` and now matches live. |
+| Resolved | D-18 removed from `open_blocking` in `policy/compliance-gates.yml`. |
 
 ### D-19 · Permissive org defaults undermine the allow-list — **FIXED**
 | | |
