@@ -1,7 +1,7 @@
 # Drift & Findings Register — jolarca-dev control plane
 
 **Created:** 2026-09-25
-**Last verified:** 2026-09-28 (pre-deployment audit remediation: B1, B3, B5, B6, H1, H2, H3, H5 false finding, medium image tags + secrets guard)
+**Last verified:** 2026-09-30 (out-of-band: jolarca-identity visibility flip, jolarca-control branch protection)
 **Method:** every row below was verified empirically against the live GitHub
 API (`gh api`, read-only) and against
 `jolarca-infrastructure/terraform/environments/production/terraform.tfstate`.
@@ -295,7 +295,7 @@ continues from D-32.
 | Evidence — enforcement signal | The dedicated endpoint is unreadable, but `GET …/branches/main` is not: it reports **`.protected = false` on all seven** private repos. `.protected = true` only on `jolarca` and `.github` — the two public repos still carrying the out-of-band rules from D-08 (`jolarca`: 9 required contexts, `enforce_admins = true`, `strict = false`). |
 | Evidence — rest of the fleet | The remaining seven public repos (`jolarca-observability`, `-dr`, `-consent`, `-docs`, `-runbooks`, `-vendor`, `-payments`) are still empty (`size: 0`; `GET …/branches/main` → HTTP 404 "Branch not found"), so there is no branch to protect yet and `drift_detect.py` correctly reports them as `missing`. **Net: enforceable branch protection exists on 2 of 16 repositories, and on none of the private ones.** |
 | Evidence — no substitute mechanism | `gh api orgs/jolarca-dev/rulesets` → HTTP 403 "Upgrade to GitHub Team"; `gh api repos/jolarca-dev/jolarca-control/rulesets` → HTTP 403 "Upgrade to GitHub Pro or make this repository public". Rulesets cannot be used instead — the same constraint recorded for tag protection in D-07. |
-| Evidence — Terraform manages none | `terraform.tfvars` sets `enable_branch_protection = false` (the `variables.tf` default is `true`), so `local.protected_repos` resolves to an empty map and `github_branch_protection.health` has `count = 0`. Local state (serial 128, TF 1.16.1) holds 7 `github_repository` and 7 `github_repository_vulnerability_alerts` instances and **zero `github_branch_protection`**. |
+| Evidence — Terraform manages none | `terraform.tfvars` sets `enable_branch_protection = false` (the `variables.tf` default is `true`), so `local.protected_repos` resolves to an empty map and `github_branch_protection.health` has `count = 0`. Local state (serial 128, TF 1.16.1) holds 7 `github_repository` and 7 `github_repository_vulnerability_alerts` instances and **zero `github_branch_protection`**. **Correction (2026-09-30):** `jolarca-control` now has branch protection enabled out-of-band (**D-35**), so the control plane is guarded. The Terraform state still holds zero `github_branch_protection` resources; the out-of-band change is safe because the declared config matches. All other repos remain as described below. |
 | Evidence — proven by behaviour, not inferred | `jolarca-security` (private) has **0 pull requests in any state** and 14 commits sitting directly on `main`. `jolarca-control` (private) took 7 of its 9 commits as direct pushes to `main` — only #2 and #3 came through a PR — and although its HEAD reports `Fleet Separation Guard` and `Production — Apply` check runs, nothing requires them to pass. Direct pushes to `main` therefore succeed on private repos today, which is the only claim that matters: a 403 could in principle mean "configured but unreadable", and `jolarca-security`'s history proves it does not. |
 | Impact | `main` on the four PCI-DSS-scoped repositories, on this control plane, and on `jolarca-security` / `jolarca-identity` can be force-pushed, deleted, or pushed to directly — no review, no required check, no admin enforcement. A history rewrite also destroys the signed-commit attribution that **D-04** and **D-05** cite as their compensating control, so the compensation for the zero-review deviation is itself unguarded. `policy/compliance-gates.yml` maps SOC 2 CC6.1 to "Branch protection + required status checks + CODEOWNERS": on the private fleet all three are absent or inert (CODEOWNERS — D-20). ISO 27001 A.8.32 / A.5.1; PCI-DSS Req 6.3 / 6.5. |
 | How it happened | This is a **consequence of remediating D-01**, not an unrelated oversight. Branch protection is free for public repositories and unavailable for private ones below Team/Pro. The four regulated repos are private as of 2026-09-26 — the outcome D-31 recommended, given the publicly readable RoPA / KYC / contract material — and that flip silently withdrew the change-control layer from exactly the repositories that hold regulated records. Nothing in this repo noticed: a security fix produced a compliance regression. |
@@ -552,3 +552,23 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 **Action:** No rotation required. Finding L-16 is closed as a documented false positive.
 
 **Triaged by:** Gintaras Kazlauskas, 2026-09-29.
+
+## 2026-09-30 — Out-of-band live mutations
+
+### D-34 · `jolarca-identity` flipped to private out-of-band — **FIXED**
+| | |
+|---|---|
+| Evidence | `gh repo edit jolarca-dev/jolarca-identity --visibility private --accept-visibility-change-consequences` executed 2026-09-30. Verified: `gh api repos/jolarca-dev/jolarca-identity -q .visibility` → `private`. Previously live `public`, declared `private` in `repos/jolarca-identity.yml`. |
+| Impact | HIGH-exposure IAM policy repo (PCI-DSS-scoped, identity/access policies) was publicly readable. Now aligned with declaration. |
+| Trade-off | `jolarca-identity` is now private on the Free plan, so GitHub's built-in secret scanning (available only on public Free repos) is lost. Compensating: gitleaks runs in CI on every PR and full-history scan, which covers the same surface. |
+| Terraform impact | `jolarca-identity` is not yet in Terraform state (D-02/D-13 state migration pending). When imported, the declared `visibility: private` will match live state — no visibility flip on first apply. |
+| Related | D-01 (visibility drift), D-31 (accept-public infeasible), D-33 (private repos lose branch protection on Free). |
+
+### D-35 · `jolarca-control` branch protection enabled out-of-band — **FIXED**
+| | |
+|---|---|
+| Evidence | `PUT /repos/jolarca-dev/jolarca-control/branches/main/protection` executed 2026-09-30 with the config declared in `repos/jolarca-control.yml`. Verified: `.protected = true`, all 3 required contexts active (`Validate Repo Allow-List`, `Policy Compliance Check`, `Repository Secret Pattern Scan`), `enforce_admins: true`, `block_force_pushes: true`, `block_deletions: true`, `require_linear_history: true`, `require_conversation_resolution: true`, `restrictions: {users: [], teams: []}` (admins only). |
+| Impact | The control plane now has the branch protection it declared but never had. Direct pushes to `main` are blocked; all changes must go through PRs with the required status checks passing. |
+| Deviation from declared config | `require_code_owner_reviews: false` (D-20: inert without teams in `jolarca-dev`). Matches the B3 remediation decision. |
+| Terraform impact | Terraform state holds zero `github_branch_protection` resources (`enable_branch_protection = false` in `terraform.tfvars`). This out-of-band change will NOT be reverted by `terraform apply`. When the fleet-wide flag flips, the declared config in `repos/jolarca-control.yml` matches what was applied here. |
+| Related | D-08 (out-of-band protection history), D-33 (private repos unprotected on Free), D-04 (zero-review deviation). |
