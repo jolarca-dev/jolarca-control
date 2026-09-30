@@ -572,3 +572,12 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Deviation from declared config | `require_code_owner_reviews: false` (D-20: inert without teams in `jolarca-dev`). Matches the B3 remediation decision. |
 | Terraform impact | Terraform state holds zero `github_branch_protection` resources (`enable_branch_protection = false` in `terraform.tfvars`). This out-of-band change will NOT be reverted by `terraform apply`. When the fleet-wide flag flips, the declared config in `repos/jolarca-control.yml` matches what was applied here. |
 | Related | D-08 (out-of-band protection history), D-33 (private repos unprotected on Free), D-04 (zero-review deviation). |
+
+### D-36 · Wiki drift on 3 repos disabled out-of-band — **FIXED**
+| | |
+|---|---|
+| Evidence | `PATCH /repos/jolarca-dev/{jolarca-docs,jolarca-runbooks,jolarca-vendor}` with `{"has_wiki": false}` executed 2026-09-30. Verified: `has_wiki=false` on all 3. Previously live `has_wiki=true`, declared `has_wiki: false` in `repos/*.yml`. All 3 wikis were empty (no pages, no git refs) — zero data loss. |
+| Impact | Policy (`has_wiki: false` in `policy/repo-defaults.yml`) is security-driven: wikis bypass PR review, cannot be GPG-checked, and have no audit trail. For governance/compliance repos every change must go through the reviewable path. |
+| Terraform impact | `repositories.tf` reads `has_wiki` from `repos/*.yml`; declared value was already `false`. On first apply, Terraform will set `has_wiki=false` matching live state — no drift. |
+| jolarca-identity | Was already `has_wiki=false` live (flipped with visibility change to private). No action needed. |
+| Related | D-26 (drift detection covers wiki state). |
