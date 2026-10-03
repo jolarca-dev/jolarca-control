@@ -1,7 +1,7 @@
 # Drift & Findings Register — jolarca-dev control plane
 
 **Created:** 2026-09-25
-**Last verified:** 2026-09-30 (out-of-band: jolarca-identity visibility flip, jolarca-control branch protection)
+**Last verified:** 2026-10-03 (read-only live protection check on `jolarca-hermes-agents`; declared-vs-enforced gap recorded as D-40, stale `branch-protection.tf` rationale as D-41)
 **Method:** every row below was verified empirically against the live GitHub
 API (`gh api`, read-only) and against
 `jolarca-infrastructure/terraform/environments/production/terraform.tfstate`.
@@ -614,3 +614,27 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Policy update | `branch_protection_baseline_exempt` expanded to include the 6 repos with repo-specific CI contexts (not the compliance-scan triplet). Protection is enforced; only the minimum-contexts comparison is skipped. |
 | Protection config | Minimal: `enforce_admins=true`, `block_force_pushes=true`, `block_deletions=true`, `required_linear_history=true`, `required_conversation_resolution=true`, `restrictions={users:[],teams:[]}`. No required status checks (repos use their own CI). |
 | Related | D-34 (identity flip), D-35 (control protection), D-36 (wiki drift), D-37 (forced migration). |
+
+## 2026-10-03 — Declared gate vs server-side enforcement (`jolarca-hermes-agents`)
+
+### D-40 · `required_gates.secret_scan: true` is intent, not a merge-blocking check — **OPEN**
+
+|  |  |
+|---|---|
+| Evidence | 2026-10-03, read-only `gh api repos/jolarca-dev/jolarca-hermes-agents/branches/main/protection`: `strict=true`, `contexts=lint,test,security`, `enforce_admins=true`. That repository's `ci.yml` **does** define a `secrets-scan` job (checksum-verified gitleaks CLI over full history, `--exit-code 1`) and it has passed on every run since its PR #23, but the job name is absent from `contexts`, so a failing secret scan cannot block a merge. `repos/jolarca-hermes-agents.yml` nevertheless declares `compliance.required_gates.secret_scan: true`. |
+| Consumed by | Nothing. `git grep -rn required_gates -- scripts *.tf policy` returns no hits: the block is declarative metadata whose *shape* is exercised only by `tests/test_validate_repos.py:118`. No script, policy check or Terraform resource reads it, so no gate outcome depends on it and changing the value would be theatre. |
+| Impact | By this repo's own §6 ("never describe a control as enforced when it is configured-but-inert"), the declaration asserts a required gate the live rule does not require. The overstatement propagated outward into `jolarca-hermes-agents/QODER.md` §7.10, which said secret scanning "is enforced by the CI `secrets-scan` job" — corrected there by PR #32. No actual exposure found: gitleaks over full history exits 0 locally and the CI job is green. |
+| Why not fixed here | Promotion cannot be performed from either repository. `terraform state list` in this root exits 1 with "Terraform has not yet made changes to your existing configuration or state", so there is no state to plan against and no incremental apply to review. §5 forbids an agent both `apply`/`import` here and any `gh api -X PATCH` of branch protection; §8 records D-01/D-02/D-18/D-20/D-33 blocking the first apply with no targeted-apply mechanism, and `make apply` is refused by design. The live rule was created out-of-band (cf. D-38, D-39 `PUT /branches/main/protection`). |
+| Not a first-apply blocker | Deliberately **not** added to `exceptions.open_blocking`: this finding does not make an apply dangerous, and filing it there would misrepresent it as one. It is an attestation-accuracy defect, not a state-danger defect. |
+| Decision owner | Operator. Either (a) promote `secrets-scan` into `required_status_checks.contexts` once this root genuinely owns branch protection (state import plus resolution of the five existing blockers), or (b) leave the live rule where it originated and treat `required_gates` here as declared intent only. This entry records (b) as the honest current state; (a) stays open as a migration decision. |
+| Related | D-02 (no remote state, so no plan/apply/import), D-08 (out-of-band protection history), D-33 (protection on public repos), D-38, D-39. |
+
+### D-41 · `branch-protection.tf` STATUS comment contradicts `terraform.tfvars` — **OPEN, fix proposed not applied**
+
+|  |  |
+|---|---|
+| Evidence | `branch-protection.tf` lines 18–20 state "terraform.tfvars still sets `var.enable_branch_protection = false`, so these resources still create nothing until the operator flips the flag". `terraform.tfvars:46` sets `enable_branch_protection = true`. |
+| Impact | The rationale is stale in the direction that matters. `locals.protected_repos` filters on `&& var.enable_branch_protection`, so the guard now evaluates true and `github_branch_protection.main` **would** be created on a first apply — while D-38/D-39 show equivalent protection already exists live, created out-of-band. A reader trusting the comment concludes nothing is managed; a reader trusting the tfvars plans a create against existing rules. Both readings are wrong, in a file this repo classifies high-blast-radius (§4). |
+| Proposed fix | Replace the false clause in the STATUS block with the measured value and the surviving caveat: the flag is true, yet the resources remain inert because this root holds no state (D-02). Comment-only, zero semantic change. Not applied here because §4 puts any `*.tf` edit in the human-read-plan class, and the fix belongs with the D-02 migration rather than beside it. |
+| Decision owner | Operator, as part of the D-02 remote-state-backend migration. |
+| Related | D-02, D-38, D-39, D-40. |
