@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Generate jolarca-observability scripts/ files."""
 
+import os
 from pathlib import Path
 
-BASE = Path("/opt/jolarca/repos/jolarca-observability")
+BASE = Path(
+    os.environ.get(
+        "JOLARCA_OBSERVABILITY_DIR",
+        "/opt/jolarca/repos/jolarca-observability",
+    )
+)
 files: dict[str, str] = {}
 
 # ── scripts/README.md ─────────────────────────────────────────────────────────
