@@ -1,7 +1,7 @@
 # Drift & Findings Register — jolarca-dev control plane
 
 **Created:** 2026-09-25
-**Last verified:** 2026-10-03 (read-only live protection check on `jolarca-hermes-agents`; declared-vs-enforced gap recorded as D-40, stale `branch-protection.tf` rationale as D-41); 2026-10-04 fleet-wide pin scan across the 16 allow-listed repos plus `jolarca-dev/.github` (D-43)
+**Last verified:** 2026-10-03 (read-only live protection check on `jolarca-hermes-agents`; declared-vs-enforced gap recorded as D-40, stale `branch-protection.tf` rationale as D-41); 2026-10-04 fleet-wide pin scan across the 16 allow-listed repos plus `jolarca-dev/.github` (D-43); 2026-10-04 declared-vs-live settings audit and shared CI base failure audit (D-44, D-45)
 **Method:** every row below was verified empirically against the live GitHub
 API (`gh api`, read-only) and against
 `jolarca-infrastructure/terraform/environments/production/terraform.tfstate`.
@@ -669,3 +669,36 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Decision owner | Operator. Part (3) touches the allow-list, a high blast-radius path. |
 | Not verified | Whether `.github`'s workflows are invoked from organisation-level settings rather than repo files; what `trivy-action@master` and `checkov-action@master` currently resolve to; whether the 51 tag refs sit in steps that actually execute (files were read, runs were not); and whether the corrected gitleaks pin would even run — prior evidence is that `gitleaks-action` needs `GITLEAKS_LICENSE` for org-owned repos and its `@v2` tag resolves to an annotated tag object, which Actions rejects as a pin. Verify before any repo is wired to that workflow. |
 | Related | D-40 (declared gate vs server-side enforcement), D-42 (`AGENTS.md` §8 stale), `jolarca-hermes-agents` `QODER.md` §7.1 and §7.12, `tests/test_ci_hardening.py`. |
+## 2026-10-04 — Declared repo settings vs live API, and the shared CI base's failure modes
+
+D-43 part 1 (enforce the existing Actions SHA rule) was executed in `jolarca-identity#2`,
+`jolarca-vendor#2` and `jolarca-dev/.github#4`. D-43 parts 2 and 3 (the pre-commit `rev:` decision and
+registering `.github`) remain open operator decisions. The two findings below came out of doing that work.
+
+### D-44 · `repos/*.yml` settings for identity and vendor do not match GitHub reality — **OPEN, operator decision**
+
+|  |  |
+|---|---|
+| Evidence — settings | `repos/jolarca-identity.yml` and `repos/jolarca-vendor.yml` were compared against `GET /repos/jolarca-dev/<repo>` on 2026-10-04. The drift is identical in both repos: `allow_merge_commit` declared false, actual **true**; `allow_rebase_merge` declared false, actual **true**; `delete_branch_on_merge` declared true, actual **false**; `has_projects` declared false, actual **true**. Matching: `web_commit_signoff_required`, `has_issues`, `has_wiki`, `archived`, `is_template`. |
+| Evidence — protection | Control declares `branch_protection.main` for identity with `strict: true` and `contexts: [ci, security, lint]`; the live protection object returns `required_status_checks = null`, i.e. **no required contexts configured at all**. For vendor control declares `contexts: [lint]`; the live endpoint returns **HTTP 404 "Branch not protected"** -- that repo has no branch protection whatsoever. |
+| Evidence — update monitoring | Neither repo declares `.github/dependabot.yml` (absent in identity and vendor; present in `jolarca`, `jolarca-infrastructure`, `jolarca-data`). Both repos' action refs were SHA-pinned today, so they are now **frozen with nothing proposing updates**. |
+| Impact | Three things. (a) The allow-list is the fleet's declared source of truth; four settings per repo are wrong in it, so any attestation that cites it is inaccurate -- D-40's class, at settings scale. (b) `jolarca-vendor` can be merged to main with no protection while the declaration says it is protected: a reviewer reading `repos/jolarca-vendor.yml` believes a control exists that does not. (c) Pinned-plus-unmonitored converts a float into silent aging, which is the right security trade only if someone records it. |
+| Why not fixed here | Every remedy is either a Terraform apply -- blocked: HCP backend needs `terraform init` with the operator's cloud token and then a human-read plan, and AGENTS.md §5 forbids agent apply and any out-of-band `gh api -X PATCH` of repo settings -- or an edit to the evidence-hashed `repos/*.yml` that would then disagree with live reality until applied. This is a decision record, not a repo edit. |
+| Proposed fix | Apply the declared settings to both repos, or first correct the declarations to match reality and then apply. Add the two missing `dependabot.yml` files following the three-ecosystem pattern proven in `jolarca-hermes-agents`. Sequence note: protect `jolarca-vendor` main **before** further PRs land on it. |
+| Decision owner | Operator. |
+| Related | D-02 (no applied state), D-40 (declared gate vs enforcement), D-42 (AGENTS.md §8 stale), D-43 (fleet pin discipline). |
+
+### D-45 · the shared CI base contains 11 steps that cannot fail, a fabricated SHA PR #1 missed, and an action major that no longer exists — **OPEN, one fix in review**
+
+|  |  |
+|---|---|
+| Evidence — cannot fail | In `jolarca-dev/.github`: 11 steps carry `continue-on-error: true` -- 10 in `.github/workflows/security-scan.yml` and the gitleaks step at `.github/workflows/ci-base.yml:112`. A secret-scanning step that cannot fail is the exact class this fleet bans elsewhere (`jolarca-hermes-agents` `tests/test_ci_gates_are_real.py`; ADR-0004 R3's inverse: a job that cannot fail manufactures assurance). |
+| Evidence — fabricated SHA, half fixed | PR #1 (`77011f8`, 2026-09-18) replaced `gitleaks/gitleaks-action@4f9a10a3b6e2a7a1b5d6b5a5e5e5e5e5e5e5e5e5` with the real `e6dab246340401bf53eec993b8f05aebe80ac636 # v2.3.4` **in security-scan.yml only**; the identical fabricated line is still at `ci-base.yml:109`. Measured with a negative control in one call shape: old SHA `GET git/commits/...` returns HTTP 404, new SHA returns HTTP 200. `jolarca-dev/.github#4` removes the last occurrence. |
+| Evidence — unresolvable major | `github/codeql-action/upload-sarif@v3` (security-scan.yml:97 and :183): `git/ref/tags/v3` and `git/ref/heads/v3` both return HTTP 404 while the action's current tags are v4.x. There is no commit to pin, so these steps cannot resolve as written and any change here is a version upgrade, not a pin. Left untouched deliberately and recorded instead. |
+| Evidence — untagged trunk | PR #2 (`7fdbd5f`) pinned `trivy-action` to `d2a0b60797ff03db6132bd4e2b293f9b37081297` with the comment `# master`. That commit carries **no release tag** (latest release v0.36.0 sits on `ed142fd0`; master's tip has since moved to `c03d123c`). `checkov-action`'s `444c9db6fa75e2d9c19ebf1fde7322089be9009e` is genuinely tagged v12.3125.0 but was also commented `# master`. AGENTS.md §5 asks for a `# vX.Y.Z` comment; "master" is not a version. PR #4 corrects both comments without changing any SHA. |
+| Evidence — no signal possible | All three shared workflows are `on: workflow_call` only; no allow-listed repo references a `jolarca-dev/` reusable workflow; and PRs in `.github` report **zero checks** (protection exists with `contexts = []`, `required_approving_review_count = 0`). Changes here can never be validated by a pipeline, so every claim about them must be static-analysis-plus-API proof, and "the pipeline is green" is not available as evidence. |
+| Impact | Latent but severe. If any repo ever calls these workflows it inherits a secret scan that always passes, a step that cannot resolve, and scanners pinned to untagged trunk. This is D-43's mechanism -- declared, never executed -- with the concrete failure modes enumerated. |
+| Proposed fix | (1) Land `.github#4`. (2) Decide the `continue-on-error` policy per step; removing it from the gitleaks step makes secret scanning real, which will start failing PRs -- that is the intent, and it should be a stated decision rather than a surprise. (3) Replace `codeql-action/upload-sarif@v3` with a current v4 commit SHA in its own PR. (4) Register `.github` in `repos/` so a validator covers the repo that executes fleet CI (D-43 part 3). |
+| Decision owner | Operator. Parts (2) and (3) are behaviour changes, not pinning. |
+| Not verified | Whether an org-level setting wires these workflows outside repo files; whether `gitleaks-action` can run at all on an org-owned repo without `GITLEAKS_LICENSE` -- prior evidence says it fails every run -- so even a correctly pinned step may be non-functional. Verify before treating (1) as making the secret control real. |
+| Related | D-43 (pin discipline, the `rev:` question, `.github` unregistered), D-40, D-44. |
