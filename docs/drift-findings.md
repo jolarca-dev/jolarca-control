@@ -1,7 +1,7 @@
 # Drift & Findings Register — jolarca-dev control plane
 
 **Created:** 2026-09-25
-**Last verified:** 2026-10-03 (read-only live protection check on `jolarca-hermes-agents`; declared-vs-enforced gap recorded as D-40, stale `branch-protection.tf` rationale as D-41); 2026-10-04 fleet-wide pin scan across the 16 allow-listed repos plus `jolarca-dev/.github` (D-43); 2026-10-04 context-parity check first live run (D-47)
+**Last verified:** 2026-10-03 (read-only live protection check on `jolarca-hermes-agents`; declared-vs-enforced gap recorded as D-40, stale `branch-protection.tf` rationale as D-41); 2026-10-04 fleet-wide pin scan across the 16 allow-listed repos plus `jolarca-dev/.github` (D-43); 2026-10-04 context-parity check first live run (D-47); 2026-10-04 declared-vs-enforced sweep over the exempt list (D-48)
 **Method:** every row below was verified empirically against the live GitHub
 API (`gh api`, read-only) and against
 `jolarca-infrastructure/terraform/environments/production/terraform.tfstate`.
@@ -669,6 +669,9 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Decision owner | Operator. Part (3) touches the allow-list, a high blast-radius path. |
 | Not verified | Whether `.github`'s workflows are invoked from organisation-level settings rather than repo files; what `trivy-action@master` and `checkov-action@master` currently resolve to; whether the 51 tag refs sit in steps that actually execute (files were read, runs were not); and whether the corrected gitleaks pin would even run — prior evidence is that `gitleaks-action` needs `GITLEAKS_LICENSE` for org-owned repos and its `@v2` tag resolves to an annotated tag object, which Actions rejects as a pin. Verify before any repo is wired to that workflow. |
 | Related | D-40 (declared gate vs server-side enforcement), D-42 (`AGENTS.md` §8 stale), `jolarca-hermes-agents` `QODER.md` §7.1 and §7.12, `tests/test_ci_hardening.py`. |
+| Correction (2026-10-04) | This row's framing that `.github` is "not in `repos/*.yml`, so no validator covers it" overstated the case. `scripts/drift_detect.py` sets `HEALTH_REPO = ".github"`, excludes it from allow-list comparison by design, and `health-repo.tf` manages the repository itself; `scripts/validate_repos.py` and `scripts/check_fleet_separation.sh` both carry documented exceptions for it. So it is not a forgotten repo -- it is the designated organization health repository. The real and narrower gap: `health-repo.tf` declares no `github_branch_protection` resource, while the live rule requires zero status checks (measured: protection readable, `contexts = []`, `required_approving_review_count = 0`), and D-45's proposed "register `.github` in `repos/`" would conflict with that deliberate exclusion rather than fix it. Corrected in D-48. |
+| Part 1 status | Executed: `jolarca-dev/.github#4` pins the four remaining floating setup refs, replaces the fabricated gitleaks SHA in `ci-base.yml:109` (PR #1 fixed only `security-scan.yml`), and corrects two `# master` version comments. Deliberately untouched and recorded instead: `codeql-action/upload-sarif@v3`, which has no `tags/v3` and no `heads/v3` (both HTTP 404) and so cannot be pinned -- only upgraded. |
+
 
 ### D-47 · `jolarca-security` declares required status checks that no job in the repo can report — **OPEN, discovered by automation**
 
@@ -681,3 +684,17 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Interim handling | Added to the time-boxed `ALLOW_MISSING_REPOS` in `.github/workflows/context-parity.yml` with `ALLOW_MISSING_UNTIL: 2026-11-15`, so the job is green now and red on purpose after the date. Recorded here rather than only in the env line, so the register carries the reason. |
 | Decision owner | Operator, for the naming choice; the rename PR itself is an ordinary review PR. |
 | Related | D-44 (identity, declared-vs-producible), D-46 (rulesets outside the source of truth), D-22 (an unwired detection is folklore), D-23 (unverifiable is never a pass). |
+
+## 2026-10-04 — Six allow-listed repositories declare required status checks that their live rules do not enforce
+
+### D-48 · The `branch_protection_baseline_exempt` list spans six repos whose own declarations require contexts — **OPEN, policy decision required**
+
+|  |  |
+|---|---|
+| Evidence | Measured 2026-10-04 by comparing `repos/*.yml` declarations against each repo's live branch protection and its workflows' reportable contexts (job `name:` if set, else job key). Six exempt repos declare contexts while their live rules enforce none: `jolarca-compliance` (declares 4, all producible), `jolarca-data` (3, all producible), `jolarca-infrastructure` (3, all producible), `jolarca-legal` (2, all producible), `jolarca-identity` (3, **none** producible -- see D-44), `jolarca-security` (2, **none** producible -- see D-47). `.github` also appears in the hollow set but declares no allow-list entry at all, so it has no declaration to enforce (see D-43's correction row). |
+| Evidence — rule layering | GitHub's own documentation states that rulesets and branch protection "work alongside each other, and all applicable rules are enforced", and that aggregated rules resolve to the most restrictive version. Verified from the docs page, NOT reproduced experimentally on these repos. Consequence: adding legacy `github_branch_protection` does not fight a hollow ruleset -- it layers on top of it. |
+| Why it matters | `policy/repo-defaults.yml` says of the exemption: "A rule must still EXIST -- only the attribute baseline above is skipped. That keeps the exemption from becoming a way to leave a repo unprotected." Measured reality is weaker than that sentence: the exemption currently hides six repos whose own declarations require checks. The comment promises one thing; the code delivers another. |
+| Interim state in code | `jolarca-control#28` already surfaces all six in `hollow_rules`, deliberately informational: making it fail would turn `make drift` red across six repositories before any fix exists, and a permanently red signal is worth less than a green-when-clean one. This row is the place the decision is recorded, not silently deferred. |
+| Proposed fix, ordered | (1) Apply for the four where the declaration is already satisfiable (compliance, data, infrastructure, legal) -- nothing else is needed, and the union rule means no ruleset edit is required. (2) For identity and security, land the rename-then-declare sequence (identity #3 / control #29; D-47 for security) before applying, since their declarations are currently unsatisfiable. (3) Then tighten the semantics: exempt repos should still be required to enforce at least `minimum_required_contexts` when they DECLARE contexts, which makes the code match the comment in `policy/repo-defaults.yml`. Repos that declare none (the health repo) stay exempt legitimately. |
+| Decision owner | Operator. Step (3) is a policy change with an immediate red pipeline until steps (1) and (2) land, which is exactly why it is recorded rather than implemented in a bug-fix PR. |
+| Related | D-44 (identity, and the exempt-blind-spot mechanism), D-47 (security), D-46 (rulesets outside the source of truth), D-43 (`.github` framing corrected here), D-22, D-23. |
