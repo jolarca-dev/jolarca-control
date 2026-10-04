@@ -497,12 +497,11 @@ def _dr_ruleset_detail() -> dict[str, Any]:
 
 def test_ruleset_status_checks_are_read_from_the_list_shape() -> None:
     """The detail payload returns `rules` as a LIST of {type, parameters}, not a dict."""
-    contexts, strict = dd.ruleset_required_checks(_vendor_ruleset_detail())
-    assert contexts == []
-    assert strict is False
-    contexts, strict = dd.ruleset_required_checks(_dr_ruleset_detail())
+    contexts, strict, present = dd.ruleset_required_checks(_vendor_ruleset_detail())
+    assert (contexts, strict, present) == ([], False, True)
+    contexts, strict, present = dd.ruleset_required_checks(_dr_ruleset_detail())
     assert contexts == ["gitleaks", "lint"], "contexts are returned as a sorted set"
-    assert strict is False
+    assert (strict, present) == (False, True)
 
 
 def test_protection_404_with_ruleset_requiring_nothing_is_a_finding(monkeypatch: Any) -> None:
@@ -631,3 +630,116 @@ def test_exempt_repo_still_cannot_have_zero_required_contexts(monkeypatch: Any) 
     assert unverified == [], "the rule was readable; this is a finding, not a gap"
     assert not bp["weakened"], "hollow_rules is informational, so exemption stays a policy decision"
     assert not bp["missing"]
+
+
+def test_ruleset_scoped_away_from_the_branch_does_not_count_as_protection(monkeypatch: Any) -> None:
+    """F1 regression: an active ruleset that does not include the branch protects nothing here.
+
+    Counting it would report a repo as protected-by-ruleset when the enforcement applies to other refs --
+    the same false clean this whole change was written to remove, one layer over.
+    """
+    unrelated = {
+        "name": "release-guard",
+        "enforcement": "active",
+        "conditions": {"ref_name": {"exclude": [], "include": ["release/*"]}},
+        "rules": [
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "strict_required_status_checks_policy": True,
+                    "required_status_checks": [{"context": "build"}],
+                },
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": True}),
+                f"repos/{dd.ORG}/r/branches/main/protection": (
+                    404,
+                    {"message": "Branch not protected"},
+                ),
+                f"repos/{dd.ORG}/r/rulesets": (
+                    200,
+                    [{"id": 77, "name": "release-guard", "enforcement": "active"}],
+                ),
+                f"repos/{dd.ORG}/r/rulesets/77": (200, unrelated),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert "r" in bp["missing"], "a ruleset that excludes main must leave the branch unprotected"
+    assert bp["ruleset_protected"] == []
+    assert bp["weakened"] == []
+    assert unverified == []
+
+
+def test_default_branch_inclusion_counts_and_absent_rule_is_named_as_absent(
+    monkeypatch: Any,
+) -> None:
+    """F2 regression: jolarca-consent's real shape -- a ruleset with NO required_status_checks rule.
+
+    The report must say the rule is absent, not that it is configured strict=false, because the two have
+    different remediations and only one of them is a lie about configuration.
+    """
+    detail = {
+        "name": "protect-main",
+        "enforcement": "active",
+        "conditions": {"ref_name": {"exclude": [], "include": ["~DEFAULT_BRANCH"]}},
+        "rules": [{"type": "deletion"}, {"type": "non_fast_forward"}],
+    }
+    contexts, strict, has_rule = dd.ruleset_required_checks(detail)
+    assert (contexts, strict, has_rule) == ([], False, False), (
+        "absent rule must be reported as absent"
+    )
+
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": True}),
+                f"repos/{dd.ORG}/r/branches/main/protection": (
+                    404,
+                    {"message": "Branch not protected"},
+                ),
+                f"repos/{dd.ORG}/r/rulesets": (
+                    200,
+                    [{"id": 88, "name": "protect-main", "enforcement": "active"}],
+                ),
+                f"repos/{dd.ORG}/r/rulesets/88": (200, detail),
+            }
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert len(bp["weakened"]) == 1
+    issues = " ".join(bp["weakened"][0]["issues"])
+    assert "no required_status_checks rule" in issues, issues
+    assert "strict_required_status_checks_policy=false" not in issues, issues
+    assert unverified == []
+
+
+def test_include_glob_matching_the_branch_still_counts(monkeypatch: Any) -> None:
+    """~DEFAULT_BRANCH and explicit refs/heads/main are both coverage; only exclusion must not count."""
+    for include in (["~DEFAULT_BRANCH"], ["refs/heads/main"], ["main"]):
+        detail = {
+            "name": "protect-main",
+            "enforcement": "active",
+            "conditions": {"ref_name": {"exclude": [], "include": include}},
+            "rules": [
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "strict_required_status_checks_policy": False,
+                        "required_status_checks": [{"context": "lint"}],
+                    },
+                }
+            ],
+        }
+        assert dd.ruleset_covers_branch(detail, "main"), include
+    assert not dd.ruleset_covers_branch(
+        {"conditions": {"ref_name": {"exclude": ["main"], "include": ["~DEFAULT_BRANCH"]}}}, "main"
+    ), "an explicit exclusion must win over inclusion"
