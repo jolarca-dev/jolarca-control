@@ -245,10 +245,22 @@ def main(argv: list[str] | None = None) -> int:
 
     code = exit_code(kept, unverifiable)
     if code == 0:
-        print(
-            f"OK: {checked} repositories declare required contexts and all are producible.",
-            file=sys.stderr,
-        )
+        # Derived from the counts. CI once printed "OK: 16 repositories ... all are producible" two
+        # lines after "NOTE: ALLOWED ... jolarca-security unproducible [...]" -- a summary that
+        # contradicts its own findings is the defect this script exists to detect.
+        if checked == 0:
+            print(
+                "OK: no repositories declare required status checks; nothing checked.",
+                file=sys.stderr,
+            )
+        else:
+            allowed_n = sum(1 for n in notes if n.startswith("ALLOWED"))
+            parts = [f"{checked} checked", f"{checked - allowed_n} clean"]
+            if allowed_n:
+                parts.append(f"{allowed_n} allowed until {until.isoformat()}")
+            if skipped:
+                parts.append(f"{len(skipped)} skipped (no commits)")
+            print("OK: " + "; ".join(parts) + ".", file=sys.stderr)
     return code
 
 

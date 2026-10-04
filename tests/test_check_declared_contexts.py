@@ -17,8 +17,10 @@ REST-versus-GraphQL field-name bug survive.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import importlib.util
+import io
 import sys
 from pathlib import Path
 from typing import Any
@@ -149,3 +151,43 @@ def test_skipped_repo_becomes_a_finding_once_it_has_content() -> None:
     produced, errors, skipped = cdc.produced_contexts("r", probe=lambda *_: bodies)
     assert (produced, errors, skipped) == ({"lint"}, [], False)
     assert cdc.compare("r", ["ci"], produced), "a now-non-empty repo must be judged again"
+
+
+def test_summary_never_claims_all_producible_when_something_was_allowed(
+    capsys: Any, monkeypatch: Any
+) -> None:
+    """The OK line must be derived from the counts, not asserted.
+
+    Caught in the wild: CI printed "NOTE: ALLOWED ... jolarca-security unproducible [...]" and, two lines
+    later, "OK: 16 repositories declare required contexts and all are producible." A summary that
+    contradicts its own findings is the same defect class this script exists to detect.
+    """
+    monkeypatch.setenv("ALLOW_MISSING_REPOS", "r")
+    monkeypatch.setenv("ALLOW_MISSING_UNTIL", "2099-01-01")
+    monkeypatch.setattr(cdc, "REPOS_DIR", Path("tests"))  # no *.yml here -> 0 repos, deterministic
+    rc = cdc.main([])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "all are producible" not in err
+    assert "no repositories" in err.lower() or "checked 0" in err.lower(), err.strip()[-160:]
+
+
+def test_summary_wording_tracks_findings_and_skips(monkeypatch: Any, tmp_path: Any) -> None:
+    """With an allowance in force the summary must name it instead of declaring universal success."""
+    repos = tmp_path / "repos"
+    repos.mkdir()
+    (repos / "r.yml").write_text(
+        "branch_protection:\n  main:\n    required_status_checks:\n      contexts:\n      - nope\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cdc, "REPOS_DIR", repos)
+    monkeypatch.setenv("ALLOW_MISSING_REPOS", "r")
+    monkeypatch.setenv("ALLOW_MISSING_UNTIL", "2099-01-01")
+    monkeypatch.setattr(cdc, "produced_contexts", lambda repo, probe=None: ({"lint"}, [], False))
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        rc = cdc.main([])
+    text = err.getvalue()
+    assert rc == 0
+    assert "all are producible" not in text, text
+    assert "1 allowed" in text, text.strip()[-200:]
