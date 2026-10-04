@@ -30,9 +30,27 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # GitHub names a required status check after a job's `name:` when it has one and falls back to
+      # the job key otherwise. Trunk declared [lint, security], which matches no job this repo can
+      # report, so applying it under strict:true would have blocked every PR (drift register D-47,
+      # recorded in jolarca-control#31).
+      #
+      # MERGE AFTER jolarca-security#3, which itself merges after #2. Two distinct bricks, measured
+      # 2026-10-04: before #2 the gitleaks workflow fails to LOAD (abbreviated action ref), so it
+      # emits no check at all and `secret-scan` can never report; before #3 the four jobs still carry
+      # prose `name:` overrides, so the contexts GitHub reports are sentences, not these keys.
+      #
+      # Intent preserved, plus one honest addition. [lint, security] evidently meant "the linters" and
+      # "the secret scan"; naming them individually yields markdown-lint, secret-scan and yaml-lint.
+      # The fourth, policy-tests, is the policy-as-code suite jolarca-security#2 introduces: this file
+      # now requires four checks because the repo will run four. Strict mode, enforce_admins and the
+      # review block are untouched. Requiring secret-scan also makes compliance.required_gates
+      # .secret_scan on the bottom of this file true in fact and not merely declared (cf. D-40).
       contexts:
-      - lint
-      - security
+      - markdown-lint
+      - policy-tests
+      - secret-scan
+      - yaml-lint
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true
