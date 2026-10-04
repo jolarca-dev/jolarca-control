@@ -95,6 +95,8 @@ readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
 	  $(if $(REPO),--repo $(REPO)) \
 	  $(if $(OUT),--output $(OUT)) \
 	  $(if $(REPORT),--markdown $(REPORT)) >/dev/null
+context-parity: ## Declared required status checks must be checks the repo can report
+	python3 scripts/check_declared_contexts.py
 
 # Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
 # STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target

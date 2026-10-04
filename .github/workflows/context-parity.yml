@@ -1,0 +1,69 @@
+# context-parity.yml -- required status checks must be checks a repo can actually report.
+#
+# jolarca-control -- marketplace (jolarca-dev) governance control plane.
+# SOC 2 CC6.6/CC8.1 · ISO 27001 A.5.3/A.8.32 · PCI-DSS 1.2.1
+#
+# Why this exists (D-44): repos/jolarca-identity.yml declared required contexts
+# [ci, security, lint] while that repo's workflows published `shellcheck` and
+# `gitleaks (full history)`. Under strict:true that is an unsatisfiable gate -- every
+# future PR there would block forever once applied. The computation already existed in
+# scripts/repo_readiness_audit.py but no workflow invoked it, so the defect was only
+# ever found by hand. A detection no pipeline runs is folklore, not a control (D-22).
+#
+# Scope is deliberately narrow: the full readiness audit currently reports 15 of 16
+# repos BLOCKED for unrelated reasons, so gating CI on it would be red every week and
+# train dismissal. Exit codes are the fleet's three-valued contract -- 0 clean,
+# 1 findings, 2 could-not-verify -- and 2 never reads as a pass (D-23).
+
+name: Context Parity
+
+on:
+  pull_request:
+    paths:
+      - "repos/**"
+      - "scripts/check_declared_contexts.py"
+      - ".github/workflows/context-parity.yml"
+  push:
+    branches: [main]
+    paths:
+      - "repos/**"
+      - "scripts/check_declared_contexts.py"
+  schedule:
+    # Weekly sweep: catches a declaration drifting away from a repo's workflows
+    # between PRs, and re-checks every repo even when nothing changed here.
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  context-parity:
+    name: Context Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.3.0
+      - name: Set up Python
+        uses: actions/setup-python@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt
+      # Every allow-listed repo is public (verified 2026-10-04), so the job's own
+      # GITHUB_TOKEN can read their workflow files; no admin-scoped PAT is required,
+      # and no repo is queried beyond the allow-list.
+      - name: Check declared status-check contexts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Known drift, time-boxed rather than silenced. jolarca-identity: #3 renames
+          # its contexts and jolarca-control#29 aligns the declaration. jolarca-security:
+          # declared [lint, security] but publishes 'Markdown lint', 'YAML syntax
+          # validation' and 'gitleaks' -- same class, discovered by this check's first
+          # live run, recorded as D-47; no fix PR exists yet. Delete each entry once its
+          # declaration is satisfiable. If the date passes with an entry still listed,
+          # the job goes red on purpose: an exception without an expiry is how a known
+          # gap becomes a permanent one.
+          ALLOW_MISSING_REPOS: "jolarca-identity jolarca-security"
+          ALLOW_MISSING_UNTIL: "2026-11-15"
+        run: python3 scripts/check_declared_contexts.py

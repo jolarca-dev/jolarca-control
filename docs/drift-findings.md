@@ -1,7 +1,7 @@
 # Drift & Findings Register — jolarca-dev control plane
 
 **Created:** 2026-09-25
-**Last verified:** 2026-10-03 (read-only live protection check on `jolarca-hermes-agents`; declared-vs-enforced gap recorded as D-40, stale `branch-protection.tf` rationale as D-41); 2026-10-04 fleet-wide pin scan across the 16 allow-listed repos plus `jolarca-dev/.github` (D-43)
+**Last verified:** 2026-10-03 (read-only live protection check on `jolarca-hermes-agents`; declared-vs-enforced gap recorded as D-40, stale `branch-protection.tf` rationale as D-41); 2026-10-04 fleet-wide pin scan across the 16 allow-listed repos plus `jolarca-dev/.github` (D-43); 2026-10-04 context-parity check first live run (D-47)
 **Method:** every row below was verified empirically against the live GitHub
 API (`gh api`, read-only) and against
 `jolarca-infrastructure/terraform/environments/production/terraform.tfstate`.
@@ -669,3 +669,15 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Decision owner | Operator. Part (3) touches the allow-list, a high blast-radius path. |
 | Not verified | Whether `.github`'s workflows are invoked from organisation-level settings rather than repo files; what `trivy-action@master` and `checkov-action@master` currently resolve to; whether the 51 tag refs sit in steps that actually execute (files were read, runs were not); and whether the corrected gitleaks pin would even run — prior evidence is that `gitleaks-action` needs `GITLEAKS_LICENSE` for org-owned repos and its `@v2` tag resolves to an annotated tag object, which Actions rejects as a pin. Verify before any repo is wired to that workflow. |
 | Related | D-40 (declared gate vs server-side enforcement), D-42 (`AGENTS.md` §8 stale), `jolarca-hermes-agents` `QODER.md` §7.1 and §7.12, `tests/test_ci_hardening.py`. |
+
+### D-47 · `jolarca-security` declares required status checks that no job in the repo can report — **OPEN, discovered by automation**
+
+|  |  |
+|---|---|
+| Evidence | `repos/jolarca-security.yml` declares `branch_protection.main.required_status_checks.contexts: [lint, security]`. `GET /repos/jolarca-dev/jolarca-security/contents/.github/workflows` returns `gitleaks.yml` and `lint.yml`, whose jobs publish the contexts `Markdown lint`, `YAML syntax validation` and `gitleaks` (GitHub names a check after a job's `name:` when set, else the job key). Neither `lint` nor `security` is producible. The repo is public with content (`size` 58), `launch_status: planned`, so unlike `jolarca-observability` and `jolarca-runbooks` -- both empty, both skipped by the new check -- this is not a not-yet-started repository. |
+| How found | By `scripts/check_declared_contexts.py` on its first live run, alongside the jolarca-identity case in D-44. That is the point of wiring the check: the identity defect had previously been found only because someone ran a manual audit, and this one had gone unnoticed entirely. |
+| Impact | Same class, larger blast radius: applying the declaration under `strict: true` makes every future PR in jolarca-security unmergeable, and the repo is the fleet's security-scanning reference whose workflow others copy. Today nothing enforces the declaration, so the mismatch is latent -- which is exactly the state that made it invisible. |
+| Proposed fix | Follow the identity sequence: first rename the jobs in jolarca-security so the contexts are stable lowercase keys (`lint`, `secret-scan`), then align `repos/jolarca-security.yml` in a PR that regenerates `docs/evidence-registry.csv`. Declaring the current display names instead would work but is the brittle option: a reworded job title would silently un-required a check. |
+| Interim handling | Added to the time-boxed `ALLOW_MISSING_REPOS` in `.github/workflows/context-parity.yml` with `ALLOW_MISSING_UNTIL: 2026-11-15`, so the job is green now and red on purpose after the date. Recorded here rather than only in the env line, so the register carries the reason. |
+| Decision owner | Operator, for the naming choice; the rename PR itself is an ordinary review PR. |
+| Related | D-44 (identity, declared-vs-producible), D-46 (rulesets outside the source of truth), D-22 (an unwired detection is folklore), D-23 (unverifiable is never a pass). |
