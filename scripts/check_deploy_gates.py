@@ -188,10 +188,14 @@ def apply_allowance(
             continue
         until = allowed[target]
         if today <= until:
-            notes.append(f"ALLOWED (expires {until.isoformat()}): {target}")
+            note = f"ALLOWED (expires {until.isoformat()}): {target}"
         else:
-            notes.append(f"EXPIRED allowance ({until.isoformat()}): {target}")
+            note = f"EXPIRED allowance ({until.isoformat()}): {target}"
             kept.append(finding)
+        # One note per environment. Two rules failing on the same target must not read in the log as two
+        # exempted environments -- the counting error the summary line already had, in its output twin.
+        if note not in notes:
+            notes.append(note)
     return kept, notes
 
 

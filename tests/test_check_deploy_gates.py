@@ -203,6 +203,18 @@ def test_script_is_wired_into_a_workflow() -> None:
     assert hits, "scripts/check_deploy_gates.py is invoked by no workflow"
 
 
+def test_two_rules_on_one_environment_produce_one_note() -> None:
+    """The log must not read as two exempted environments when one environment failed two rules."""
+    target = "jolarca-dev/jolarca-control:production"
+    future = dt.date.today() + dt.timedelta(days=30)
+    kept, notes = cdg.apply_allowance(
+        [f"{target}: no protection rule of any kind", f"{target}: can_admins_bypass=True"],
+        {target: future},
+    )
+    assert kept == [] and len(notes) == 1, (kept, notes)
+    assert notes[0].startswith("ALLOWED") and target in notes[0], notes
+
+
 def test_target_of_reads_both_message_shapes() -> None:
     """A finding and an exemption note put the same target in different places in the string."""
     finding = "jolarca-dev/jolarca-control:production: no protection rule of any kind (protection_rules is empty)"
