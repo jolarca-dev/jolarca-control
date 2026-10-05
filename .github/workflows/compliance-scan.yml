@@ -82,7 +82,13 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: bash tests/test_check_plan_safety.sh
-      - run: .venv/bin/python -m pytest tests/ -q || python -m pytest tests/ -q
+      # Named step, and no fallback: a runner has no .venv here (no workflow builds one and
+      # .gitignore excludes it), so the previous `.venv/bin/python ... || python ...` always fell
+      # through and the fallback owned the verdict. requirements-dev.txt pins pytest exactly and is
+      # installed into this interpreter by the step above, so `python` IS the pinned environment.
+      # Guarded by tests/test_ci_steps_are_real.py.
+      - name: Regression tests
+        run: python -m pytest tests/ -q
 
   # ── Lint (ruff + shellcheck + yamllint) ────────────────────────────────────
   lint:
