@@ -33,7 +33,7 @@ jobs:
     name: Fleet Separation (ADR-0004)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.0
       - name: Run fleet separation guard
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

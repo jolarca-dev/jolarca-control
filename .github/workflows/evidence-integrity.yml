@@ -57,7 +57,7 @@ jobs:
     name: Evidence Integrity Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.3.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.0
 
       # The only automatic path. Exit 1 on a hash mismatch; exit 2 if the
       # committed baseline is missing or holds no entries. Neither is OK.
