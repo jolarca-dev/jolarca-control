@@ -127,17 +127,31 @@ not on the pushing host).
 4. **Remove from HEAD** in each repo: `git rm -r <prefix>` for the moved paths,
    add pointer `README.md`, commit, open a PR there. This alone does **not** end
    the exposure (history) — it only stops new readers of HEAD.
-5. **Purge history** (irreversible — operator):
+5. **Purge history** (irreversible — operator). **Never run whole-directory
+   prefixes** (`--path audits/ --path docs/ --path security/`). A read-only
+   dry-run on 2026-10-07 (Section 6) measured that those prefixes would remove
+   **102 of 218** full-history paths in `jolarca-compliance` and **54 of 334** in
+   `jolarca-infrastructure`, most of it *collateral*: every `README.md` /
+   `.gitkeep` / `.markdownlint.json`, the generic breach-notification and consent
+   templates, and on infrastructure the entire `docs/` ADR set (0001-0007) and
+   the operational runbook set. That destroys governance and ops documentation,
+   irreversibly. Use a **frozen exact-path manifest** and dry-run it first:
    ```bash
-   git filter-repo --invert-paths \
-     --path ropa/ --path dpia/ --path risk-register/ \
-     --path vendor-assessments/ --path data-subject-requests/ \
-     --path incidents/ --path lawful-basis/ --path audits/ \
-     --path-pair security/deviation-register.md "" # infra: per the chosen subset
-   git push --force --mirror
+   # MANDATORY gate: apply the manifest to a throwaway clone and diff the
+   # full-history path sets before -> after. removed must equal the manifest and
+   # collateral must be empty. Nothing is pushed; the clone is discarded.
+   c=$(mktemp -d); git clone --quiet https://github.com/jolarca-dev/<repo> "$c"
+   ( cd "$c"
+     git log --all --pretty=format: --name-only --diff-filter=AMR | sort -u > "$c/before.txt"
+     git filter-repo --invert-paths --paths-from-file /abs/regulated-blobs.txt --force
+     git log --all --pretty=format: --name-only --diff-filter=AMR | sort -u > "$c/after.txt"
+     comm -23 "$c/before.txt" "$c/after.txt"   # removed paths == manifest, EXACTLY )
+   rm -rf "$c"
    ```
-   Use the exact path set frozen in Step 1. Coordinate first: a rewrite breaks
-   every fork, clone and open PR in those repos.
+   The manifest is in Section 6. `filter-repo` treats a trailing-`/` line as a
+   directory and any other line as an exact path. Coordinate first: a rewrite
+   breaks every fork, clone and open PR in those repos (measured `forks_count = 0`
+   on both, so there are no third-party forks to re-contact).
 6. **GitHub Support request** — HEAD-rewrite leaves the old commits reachable
    via cached/network objects and forks. Open a support ticket to **detach and
    purge the history**, and re-contact any forks. Until support confirms, the
@@ -185,3 +199,90 @@ why privating is not a fix), D-02 / D-13 (state backup and frozen state),
 D-37 (its "D-31 superseded" claim corrected in D-52), `scripts/validate_repos.py`
 (public + confidential hard gate), `scripts/check_declared_contexts.py` (the
 Context Parity coupling).
+
+## 6. Dry-run verification and the curated manifest (2026-10-07)
+
+A read-only dry-run reproduced `git filter-repo --invert-paths --path` semantics
+over full git history (scratch HTTPS clones; blob bodies never read; nothing
+pushed; clones deleted). Both repos measured `visibility: public`, `forks_count 0`.
+
+| Repo | distinct full-history paths | broad Step-5 prefixes would remove | collateral vs a narrow manifest |
+|---|---|---|---|
+| jolarca-compliance | 218 | 102 | 75 |
+| jolarca-infrastructure | 334 | 54 | 50 |
+
+Collateral shrinks once the borderline records below are added to the manifest;
+the Step-5 dry-run gate re-measures it exactly before anything runs.
+
+Curated `regulated-blobs.txt` (one path per line; trailing `/` = a directory).
+Posture for a *public* repo holding regulated content: move anything that reveals
+CDE topology, control weaknesses, key management, network policy, or per-subject
+records; keep generic governance/transparency, READMEs, and empty skeletons.
+**Every line is an operator-reviewable judgment call - adjust with reason, then
+re-run the Step-5 dry-run gate.**
+
+```text
+# jolarca-compliance
+ropa/master-register.csv
+ropa/by-system/
+dpia/001-identity-and-consent/dpia.md
+dpia/002-ai-processing/dpia.md
+dpia/003-payments-and-vat/dpia.md
+dpia/004-geolocation-search/dpia.md
+dpia/register.md
+risk-register/register.md
+vendor-assessments/anthropic/assessment.md
+vendor-assessments/dpd/assessment.md
+vendor-assessments/google-cloud/assessment.md
+vendor-assessments/hetzner/assessment.md
+vendor-assessments/letsencrypt/assessment.md
+vendor-assessments/omniva/assessment.md
+vendor-assessments/openai/assessment.md
+vendor-assessments/proxmox/assessment.md
+vendor-assessments/stripe/assessment.md
+vendor-assessments/register.csv
+vendor-assessments/register.md
+data-subject-requests/register.md
+incidents/register.md
+lawful-basis/consent-versions.md
+audits/internal/2026-08-step17-payment-boundary-audit/AUDIT_REPORT.md
+audits/internal/2026-08-step22-payment-boundary-reaudit/AUDIT_REPORT.md
+audits/internal/2026-08-step22c-payment-boundary-reaudit/AUDIT_REPORT.md
+audits/gate-evidence/G3-payments/G3_DECISION.md
+audits/gate-evidence/G3-payments/reports/
+# jolarca-infrastructure
+security/deviation-register.md
+security/network-policy.md
+security/pci-dss-scope.md
+security/key-custody.md
+STEP10_PAYMENT_BOUNDARY.md
+docs/payment-api-contract.md
+docs/payment-boundary-enforcement.md
+docs/runbooks/vault-sealed.md
+docs/runbooks/wireguard-key-rotation.md
+docs/runbooks/state-compromise.md
+docs/runbooks/postgres-failover.md
+docs/adr/0005-single-payment-boundary.md
+docs/adr/0006-redis-co-located-on-app-host.md
+```
+
+Borderline calls made here, each overridable by the operator with reason:
+- **Moved** the compliance payment-boundary audit reports and `G3-payments` - same
+  control-weakness class as the deviation register; leaving them while removing
+  the register would be inconsistent.
+- **Moved** infra `security/{network-policy,pci-dss-scope,key-custody}.md` and the
+  live-credential / compromise runbooks (`vault-sealed`, `wireguard-key-rotation`,
+  `state-compromise`, `postgres-failover`) - a public attacker playbook for the
+  highest-value targets.
+- **Moved** `docs/adr/0005`, `0006` (CDE topology: single payment boundary, redis
+  co-location).
+- **Kept** all other ADRs, `docs/architecture.md`, `docs/threat-model.md`,
+  `security/{isolation-model,cis-baseline,access-review}.md` (procedures, not
+  populated records), every `README.md`, `.gitkeep`, `.markdownlint.json`, and the
+  generic `incidents/templates/*` and `lawful-basis/consent-text/*` skeletons. If
+  any kept file turns out to hold org-specific values, move it too - decide by
+  reading it during Step 2 staging, not from this list.
+
+Landing this section runs nothing. **D-31 remains S1/BLOCKING/OPEN** until the
+operator provisions and verifies the destination (Steps 0-3), then executes
+Steps 4-7 with the Step-5 dry-run gate clean.
