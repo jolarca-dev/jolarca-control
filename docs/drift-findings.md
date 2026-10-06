@@ -639,7 +639,7 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Decision owner | Operator, as part of the D-02 remote-state-backend migration. |
 | Related | D-02, D-38, D-39, D-40. |
 
-### D-42 · `AGENTS.md` §8 misstates live branch protection on this repo main — **OPEN, correction proposed not applied**
+### D-42 · `AGENTS.md` §8 misstates live branch protection on this repo main — **CORRECTED 2026-10-06 (§8 rewritten on operator delegation)**
 
 |  |  |
 |---|---|
@@ -647,7 +647,7 @@ The ADR 0009 explicitly states these are fixtures planted to prove gitleaks fire
 | Impact | Section 8 asserts two things that are false as measured. (a) "Branch protection is not active on this repos `main`... enforceable by nothing today (D-33)" — protection IS active, with three required contexts and `enforce_admins=true`. (b) "`Policy Compliance Check` fails... `Repository Secret Pattern Scan`... a required context that is structurally incapable of going green... neither blocks a merge, because nothing server-side enforces them" — both are REQUIRED contexts and both PASS. |
 | Which half is hazardous | (b). A required gate documented as permanently broken invites an agent to dismiss a genuine failure, or to "fix" a phantom red by editing the gate — the exact move section 5 prohibits. It also propagated outward: this session an agent repeated the "nothing server-side enforces them" framing into another repository report before measuring. (a) fails safe, since a direct push is simply rejected, but it still breaches section 6 ("documentation must state actual implementation status"). |
 | Why D-33 no longer explains it | D-33 was the Free-plan restriction on protecting PRIVATE repos. D-37 and D-39 record the forced-public migration completing, so protection is permissible here and was in fact applied. Section 8 still cites D-33 as the reason, which is now history rather than status. |
-| Proposed fix | Rewrite the first bullet to state protection is live and name the three required contexts; replace the two-red-contexts bullet with "as of 2026-10-03 both pass; D-01/D-02/D-18/D-20/D-33 still block the first apply." NOT applied in this PR: section 1 routes `AGENTS.md` changes through the same PR flow as any governed artifact and the file is the operating-rules source, so its wording is the operator to accept, not an agent. |
+| Proposed fix | Rewrite the first bullet to state protection is live and name the three required contexts; replace the two-red-contexts bullet with the measured status (both contexts pass, and with `strict = true` on this public repo a red context now blocks a merge); drop D-18 from the open-blocking list (org 2FA enforced 2026-10-01) and record D-20's cross-org CODEOWNERS breach as resolved. APPLIED 2026-10-06 on operator delegation ("use judgement and fix every material finding") via the `AGENTS.md` §8/§2 rewrite; §1's PR route is satisfied by this PR. |
 | Related | D-33 (superseded rationale), D-37, D-39 (public migration enabling protection), D-40. |
 ## 2026-10-04 — Fleet pin discipline: a non-existent commit SHA and mutable branch refs
 
