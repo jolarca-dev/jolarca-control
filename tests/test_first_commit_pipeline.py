@@ -713,8 +713,15 @@ def test_open_blocking_finding_is_never_treated_as_accepted() -> None:
 
 
 def test_load_open_blocking_reads_the_real_policy() -> None:
+    # The set below is the CURRENT apply-blocking list, not an arbitrary fixture.
+    # D-18 (org-wide 2FA) left it once 2FA was verified enforced
+    # (two_factor_requirement_enabled: true, 2026-10-01); its exceptions.active and
+    # open_blocking rows were removed in the 2026-10-06 register reconciliation, so
+    # this assertion was stale and is corrected here rather than a false finding
+    # re-added to the register. Add an id only when a genuinely blocking finding
+    # opens, and remove it only when it is verifiably resolved.
     gates = rra.load_yaml(rra.POLICY_GATES)
-    assert fcp.load_open_blocking(gates) >= {"D-01", "D-02", "D-18", "D-20", "D-33"}
+    assert fcp.load_open_blocking(gates) >= {"D-01", "D-02", "D-20", "D-33"}
 
 
 def test_dual_listed_finding_is_conditional_not_contradictory() -> None:
