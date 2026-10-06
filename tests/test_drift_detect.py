@@ -221,16 +221,24 @@ def test_no_repo_that_is_private_is_ever_reported_public() -> None:
 
 
 def test_real_fleet_no_longer_yields_six_phantom_findings() -> None:
-    """After the GitHub forced-public migration (2026-09-30), all repos are declared public.
+    """Visibility is internally consistent: no HIGH-exposure finding
+    (declared private, live public) fires against the current registry.
 
-    No HIGH-exposure finding (declared private, live public) is possible when
-    every declaration is public. This test verifies the invariant holds against
-    the current registry.
+    History: after the 2026-09-30 forced-public migration every repo was declared
+    public. D-52 (2026-10-06) flipped `jolarca-compliance` and
+    `jolarca-infrastructure` back to private — declared AND live — to remediate
+    the D-31 public RoPA/deviation-register exposure, so the fixture below marks
+    those two `private=True` to match real state. The invariant is unchanged: it
+    asserts declared == live for every repo, so a future "declare private while
+    GitHub still serves it public" D-01-class drift still fails this test.
     """
     live_payload = {
-        "jolarca-compliance": _live(private=False),
+        # D-52 (2026-10-06): declared private and flipped private live, so the
+        # fixture models them private — otherwise this check would (correctly)
+        # flag declared-private-vs-live-public HIGH exposure.
+        "jolarca-compliance": _live(private=True),
         "jolarca-data": _live(private=False),
-        "jolarca-infrastructure": _live(private=False),
+        "jolarca-infrastructure": _live(private=True),
         "jolarca-legal": _live(private=False),
         "jolarca-observability": _live(private=False),
         "jolarca-security": _live(private=False),

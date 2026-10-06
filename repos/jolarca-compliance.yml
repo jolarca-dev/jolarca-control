@@ -17,11 +17,15 @@ description: "Marketplace compliance evidence and audit records (ISO 27001 / SOC
 # DPIAs, ERoPA entries and audit evidence inside a PCI-DSS/KYC-AML scope; it
 # must not stay public. The apply workflow HARD-REFUSES any plan that changes
 # visibility, so this cannot land silently — flip it consciously.
-# PCI-DSS public visibility risk acceptance (2026-09-30):
-# GitHub is migrating all repos to public within 10 days. This repo is
-# PCI-DSS-scoped and operational. Risk acceptance recorded per D-25 pattern.
+# D-31 / D-52 (2026-10-06): this repo holds the authoritative GDPR Art. 30 RoPA,
+# DPIAs, risk register and vendor/TIA assessments; while public they were
+# world-readable. Owner directed option (a): flipped to private OUT-OF-BAND
+# (`gh api PATCH -F private=true`; Terraform apply blocked by D-02), verified
+# private:true. Free-plan private drops branch protection/secret scanning (D-33)
+# - accepted for confidentiality. The "migrating all repos to public" note above
+# is now obsolete; splitting records out of git (option b) is the durable fix.
 documented_risk_acceptance: true
-visibility: public
+visibility: private
 
 tier: governance
 # tier-2: holds the authoritative RoPA (GDPR Art. 30) and vendor assessments, so
