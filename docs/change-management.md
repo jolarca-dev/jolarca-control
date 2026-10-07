@@ -3,7 +3,7 @@
 ## Scope
 This policy governs all changes to the `jolarca-control` Terraform
 configuration, policy baselines, and repository allow-list definitions — i.e.
-every change that can alter the six `jolarca-dev` repositories.
+every change that can alter the sixteen `jolarca-dev` repositories.
 
 SOC 2 CC8.1 · ISO 27001 A.8.32 · PCI-DSS Req 6.5.1.
 

@@ -46,7 +46,8 @@ Run Python through the venv: `.venv/bin/python -m pytest tests/ -q`. The system
 runs `scripts/compliance_check.py` (`make compliance`) and
 `scripts/repo_readiness_audit.py --no-live`, and neither is in `lint`. Run both
 before pushing, or CI will surface failures the local gates never checked.
-As of 2026-09-30 both fail on `main` for pre-existing reasons — see §8.
+As of 2026-10-06 both required contexts pass on `main` (verified on PRs #42/#43);
+§8 records the current control status.
 
 `make apply` is **REFUSED by design** (exit 1) and `make plan` prompts before an
 offline `-refresh=false` plan. Do not "fix" either. Both are gated on
@@ -136,26 +137,34 @@ Specific high-consequence edits:
 Recorded so no agent assumes protection that does not exist. Verify live before
 relying on any of these; details and expiries in `policy/compliance-gates.yml`.
 
-- **Branch protection is not active on this repo's `main`.** Squash-merge-only and
-  PR-only are **convention**, enforceable by nothing today (D-33; the org is on
-  the GitHub Free plan, which blocks protection on private repos).
+- **Branch protection IS active on this repo's `main`** (verified 2026-10-06,
+  legacy endpoint HTTP 200): `strict = true`, `enforce_admins = true`, three
+  required contexts (`Validate Repo Allow-List`, `Policy Compliance Check`,
+  `Repository Secret Pattern Scan`), `required_approving_review_count = 0`. It is
+  legacy branch protection created out-of-band, not a ruleset (this repo has none),
+  and Terraform does not yet manage it (no apply — D-02). The old D-33 Free-plan
+  "cannot protect" rationale no longer applies here because this repo is public
+  (corrects D-42).
 - **`required_approving_review_count = 0`** — the sole operator can merge their
   own change (D-04, dated acceptance).
 - **Tag protection is unenforceable** — release tags can be moved or deleted (D-07).
-- **Open blocking findings** D-01, D-02, D-18, D-20, D-33 all block the first
-  `terraform apply`. They are listed in `exceptions.open_blocking`, not accepted.
+- **Open blocking findings** D-01, D-02, D-20, D-33 block the first
+  `terraform apply`. D-18 is resolved (org 2FA enforced 2026-10-01, removed from
+  `exceptions.open_blocking`); D-20's cross-org CODEOWNERS breach is resolved but
+  `require_code_owner_reviews` stays inert until `jolarca-dev` teams exist; D-33 is
+  moot for public repos. Remaining items are listed in `exceptions.open_blocking`.
 - **There is no targeted-apply mechanism.** `apply.yml` runs a whole-state
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`
   appears only as printed advice in `scripts/repo_readiness_audit.py`.
-- **Two required status contexts are red on `main` and cannot currently pass.**
-  `Policy Compliance Check` fails because `repos/jolarca-hermes-agents.yml`
-  omits `pci-dss`, which `policy/compliance-gates.yml` requires of every repo.
-  `Repository Secret Pattern Scan` fails because it invokes the readiness gate
-  with `--no-live`, so two inputs are unverifiable and the gate correctly exits
-  2 — a required context that is structurally incapable of going green as
-  invoked. Both predate the evidence-integrity fix; neither blocks a merge,
-  because nothing server-side enforces them.
+- **The previously-red required contexts now pass AND are enforced.** Verified
+  2026-10-06 on PRs #42/#43: `Policy Compliance Check` is green
+  (`jolarca-hermes-agents` now declares `pci-dss`) and `Repository Secret Pattern
+  Scan` is green. Because protection is live with `strict = true` on this public
+  repo, a red required context genuinely blocks the merge — treat these as real
+  gates, not decoration, and never "fix" one by editing the gate (D-42; §5).
+  `make apply` remains refused and the `terraform apply` path stays gated on
+  `STATE_MIGRATION_COMPLETE`.
 
 ## 9. Session discipline
 
