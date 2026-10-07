@@ -66,8 +66,18 @@ branch_protection:
       - Policy Compliance Check
       - Repository Secret Pattern Scan
     required_pull_request_reviews:
-      # SOLO-ERA DEVIATION — D-04
-      required_approving_review_count: 0
+      # SOLO-ERA DEVIATION — D-04 (accepted override, 2026-10-08 A-06)
+      # The declared value is 1 to match live branch protection after the
+      # A-06 rehearsal flipped the enforcement on. The D-04 exception at
+      # policy/compliance-gates.yml:249-264 still records arc=0 as the
+      # accepted interim; the live override is deliberate, dated, and
+      # captured in docs/security/d33-enforcement-rehearsal-2026-10-08.md.
+      # Consequence: with enforce_admins=true, every currently-open PR is
+      # deadlocked until the D-04 exit trigger fires (second-operator
+      # onboarding + D-20 resolution) or the operator reverts the flip.
+      # Rollback (owner decision, RB-04):
+      #   gh api -X PUT .../branches/main/protection ... required_approving_review_count: 0
+      required_approving_review_count: 1
       dismiss_stale_reviews: true
       # require_code_owner_reviews=false: INERT without jolarca-dev teams
       # (D-10/D-20); matches policy/repo-defaults baseline. Raise to true in the
