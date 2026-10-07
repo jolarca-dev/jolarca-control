@@ -37,6 +37,17 @@ commits.
 
 **Verification:** `gitleaks git . --no-banner` → "no leaks found" (exit 0).
 
+**Correction (2026-10-07, A-04):** the working-tree fix stands and is
+re-verified (`grep -c 'AKIA[0-9A-Z]{16}' tests/test_repo_readiness_audit.py`
+returns 0, `gitleaks git . --config <title-only>` reports `no leaks found`
+across 86 commits). Historical blobs at `0e17920` / `c4b6c5a` still contain
+the pre-refactor literals; the readiness gate's own regex sweep flags them
+as L-16 at S2 (not S0, because gitleaks corroborates). That residual is
+accepted as a documented false positive in
+`docs/security/f01-l16-synthetic-fixture-acceptance.md` rather than purged
+via RB-03 history rewrite. The path-based allowlist in `.gitleaks.toml`
+referenced above was also removed the same day — see F-04.
+
 ---
 
 ## Bug F-02: git config Write Hole in First-Commit Pipeline Allowlist (S2)
@@ -95,6 +106,16 @@ assembly fix in source is the primary defense; the config is defense in depth.
 
 **Verification:** Push accepted by GitHub push protection after fix.
 
+**Superseded (2026-10-07, A-04):** the path-based exclusion was subsequently
+removed. Empirical re-verification with a title-only `.gitleaks.toml`
+confirms both `gitleaks dir` and `gitleaks git` report `no leaks found`
+across 86 commits, so the exclusion was not load-bearing at the time F-01
+landed. Excluding `tests/**` from a secret sweep also violates RB-08
+§"Known issue" step 4 ("A real secret pasted into a test file is still a
+real secret") and AGENTS.md §5's weakening prohibition. The F-01 runtime-
+assembly fix is now the sole defense, and `.gitleaksignore` remains as a
+documented barrier for any future literal fixture that cannot be refactored.
+
 ---
 
 ## Bug D-28 Class: IDE Metadata in Index (Pre-existing, Verified)
@@ -115,10 +136,10 @@ No current violation in jolarca-control.
 
 | Bug | Severity | Framework | Status |
 |-----|----------|-----------|--------|
-| F-01 Synthetic secrets | S0 | CC7.2/A.8.24 | FIXED |
+| F-01 Synthetic secrets | S0 | CC7.2/A.8.24 | FIXED (source) — L-16 history residual accepted 2026-10-07 |
 | F-02 git config write hole | S2 | A.8.9/A.8.31 | FIXED |
 | F-03 Policy schema inconsistency | S3 | A.5.31 | RECORDED |
-| F-04 Push protection flags allowlist | S1 | CC6.1 | FIXED |
+| F-04 Push protection flags allowlist | S1 | CC6.1 | SUPERSEDED 2026-10-07 — path exclusion removed, no allowlist needed |
 | D-28 class IDE metadata | S1 | A.8.1 | CHECK EXISTS |
 
 **Professional opinion:** Four of five findings were fixed in the same
