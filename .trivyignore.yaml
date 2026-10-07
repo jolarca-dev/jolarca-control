@@ -1,0 +1,93 @@
+# .trivyignore.yaml — accepted Trivy misconfiguration findings.
+#
+# jolarca-control — marketplace governance control plane.
+# SOC 2 CC6.1 / ISO 27001 A.8.24 / GDPR Art.32 / PCI-DSS 6.3.
+#
+# POLICY: every entry below MUST carry a `statement` that names the risk
+# acceptance ID in `policy/compliance-gates.yml` (D-nn or the named public
+# exceptions) and the expiry that ID enforces. An entry without a policy
+# reference is a silent weakening; AGENTS.md §5 forbids "weaken the gate
+# rather than fix the finding" — the gate stays strict and the finding is
+# accepted with a dated rationale, not filtered out of scope.
+#
+# Entries are consumed by `trivy config` via the default `.trivyignore.yaml`
+# path at repo root (see the `Run trivy config scan` step in
+# `.github/workflows/sast.yml`). A missing or malformed file is a fatal error
+# in Trivy, so CI fails red rather than silently passing everything.
+#
+# Verified 2026-10-08 against Trivy v0.75.0 config-scan output:
+#   GIT-0004 (HIGH)    branch-protection.tf:96-126  github_branch_protection.health
+#   GIT-0001 (CRIT)    health-repo.tf:26-67         github_repository.health
+# 2 findings, both pre-existing and cross-referenced below. No new findings
+# introduced by A-08.
+
+misconfigurations:
+  # ── GIT-0004 · HIGH · "require_signed_commits should be true" ─────────────
+  #
+  # Resource: `github_branch_protection.health` at branch-protection.tf:96-126
+  # sets `require_signed_commits = false`. The attribute is deliberately false
+  # while provider-seeded automation commits on `jolarca` and `.github` remain
+  # unsigned. Trivy's check itself notes the fix would flip the attribute to
+  # true; we are not doing that yet, and the reason is on the record.
+  #
+  # Cross-reference: policy/compliance-gates.yml `exceptions.active` id "D-05"
+  # (SOC 2 CC6.1 / ISO 27001 A.5.10 · approved_by "Gintaras Kazlauskas" ·
+  # approved_on "2026-09-25" · expires "2026-12-24"). The exception's own
+  # compensating control is `commit_signing_policy` in
+  # policy/repo-defaults.yml — every human-authored commit here IS GPG-signed
+  # (verified via `git log --show-signature`); only provider automation is
+  # exempt, and only until the provider exposes a signable identity.
+  #
+  # Rollback path when the exception lapses on 2026-12-24 without renewal:
+  # flip `require_signed_commits = true` in the same PR that lands the fix
+  # for the underlying cause, per RB-04. Remove this entry at that time.
+  - id: GIT-0004
+    statement: >-
+      Accepted deviation D-05 (see policy/compliance-gates.yml
+      exceptions.active) — require_signed_commits=false on
+      github_branch_protection.health while provider-seeded automation
+      commits remain unsigned. Human-authored commits on this repo are
+      GPG-signed per commit_signing_policy in policy/repo-defaults.yml.
+      Expiry 2026-12-24; renewal or remediation is an RB-04 owner decision.
+    references:
+      - policy/compliance-gates.yml (exceptions.active · id D-05)
+      - docs/drift-findings.md (D-05 register row)
+    resolutions:
+      - file: branch-protection.tf
+
+  # ── GIT-0001 · CRITICAL · "repository should be private" ──────────────────
+  #
+  # Resource: `github_repository.health` at health-repo.tf:26-67 declares
+  # `visibility = "public"`. That resource is Terraform's model of the
+  # org-level `.github` repository — the special GitHub name that serves
+  # community health files (profile README, issue/PR templates, CODEOWNERS
+  # defaults, reusable workflows) org-wide. GitHub itself only serves those
+  # files from a PUBLIC `.github` repository; making it private defeats the
+  # entire purpose of the resource. The three `checkov:skip` comments already
+  # at the top of the resource block (health-repo.tf:52-56) document the same
+  # decision for the other scanner. This entry is Trivy's side of the same
+  # coin, not a new acceptance.
+  #
+  # Cross-references (multi-scoped):
+  #   - policy/compliance-gates.yml `exceptions.active` id "fleet-public-2026-10"
+  #     (approved_on "2026-09-30", expires "2026-12-29") covers the
+  #     organisation-wide public migration forced by GitHub.
+  #   - health-repo.tf:52-56 inline `checkov:skip` comments carry the
+  #     equivalent rationale for a different scanner.
+  #
+  # Rollback path: if a future owner flips `.github` to private (only works
+  # in an Enterprise-plan org with the "org profile" feature), delete this
+  # entry AND the checkov skip. Until then, this is a structural fact about
+  # GitHub's product design, not a risk decision.
+  - id: GIT-0001
+    statement: >-
+      The `.github` repository (modelled as github_repository.health)
+      MUST be public for GitHub to serve org-wide community health files;
+      private visibility is a product-level impossibility, not a config
+      choice. Covered by fleet-public-2026-10 exception (expires
+      2026-12-29) and by inline checkov:skip comments at health-repo.tf:52-56.
+    references:
+      - policy/compliance-gates.yml (exceptions.active · id fleet-public-2026-10)
+      - health-repo.tf (inline checkov:skip block at lines 52-56)
+    resolutions:
+      - file: health-repo.tf
