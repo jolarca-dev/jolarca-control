@@ -5,12 +5,22 @@
 #
 # This workflow produces the THREE required status check contexts declared
 # in repos/jolarca-control.yml branch_protection.main.required_status_checks:
-#   1. "Validate Repo Allow-List"        — scripts/validate_repos.py
+#   1. "Validate Repo Allow-List"        — scripts/validate_repos.py +
+#                                          scripts/check_findings_register.py
 #   2. "Policy Compliance Check"         — scripts/compliance_check.py
 #   3. "Repository Secret Pattern Scan"  — gitleaks (full history)
 #
 # Additional jobs (tests, lint, SAST) run alongside but are NOT branch
 # protection contexts — they are defense in depth.
+#
+# Register-integrity step (A-07 guard, added 2026-10-07): `check_findings_register.py`
+# fails if a `### D-nn` heading is duplicated on the working copy OR if an open PR
+# branch and main claim the same D-nn with different titles. A-02 was measured live:
+# PR #41 and main simultaneously introduced different `### D-52` records and nothing
+# caught the collision before the merge would have produced two D-52 sections. The
+# step runs inside `Validate Repo Allow-List` — a required context — so the class
+# genuinely blocks a merge, not just warns. `pull-requests: read` below is scoped to
+# that check's enumeration of open PRs; no write permission is granted.
 #
 # All actions SHA-pinned per policy/compliance-gates.yml B5.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +34,10 @@ on:
 
 permissions:
   contents: read
+  # `check_findings_register.py --cross-pr` enumerates open PRs via `gh api
+  # repos/{owner}/{repo}/pulls?state=open` to detect a finding-id collision against
+  # a sibling branch before either merges (A-07). Read-only; no write scope added.
+  pull-requests: read
 
 jobs:
   # ── Context 1: Validate Repo Allow-List ────────────────────────────────────
@@ -37,6 +51,15 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python3 scripts/validate_repos.py
+      # A-07 register-integrity guard: no `### D-nn` heading may be duplicated on the
+      # working copy, and no open PR may claim an ID already used on main with a
+      # different title. Exit-code contract 0/1/2 (never a silent pass, D-23).
+      # Wired into a required context so a collision genuinely blocks the merge,
+      # which is the class the check exists to catch.
+      - name: Findings register ID-collision check (main + open PRs)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check_findings_register.py --cross-pr
 
   # ── Context 2: Policy Compliance Check ─────────────────────────────────────
   compliance:
