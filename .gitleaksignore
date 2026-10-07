@@ -3,16 +3,46 @@
 # jolarca-control — marketplace governance control plane.
 # SOC 2 CC6.1 / ISO 27001 A.8.24 / GDPR Art.32.
 #
-# POLICY: this file must stay as small as possible. Every line carries a
-# dated rationale. A negative-control test (tests/test_first_commit_pipeline.py)
-# fails the build if this file is ever emptied or if gitleaks rules are reduced
-# to nothing. See docs/runbooks/first-commit-pipeline.md RB-08 step C.
+# POLICY: this file must stay as small as possible. Every entry carries a
+# dated rationale naming the rule, file and line it suppresses, and why no
+# literal credential could ever live there.
 #
-# 2026-09-28 — synthetic test fixtures in tests/test_repo_readiness_audit.py
-# were refactored to assemble at runtime (string concatenation), so the source
-# no longer holds literal AKIA… or sk_live_… shapes. This file is retained as
-# defense in depth: if a future contributor reintroduces a literal fixture,
-# gitleaks still catches it UNLESS they also add an exclusion here — and every
-# exclusion requires a rationale, so the barrier is deliberate acknowledgement.
+# ── Current state ─────────────────────────────────────────────────────────────
 #
-# L-16 false-positive acceptance recorded under RB-04.
+# ZERO entries. The working tree has no literal secret shape at any path:
+# the AWS/Stripe synthetic fixtures in `tests/test_repo_readiness_audit.py`
+# and `tests/test_first_commit_pipeline.py` are assembled at runtime via
+# string concatenation (`"AKIA" + "Q3EG…"`), so no continuous AKIA{16} or
+# sk_live_{24,} byte sequence exists in any tracked file. Empirically
+# re-verified 2026-10-07 with `gitleaks dir . --config <title-only>` (0 hits)
+# and `gitleaks git . --config <title-only>` (0 hits across 86 commits).
+#
+# Historical blobs at commits 0e17920 / c4b6c5a DO contain literal-shaped
+# strings from before the 2026-09-28 refactor, but gitleaks does not flag
+# them (its built-in AWS rule requires an accompanying secret-access-key
+# or entropy threshold the key-id alone does not meet). The repository's
+# own regex sweep in `scripts/repo_readiness_audit.py` DOES flag them as
+# L-16 at S2; that residual is documented as an accepted false positive in
+# `docs/security/f01-l16-synthetic-fixture-acceptance.md` and no entry is
+# needed here because gitleaks is not what fires the finding.
+#
+# ── Retention rationale ───────────────────────────────────────────────────────
+#
+# Retained as a placeholder so the file exists and its rules are visible:
+# if a future contributor introduces a real literal fixture and cannot
+# refactor it to runtime assembly, they must add a line here with a dated
+# rationale. An empty file plus a documented policy is a deliberate bar --
+# adding an exclusion becomes a visible act of acknowledgement in the diff,
+# not a silent relaxation of a rule. See AGENTS.md §5 "do not delete or
+# weaken a gate to make CI pass".
+#
+# ── Note on the negative-control claim made by earlier revisions ──────────────
+#
+# An earlier version of this file's header asserted that
+# `tests/test_first_commit_pipeline.py` "fails the build if this file is ever
+# emptied". No such test exists in the repository as of 2026-10-07 --
+# `grep -Rn gitleaksignore tests/` returns no matching assertions. That was
+# a control described as enforced but not present, the exact class AGENTS.md
+# §6 and D-40 warn against. Corrected here rather than left in place. If a
+# non-emptiness assertion is wanted later, ship the assertion AND the test
+# in the same PR; a comment alone is folklore.

@@ -3,7 +3,7 @@ docs/adr/0004-mission-marketplace-separation.md,cf6ef7d1ec8c46aec74db552ba2f7af8
 docs/adr/0006-remote-state-backend.md,2ccd803b0d13c9d963ff0589565aa701e23072832421d5313a6769e6c9e15e64,2026-09-28
 docs/adr/0007-public-marketplace-repository.md,b25d7e35fd2b42a135ccf45d1772861e95b7b992de9027f22ecf23e1e04256c8,2026-09-28
 docs/adr/0008-soc2-type-ii-observation.md,6d3eb39b5cfc56e83614b74e9c638956547c8fbe04630da0cfd1dd215849c751,2026-09-28
-docs/adr/0009-bugs-found-and-fixed.md,3ceb9594d41247fb84f0c978d0979816b6149de1003c415f3e8b6d0b10cf78ff,2026-09-28
+docs/adr/0009-bugs-found-and-fixed.md,1bd9c52d4c3f7f51e88986046704fba3b1c2f89b8139fe054360534be9cbbe8d,2026-10-07
 audit/gdpr-checklist.yml,9728f940a09c4d506271428848cdfac4bc5fd0f728a07b340548feb5fca2b681,2026-09-28
 audit/iso27001-checklist.yml,0678f8b9a75285f42b2d94a46d4f5915d629b2f306f13d90697c1d622545bf4e,2026-09-28
 audit/pci-dss-checklist.yml,6b1d4ee11e509a3b8ee56ca7ea0a9c115d53c8c0230a0bb7791d93fb7fc4791c,2026-09-28
@@ -28,10 +28,11 @@ repos/jolarca-vendor.yml,c44e6e8403f7d74ee744c6f26e1a76408789a531473717d47e6be62
 repos/jolarca.yml,68185422b1f73b981095de309c1ef2a37f97dfccdbabdd0f974f8b0aa48c5832,2026-09-28
 docs/runbooks/d31-regulated-records-removal.md,356e0897b62754d31c47f96a02585c87ef84116e63f7b3ee129153a554ba1a49,2026-10-06
 docs/runbooks/deployment-rehearsal.md,ce07bd6ef407b9a5850150f61fd35cf018f89d3d119765ec2b2269e1f05e790b,2026-09-28
-docs/runbooks/first-commit-pipeline.md,6be2c1a9d7d5b55d649ee34a4256945c6643a82ed06923194e63fbede2b780b4,2026-09-28
+docs/runbooks/first-commit-pipeline.md,eb9461e3c61f38f13f3faa27dd7231cb273d44d15629c7b83eb31cb5470439ec,2026-10-07
 docs/runbooks/github-token-rotation.md,8ae25edeba271a2e67c2ee64f600d341dec3150a6f4414233083d2ee99b7e77f,2026-09-28
 docs/runbooks/workload-identity-federation.md,2953cc6ce183d28a7bfed099e1e515e45fd7de603b9d0e18ad0927225579510e,2026-09-28
 docs/security/dpia-marketplace-launch.md,125af31733cedd11b75752d91befff024bd8e828d6233f03e1c85533626f4470,2026-09-28
+docs/security/f01-l16-synthetic-fixture-acceptance.md,bd4647063bce9a09829ace0b833bf6abc09967505a7b3696733ed4c55034823f,2026-10-07
 docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9ae8c43694991343c80,2026-09-28
 docs/security/key-custody.md,4ad42afab2c03472aafdd853cc2886254c1dea2b015cad15e8137e7a62f5db09,2026-09-28
 docs/security/soc2-type-i-readiness.md,5d8ba2f3f7bf4bf601f4633d0ed1ade0731718219d02ab02c72a49b2552061c8,2026-09-30
