@@ -223,6 +223,123 @@ def check_fleet(
     }
 
 
+def ruleset_required_checks(detail: dict[str, Any]) -> tuple[list[str], bool, bool]:
+    """Status-check contexts, the strict flag, and whether the rule exists at all.
+
+    ``GET /repos/{repo}/rulesets`` returns summaries without the ``rules`` field, and the detail endpoint
+    returns ``rules`` as a LIST of ``{type, parameters}`` objects -- not a dict keyed by type. Assuming
+    either other shape silently yields "no contexts required", the false-clean this exists to prevent.
+
+    ``rule_present`` is reported separately because the two cases differ in meaning and remediation:
+    jolarca-consent's ruleset carries NO required_status_checks rule at all, while jolarca-vendor's has
+    the rule with an empty context list and strict=false. Calling the first one "configured strict=false"
+    would describe a configuration that does not exist.
+    """
+    contexts: list[str] = []
+    strict = False
+    rule_present = False
+    for rule in detail.get("rules") or []:
+        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+            continue
+        rule_present = True
+        params = rule.get("parameters") or {}
+        strict = bool(params.get("strict_required_status_checks_policy", False))
+        for item in params.get("required_status_checks") or []:
+            if isinstance(item, dict) and item.get("context"):
+                contexts.append(str(item["context"]))
+    return sorted(set(contexts)), strict, rule_present
+
+
+def ruleset_covers_branch(detail: dict[str, Any], branch: str) -> bool:
+    """Does this ruleset's ref configuration apply to ``branch``?
+
+    An ACTIVE ruleset is not the same as a relevant one: a ruleset scoped to ``release/*`` enforces
+    nothing on main, and counting it would report a repo as protected while the enforcement applies to
+    other refs -- reintroducing the false clean this change removes, one layer up.
+
+    GitHub's include list uses ``~DEFAULT_BRANCH`` for the default branch and ``refs/heads/<name>`` or
+    globs for the rest; an empty or absent include list means all branches. Exclusions always win.
+    """
+    cond = detail.get("conditions")
+    ref = cond.get("ref_name") if isinstance(cond, dict) else None
+    if not isinstance(ref, dict):
+        return True
+    exclude = [str(x) for x in (ref.get("exclude") or [])]
+    names = {branch, f"refs/heads/{branch}"}
+    if any(x in names for x in exclude):
+        return False
+    include = [str(x) for x in (ref.get("include") or [])]
+    if not include:
+        return True
+    if "~ALL" in include:
+        return True
+    # The branch under audit is the default branch for every repo checked here; ~DEFAULT_BRANCH is how
+    # all three live rulesets (vendor, consent, dr) express that scope.
+    if "~DEFAULT_BRANCH" in include:
+        return True
+    for pattern in include:
+        if pattern in names or re.fullmatch(pattern.replace("*", ".*"), f"refs/heads/{branch}"):
+            return True
+    return False
+
+
+def ruleset_protection_state(repo: str, branch: str = "main") -> tuple[str, list[str], list[str]]:
+    """Describe protection the legacy endpoint cannot see.
+
+    Returns ``(verdict, contexts, issues)``. ``"active"`` means at least one ruleset is enforced AND
+    covers ``branch``; ``"none"`` means nothing enforceable covers it; ``"unreadable"`` means a probe
+    failed, which callers must file as unverifiable, never as agreement.
+
+    Rulesets express a different attribute set from legacy protection. What is compared here: required
+    status checks, force-push blocking (``non_fast_forward``) and deletion blocking (``deletion``).
+    What is NOT comparable through this API and must not be implied: ``enforce_admins`` and
+    CODEOWNERS/review configuration. See ``ruleset_attribute_limits`` in the report.
+    """
+    status, body = try_get(f"repos/{ORG}/{repo}/rulesets")
+    if status != 200 or not isinstance(body, list):
+        return "unreadable", [], [f"rulesets HTTP {status}"]
+    active = [r for r in body if isinstance(r, dict) and r.get("enforcement") == "active"]
+    if not active:
+        return "none", [], []
+
+    contexts: list[str] = []
+    issues: list[str] = []
+    covering = 0
+    for ruleset in active:
+        ruleset_id = ruleset.get("id")
+        if ruleset_id is None:
+            return "unreadable", contexts, [f"active ruleset without id: {ruleset.get('name')!r}"]
+        detail_status, detail = try_get(f"repos/{ORG}/{repo}/rulesets/{ruleset_id}")
+        if detail_status != 200 or not isinstance(detail, dict):
+            return "unreadable", contexts, [f"ruleset {ruleset_id} HTTP {detail_status}"]
+        if not ruleset_covers_branch(detail, branch):
+            continue
+        covering += 1
+        name = str(ruleset.get("name"))
+        found, strict, rule_present = ruleset_required_checks(detail)
+        contexts += found
+        types = {r_.get("type") for r_ in (detail.get("rules") or []) if isinstance(r_, dict)}
+        if not rule_present:
+            issues.append(f"{name}: no required_status_checks rule")
+        elif not strict:
+            issues.append(f"{name}: strict_required_status_checks_policy=false")
+        if "non_fast_forward" not in types:
+            issues.append(f"{name}: force pushes not blocked by ruleset")
+        if "deletion" not in types:
+            issues.append(f"{name}: branch deletion not blocked by ruleset")
+
+    if covering == 0:
+        return "none", [], []
+    return "active", sorted(set(contexts)), issues
+
+
+RULESET_ATTRIBUTE_LIMITS = (
+    "ruleset path compares required status checks, force-push blocking (non_fast_forward) and deletion "
+    "blocking (deletion); enforce_admins and CODEOWNERS/review attributes are not expressible by this "
+    "API and are therefore NOT verified for ruleset-protected repos"
+)
+
+
 def check_branch_protection(
     repos: list[str], baseline: dict[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
@@ -235,9 +352,19 @@ def check_branch_protection(
     a token-scope failure, and must not be lumped into ``unverifiable``
     (D-33: the old code exited 2 with a misleading "token scope" message).
 
-    Repos in branch_protection_baseline_exempt must still HAVE a rule; only
-    the attribute comparison is skipped.  That keeps the exemption from
-    becoming a way to leave a repo unprotected.
+    A 403 on the detail endpoint is the Free-plan private-repo limit and lands in
+    ``plan_limited``.  A 404 is NOT: measured 2026-10-04, public repos protected by
+    an active repository RULESET report ``.protected=true`` while the legacy
+    endpoint 404s, so 404 routes to ``ruleset_protection_state()`` instead of being
+    called unreadable.  Filing that case as ``plan_limited`` let a ruleset requiring
+    zero status checks read as "protection ... verified" (D-44).
+
+    Repos in branch_protection_baseline_exempt must still HAVE a rule and still must
+    require at least ``minimum_required_contexts``; only the attribute comparison is
+    skipped.  An exempt repo that requires nothing is reported in ``hollow_rules`` --
+    informational, because exemption was designed to skip attributes, not to certify
+    an empty ruleset -- which keeps the exemption from becoming a way to leave a repo
+    unprotected without silently converting a policy decision into a pipeline failure.
     """
     required = baseline.get("required_branch_protection") or {}
     min_contexts = int(required.get("minimum_required_contexts", 1))
@@ -246,6 +373,8 @@ def check_branch_protection(
     missing: list[str] = []
     weakened: list[dict[str, Any]] = []
     plan_limited: list[str] = []
+    ruleset_protected: list[str] = []
+    hollow_rules: list[dict[str, Any]] = []
     unverifiable: list[str] = []
 
     for repo in repos:
@@ -269,28 +398,61 @@ def check_branch_protection(
             missing.append(repo)
             continue
 
-        # ── Step 3: can we read the full protection rule? ────────────────
+        # ── Step 3: legacy rule, or a ruleset the legacy endpoint hides? ──
         status, prot = try_get(f"repos/{ORG}/{repo}/branches/{branch}/protection")
-        if status in (403, 404):
-            # Plan-tier limitation or no detailed rule readable:
-            # protection exists (.protected=true) but attributes cannot be
-            # read. On Free, private repos get 403; some public repos may
-            # get 404 if the protection endpoint is not available.
+        if status == 403:
             plan_limited.append(repo)
+            continue
+        if status == 404:
+            verdict, rs_contexts, rs_notes = ruleset_protection_state(repo, branch)
+            if verdict == "unreadable":
+                unverifiable.append(f"{repo}: {'; '.join(rs_notes) or 'rulesets unreadable'}")
+            elif verdict == "none":
+                missing.append(repo)
+            elif len(rs_contexts) < min_contexts:
+                finding = {
+                    "repo": repo,
+                    "issues": [
+                        (
+                            f"ruleset requires {len(rs_contexts)} status check(s), "
+                            f"need >= {min_contexts}"
+                        ),
+                        *rs_notes,
+                    ],
+                }
+                if repo in exempt:
+                    hollow_rules.append(finding)
+                else:
+                    weakened.append(finding)
+            else:
+                ruleset_protected.append(repo)
             continue
         if status != 200:
             unverifiable.append(f"{repo}: protection HTTP {status}")
             continue
 
+        checks = prot.get("required_status_checks") or {}
+        contexts = list(checks.get("contexts") or [])
+        contexts += [c.get("context") for c in (checks.get("checks") or []) if c.get("context")]
+
         if repo in exempt:
+            if len(contexts) < min_contexts:
+                hollow_rules.append(
+                    {
+                        "repo": repo,
+                        "issues": [
+                            (
+                                f"exempt rule requires {len(contexts)} status check(s), "
+                                f"need >= {min_contexts}"
+                            )
+                        ],
+                    }
+                )
             continue
 
         # ── Step 4: attribute comparison against baseline ────────────────
         issues: list[str] = []
         reviews = prot.get("required_pull_request_reviews") or {}
-        checks = prot.get("required_status_checks") or {}
-        contexts = list(checks.get("contexts") or [])
-        contexts += [c.get("context") for c in (checks.get("checks") or []) if c.get("context")]
 
         if required.get("enforce_admins", True) and not (prot.get("enforce_admins") or {}).get(
             "enabled", False
@@ -323,6 +485,9 @@ def check_branch_protection(
             "missing": missing,
             "weakened": weakened,
             "plan_limited": plan_limited,
+            "ruleset_protected": ruleset_protected,
+            "ruleset_attribute_limits": RULESET_ATTRIBUTE_LIMITS,
+            "hollow_rules": hollow_rules,
             "required": required,
             "exempt": sorted(exempt),
         },
@@ -733,9 +898,15 @@ def main() -> int:
         return 2
 
     if not report["drift_detected"]:
+        caveats = []
+        if bp_report["plan_limited"]:
+            caveats.append(f"{len(bp_report['plan_limited'])} plan-limited")
+        if bp_report["hollow_rules"]:
+            caveats.append(f"{len(bp_report['hollow_rules'])} exempt rule(s) requiring no checks")
+        qualifier = f" with caveats: {', '.join(caveats)}" if caveats else ""
         print(
             f"NO DRIFT — {len(fleet['matched'])} declared repos match {ORG}, "
-            "branch protection and org baseline verified.",
+            f"branch protection and org baseline verified{qualifier}.",
             file=sys.stderr,
         )
         return 0
