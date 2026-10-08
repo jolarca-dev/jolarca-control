@@ -3,7 +3,7 @@ docs/adr/0004-mission-marketplace-separation.md,cf6ef7d1ec8c46aec74db552ba2f7af8
 docs/adr/0006-remote-state-backend.md,2ccd803b0d13c9d963ff0589565aa701e23072832421d5313a6769e6c9e15e64,2026-09-28
 docs/adr/0007-public-marketplace-repository.md,b25d7e35fd2b42a135ccf45d1772861e95b7b992de9027f22ecf23e1e04256c8,2026-09-28
 docs/adr/0008-soc2-type-ii-observation.md,6d3eb39b5cfc56e83614b74e9c638956547c8fbe04630da0cfd1dd215849c751,2026-09-28
-docs/adr/0009-bugs-found-and-fixed.md,1bd9c52d4c3f7f51e88986046704fba3b1c2f89b8139fe054360534be9cbbe8d,2026-10-07
+docs/adr/0009-bugs-found-and-fixed.md,1933a9812108332ab04be820aedb21344565afa344c6cbb287b4543e24703ed8,2026-10-08
 audit/gdpr-checklist.yml,9728f940a09c4d506271428848cdfac4bc5fd0f728a07b340548feb5fca2b681,2026-09-28
 audit/iso27001-checklist.yml,0678f8b9a75285f42b2d94a46d4f5915d629b2f306f13d90697c1d622545bf4e,2026-09-28
 audit/pci-dss-checklist.yml,6b1d4ee11e509a3b8ee56ca7ea0a9c115d53c8c0230a0bb7791d93fb7fc4791c,2026-09-28
@@ -12,7 +12,7 @@ policy/compliance-gates.yml,a0635c562687246bac4310cbacb37224071dc3558d553582539b
 policy/repo-defaults.yml,7490fdc2f91637085551144cc03c6ab5fec5f0c88ba694fac10ac5e4d7234ebb,2026-09-30
 repos/jolarca-compliance.yml,d6ebfc5d07cc00ea4028cdd423b37406a9b86a0b00428023d25eeafa007f9d56,2026-10-06
 repos/jolarca-consent.yml,2206a143b8f9fa925c001c1c81817cf4eead74b6530e27435cd587e9cb345d85,2026-09-28
-repos/jolarca-control.yml,9f9f813d623574119c0798db0a932b59c9ca3fc22d2063d126bde24758661ebc,2026-10-07
+repos/jolarca-control.yml,cb240e63d95b1573a947901159f104bf83f8a62448af5ef5265c7a95174c906d,2026-10-07
 repos/jolarca-data.yml,fd1aef194d740d7e2d44df85f6d084242ae8a78e07344dce4257640fc20fc15b,2026-10-06
 repos/jolarca-docs.yml,c4414cb329e6241fb978581c6b1860365b961c6013ff92e440ba59f973fea409,2026-10-06
 repos/jolarca-dr.yml,09e45ef4c761b342e3a5dced6443d084f120e314cdde8db57ded2f899df7fe42,2026-09-28
@@ -31,9 +31,10 @@ docs/runbooks/deployment-rehearsal.md,ce07bd6ef407b9a5850150f61fd35cf018f89d3d11
 docs/runbooks/first-commit-pipeline.md,eb9461e3c61f38f13f3faa27dd7231cb273d44d15629c7b83eb31cb5470439ec,2026-10-07
 docs/runbooks/github-token-rotation.md,8ae25edeba271a2e67c2ee64f600d341dec3150a6f4414233083d2ee99b7e77f,2026-09-28
 docs/runbooks/workload-identity-federation.md,2953cc6ce183d28a7bfed099e1e515e45fd7de603b9d0e18ad0927225579510e,2026-09-28
-docs/security/d33-enforcement-rehearsal-2026-10-08.md,41a5d0c010d09f222656af5945ba5865d664b1253f8d8a82997cd2261f13d7bf,2026-10-07
+docs/security/d33-enforcement-rehearsal-2026-10-08.md,4bcac633f43ab7ee791088326744ad58234d3e9ffc8b30d647d57fdfe983b6f3,2026-10-08
 docs/security/dpia-marketplace-launch.md,125af31733cedd11b75752d91befff024bd8e828d6233f03e1c85533626f4470,2026-09-28
 docs/security/f01-l16-synthetic-fixture-acceptance.md,bd4647063bce9a09829ace0b833bf6abc09967505a7b3696733ed4c55034823f,2026-10-07
 docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9ae8c43694991343c80,2026-09-28
 docs/security/key-custody.md,4ad42afab2c03472aafdd853cc2886254c1dea2b015cad15e8137e7a62f5db09,2026-09-28
+docs/security/sast-mandatory-gate-2026-10-08.md,e4aa6f562a7a08295029ae2b8bcf5592b87447f9c2ce4fc09691ca5d2937625c,2026-10-08
 docs/security/soc2-type-i-readiness.md,5d8ba2f3f7bf4bf601f4633d0ed1ade0731718219d02ab02c72a49b2552061c8,2026-09-30

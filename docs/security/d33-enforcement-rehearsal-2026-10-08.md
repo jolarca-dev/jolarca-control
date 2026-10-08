@@ -318,3 +318,34 @@ is currently the human-cued verification path.
 **Terraform alignment:** deferred; branch-protection.tf remains inert (D-35).
 Reconcile against `policy/repo-defaults.yml` before promoting to Terraform
 managed (D-26 weakened-guard fires otherwise).
+
+---
+
+## Reconciliation (A-08, 2026-10-08) — supersedes the review-count claims above
+
+The rehearsal above is a valid record of what was observed **at execution
+time** (the `arc 0→1` PUT was applied and re-read back as 1). It is **not**
+the current live posture, and this PR is **not** merged declaring
+`required_approving_review_count: 1`:
+
+- **Live today is `arc = 0`** (re-verified via
+  `gh api repos/jolarca-dev/jolarca-control/branches/main/protection`).
+  `main`'s `repos/jolarca-control.yml` declares `0`. They agree.
+- **`arc = 1` is not a workable posture for this org.** On GitHub Free a PR
+  author cannot approve their own pull request, and `enforce_admins = true`
+  removes the admin override. With a single operator and no second human,
+  `arc = 1` is a **permanent self-merge lockout** — a denial of service on
+  the control plane, not a control. A-06 therefore keeps the rehearsal's
+  *demonstration* (the gate CAN be enforced) but reverts the *declaration* to
+  the D-04 accepted exception (`arc = 0`, dated, compensating controls).
+- **Exit criterion #1 above (`arc stays >= 1`) and the Sign-off line
+  "`required_approving_review_count` verified ... [as 1]" are superseded** for
+  current state. The enforceable posture is instead the set of
+  **`strict = true` required status contexts** — now four after A-08:
+  `Validate Repo Allow-List`, `Policy Compliance Check`,
+  `Repository Secret Pattern Scan`, **`SAST (semgrep)`** — plus push protection
+  and the gitleaks gate. A red one of those genuinely blocks a merge.
+
+**If a future owner wants approvals required:** that needs a second human or
+moving `enforce_admins = false` so the operator can admin-override — an RB-04
+decision, not a default. Until then `arc = 0` is the honest, verified state.
