@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Generate jolarca-observability runbooks/, tests/, .github/, Makefile, pyproject.toml."""
 
+import os
 from pathlib import Path
 
-BASE = Path("/opt/jolarca/repos/jolarca-observability")
+BASE = Path(
+    os.environ.get(
+        "JOLARCA_OBSERVABILITY_DIR",
+        "/opt/jolarca/repos/jolarca-observability",
+    )
+)
 files: dict[str, str] = {}
 
 # ── runbooks/audit-log-gap.md ─────────────────────────────────────────────────
