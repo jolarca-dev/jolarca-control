@@ -78,6 +78,33 @@ repository.
 - `audit/pci-dss-checklist.yml` — new; PCI-DSS 4.0 applies to every repository
   in this fleet, unlike the mission platform.
 
+### Added — 2026-10-08 (A-08: mandatory SAST gate made real)
+
+The `sast` gate was declared `enforcement: mandatory` in
+`policy/compliance-gates.yml` but nothing ran it — a D-22-class control
+(AGENTS.md §7). Closed in two PRs (workflow, then gate wiring) because
+`check_declared_contexts.py` reads live `main` and a required context cannot be
+declared before the workflow that emits it is merged.
+
+- `.github/workflows/sast.yml` — Semgrep OSS (`p/default`+`p/python`), Bandit
+  (`-ll -ii`, scope widened from `scripts/` to `scripts/ tests/`) and a Trivy
+  config scan over the Terraform/workflow/policy YAML. All actions SHA-pinned,
+  `permissions: contents: read`, `pull_request` (not `pull_request_target`),
+  **no GHAS/CodeQL dependency** (CodeQL is unavailable on the Free plan, so the
+  `codeql-analysis` gate ID could never have been satisfied here).
+- `scripts/compliance_check.py` — `check_sast_gate_wiring()` fails when a repo
+  is in a tier where `sast` is mandatory but does not declare
+  `SAST (semgrep)` as a required status check.
+- `.trivyignore.yaml` — accepted Trivy misconfigurations `GIT-0004` (→ D-05,
+  expires 2026-12-24) and `GIT-0001` (→ fleet-public-2026-10, expires
+  2026-12-29), each naming its exception ID and expiry.
+- `tests/test_compliance_check.py` — positive **and** negative controls for the
+  wiring check (AGENTS.md §7 non-vacuity).
+- `docs/security/sast-mandatory-gate-2026-10-08.md` — triage of every first-run
+  finding plus the throwaway negative-control proof (run `37699506676`:
+  deliberate `shell=True`/`eval` turned **only** `SAST (semgrep)` and
+  `SAST (bandit)` red; all other checks stayed green).
+
 ### Changed
 
 - **Apply is a single gated production stage.** `jol-control`'s

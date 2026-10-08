@@ -10,8 +10,14 @@
 #   2. "Policy Compliance Check"         — scripts/compliance_check.py
 #   3. "Repository Secret Pattern Scan"  — gitleaks (full history)
 #
-# Additional jobs (tests, lint, SAST) run alongside but are NOT branch
-# protection contexts — they are defense in depth.
+# Additional jobs (tests, lint) run alongside but are NOT branch protection
+# contexts — they are defense in depth.
+#
+# SAST (Semgrep / Bandit / Trivy config) MOVED OUT of this file 2026-10-08
+# under A-08: it now lives in .github/workflows/sast.yml, where the gate can
+# be wired as a required status check and enforced declaratively by
+# compliance_check.py. Bandit previously ran here as a non-required job
+# whose "mandatory" policy declaration was not actually checked by anything.
 #
 # Register-integrity step (A-07 guard, added 2026-10-07): `check_findings_register.py`
 # fails if a `### D-nn` heading is duplicated on the working copy OR if an open PR
@@ -130,21 +136,6 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -yq shellcheck
       - run: shellcheck -x scripts/*.sh tests/*.sh
       - run: yamllint -c .yamllint .
-
-  # ── SAST: bandit (Python security lint) ────────────────────────────────────
-  # A3 remediation: SAST was declared mandatory but never verified. CodeQL
-  # needs GHAS on private repos; bandit runs today on public repos with no
-  # license dependency. Semgrep/Bandit/Trivy per A3 options.
-  sast:
-    name: SAST (bandit)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-      - run: pip install bandit
-      - run: bandit -r scripts/ -ll -ii
 
   # ── Terraform format check ─────────────────────────────────────────────────
   terraform:
