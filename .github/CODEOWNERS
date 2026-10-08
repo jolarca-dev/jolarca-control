@@ -1,57 +1,11 @@
 # CODEOWNERS — jolarca-control
 #
-# READ THIS BEFORE CITING THIS FILE AS A CONTROL (docs/drift-findings.md D-20).
+# jolarca-control — marketplace (jolarca-dev) governance control plane.
+# SOC 2 CC6.1 / ISO 27001 A.5.1 / PCI-DSS 6.3
 #
-# The approving-review count is 0 fleet-wide (solo-era deviation, D-04), so it
-# is tempting to call CODEOWNERS "the human gate". It is not, and it cannot be:
-#
-#   1. jolarca-dev has exactly one member. That member is the author of every
-#      PR, and GitHub does not let you approve your own pull request. So there
-#      is nobody who can supply a code-owner approval.
-#   2. Verified empirically elsewhere in this fleet: jolarca-infrastructure
-#      PR #26 merged with require_code_owner_reviews = true, ZERO reviews, and
-#      an empty requested_reviewers list. The same is true of every sampled
-#      merged PR in the org. GitHub does not block the merge.
-#
-# So this file ROUTES review and documents intended ownership. It does not
-# ENFORCE anything today. The gates that actually decide are automated:
-# required status checks, the apply.yml plan-refusal gate, prevent_destroy, and
-# the STATE_MIGRATION_COMPLETE hard gate. Do not represent this file to an
-# auditor as human segregation of duties.
-#
-# Unlike the other five repositories, the entries below at least name a real
-# principal in THIS org (@JourneyOfLife). The rest of the fleet names
-# @journeyoflife-org/* teams and a nonexistent @jol-infrastructure org — a live
-# breach of ADR-0004 R4, tracked as D-20 and RA-07. Fixing those is required
-# regardless of what happens here.
-#
-# When teams are created (second-operator onboarding, D-10), replace the
-# individual with the team slug in the SAME PR that raises D-04 to 1 — do not do
-# one without the other, or you will have an approval count nobody can satisfy.
-#
-# NOTE: CODEOWNERS routes review; it cannot require N approvers. The count is
-# enforced by branch protection (branch-protection.tf), not by this file.
+# D-20 remediation: individual owner pattern. The org has NO teams yet,
+# so team-based CODEOWNERS would be inert. This entry names the organization
+# owner directly. When teams are created, replace with @jolarca-dev/platform-admins.
+# See docs/drift-findings.md D-20.
 
-# Default: the organization owner
-*                       @JourneyOfLife
-
-# Control plane core — a change here can alter every repo in the org
-/repos/                 @JourneyOfLife
-/policy/                @JourneyOfLife
-/*.tf                   @JourneyOfLife
-/terraform.tfvars       @JourneyOfLife
-
-# CI itself — an unprotected pipeline is an unenforced policy
-/.github/workflows/     @JourneyOfLife
-/.github/CODEOWNERS     @JourneyOfLife
-/scripts/               @JourneyOfLife
-
-# Compliance evidence and doctrine
-/docs/                  @JourneyOfLife
-/audit/                 @JourneyOfLife
-
-# The findings register and the migration gate: changes here change what the
-# organization believes to be true about itself.
-/docs/drift-findings.md         @JourneyOfLife
-/docs/state-migration-runbook.md @JourneyOfLife
-/docs/threat-model.md           @JourneyOfLife
+* @JourneyOfLife

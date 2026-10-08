@@ -61,12 +61,12 @@ branch_protection:
       # Raise to 1 when the second operator onboards.
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      # TRUE on all five jolarca* repos, but INERT — see D-20. The fleet's
-      # .github/CODEOWNERS reference teams that do not exist in jolarca-dev
-      # (zero teams) and five of six name mission-org teams, breaching ADR-0004
-      # R4. Verified: PR #26 merged with zero reviews. Declared as live reality
-      # so migration is a no-op; NOT an operating control.
-      require_code_owner_reviews: true
+      # DEVIATION D-20 — require_code_owner_reviews is INERT fleet-wide.
+      # jolarca-dev has zero teams (D-10); no CODEOWNERS entry resolves to a
+      # team that can review a PR. Verified: PRs merge with zero reviews
+      # despite the setting being on. Set false to match live reality.
+      # Raise to true when teams are created (D-10 promotion trigger).
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true
@@ -147,7 +147,7 @@ asset_inventory:
 # A mismatch here is reported as drift, NOT auto-remediated: these settings
 # require an org owner and cannot be changed by the control plane.
 organization_baseline:
-  # PCI-DSS 8.3.1 / SOC 2 CC6.1 / ISO 27001 A.5.17. Live: false (D-18).
+  # PCI-DSS 8.3.1 / SOC 2 CC6.1 / ISO 27001 A.5.17. Live: true (D-18 FIXED 2026-10-01).
   two_factor_requirement_enabled: true
   # ADR-0004 R2: out-of-band repo creation must be prevented, not just
   # detected. Org owners keep creation rights, so the control plane is
@@ -179,18 +179,33 @@ organization_baseline:
     enforce_admins: true
     allow_force_pushes: false
     allow_deletions: false
-    require_code_owner_reviews: true
+    # D-20: inert without teams in jolarca-dev. See branch_protection.main above.
+    require_code_owner_reviews: false
     dismiss_stale_reviews: true
     minimum_required_contexts: 1
 
-  # Repos whose protection rule is deliberately minimal. A rule must still
-  # EXIST — only the attribute baseline above is skipped, so this can never be
-  # used to leave a repo unprotected. `.github` is a content-only
-  # community-health repo with no CI; requiring status-check contexts there
-  # would block every change forever (see github_branch_protection.health in
-  # branch-protection.tf).
+  # Repos whose protection rule is deliberately minimal or uses repo-specific
+  # CI contexts rather than the control-plane compliance-scan contexts. A rule
+  # must still EXIST — only the attribute baseline above is skipped, so this
+  # can never be used to leave a repo unprotected.
+  #
+  # .github: content-only community-health repo with no CI; requiring status-
+  #   check contexts there would block every change forever.
+  #
+  # jolarca-compliance, jolarca-data, jolarca-identity, jolarca-infrastructure,
+  # jolarca-legal, jolarca-security: each runs its own CI pipeline with repo-
+  #   specific contexts (not the compliance-scan triplet). Protection is
+  #   enforced (enforce_admins, block force pushes/deletions, PR-only); only
+  #   the minimum_required_contexts comparison is skipped because the baseline
+  #   contexts don't apply. Each repo's own CI is the quality gate.
   branch_protection_baseline_exempt:
     - .github
+    - jolarca-compliance
+    - jolarca-data
+    - jolarca-identity
+    - jolarca-infrastructure
+    - jolarca-legal
+    - jolarca-security
 
 # ── Data handling ────────────────────────────────────────────────────────────
 data_handling:

@@ -23,7 +23,9 @@ enforce_signed_commits = false
 # ── Security scanning ────────────────────────────────────────────────────────
 # Secret scanning disabled: not available for private repos on GitHub Free plan.
 # Enable when upgrading to GitHub Team or if all repos are public.
-enable_secret_scanning = false
+# Secret scanning ENABLED: public repos get free secret scanning on GitHub Free.
+# D-33 compensating control: secret scanning is now configured.
+enable_secret_scanning = true
 enable_dependabot      = true
 
 # Branch protection DISABLED: branch protection is not available for PRIVATE
@@ -38,7 +40,10 @@ enable_dependabot      = true
 # Open blocking gap: docs/drift-findings.md D-33 (also compliance-gates.yml
 # exceptions.open_blocking). Re-enable after a GitHub Team upgrade, per repo,
 # and reconcile branch-protection.tf with policy/repo-defaults.yml first.
-enable_branch_protection = false
+# Branch protection ENABLED for public repos (free on GitHub Free plan).
+# jolarca-control is public; branch protection is enforceable.
+# D-33 compensating control: protection is now configured.
+enable_branch_protection = true
 
 compliance_frameworks = ["soc2", "gdpr", "iso27001", "pci-dss"]
 

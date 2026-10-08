@@ -13,6 +13,21 @@ topics:
 - data-protection
 - cookie-consent
 settings:
+  # Licensing posture — an explicit OWNER DECISION recorded 2026-09-28.
+  # This is NOT `license_template`: repositories.tf passes license_template
+  # straight to github_repository and GitHub accepts only its own template keys,
+  # so "proprietary" there would fail the apply. `license` is inert for Terraform
+  # and for LIVE_SETTINGS_MAP, and exists so the readiness gate can tell a
+  # deliberate all-rights-reserved notice from an undocumented one (L-13b).
+  #
+  # policy/repo-defaults.yml sets license: null fleet-wide because only the
+  # flagship `jolarca` carries an OSS licence (AGPL-3.0, deliberate). That
+  # default leaves a PUBLIC repo under implicit default copyright, which is
+  # legally sound but unauditable — an assessor must infer intent from silence.
+  # jolarca-consent is public, tier-1 and GDPR-scoped, and pyproject.toml
+  # already declared `license = { text = "Proprietary — all rights reserved" }`,
+  # so the posture is made explicit here and in a committed LICENSE file.
+  license: proprietary
   has_issues: true
   has_wiki: false
   has_projects: false
@@ -30,9 +45,23 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # Contexts are the JOB display names GitHub reports, NOT workflow names.
+      # Audit finding A-01 / gate L-19 (2026-09-28): this list declared `ci` and
+      # `security`, which no job in .github/workflows/ produces, so the rule was
+      # unsatisfiable and would have blocked every merge forever the moment
+      # protection was enabled. Every name below is emitted by a workflow that
+      # triggers on pull_request, verified against the live job `name:` values.
+      # `Verify Chain` (integrity.yml) is deliberately ABSENT: that workflow runs
+      # on schedule and workflow_dispatch only, so requiring it as a pre-merge
+      # context would deadlock every PR (gate L-20).
       contexts:
-      - ci
-      - security
+      - "Lint (ruff)"
+      - "Type check (mypy)"
+      - "Test (pytest)"
+      - "Repository smoke-check"
+      - "Gitleaks (secret scanning)"
+      - "Dependency review"
+      - "CodeQL (python)"
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true

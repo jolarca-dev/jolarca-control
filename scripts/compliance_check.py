@@ -35,6 +35,21 @@ REQUIRED_FRAMEWORKS = {"soc2", "gdpr", "iso27001", "pci-dss"}
 CLASSIFICATIONS_REQUIRING_PRIVATE = {"confidential", "restricted"}
 FLEET_NAME_RE = re.compile(r"^jolarca(-[a-z0-9-]+)?$")
 
+# A-08 (2026-10-08): when policy declares the `sast` gate mandatory for a tier,
+# that tier's repos must have a job producing the primary SAST context as a
+# required status check. `SAST (semgrep)` is the Semgrep OSS job name emitted
+# by `.github/workflows/sast.yml` — the language-agnostic rule engine that
+# runs on the Free plan without GHAS. Bandit and Trivy run alongside in the
+# same workflow but are defense-in-depth contexts; only the primary one is
+# required, so a temporary Trivy infra outage does not deadlock every PR.
+SAST_PRIMARY_CONTEXT = "SAST (semgrep)"
+# The scope of this control plane's self-check. Other repos in the fleet have
+# the same policy requirement (all three tiers list `sast` in
+# enforcement_matrix.required) but their own PRs must land their own
+# `.github/workflows/sast.yml`; validating them from here would fire a red
+# for 15 of 16 repos before any of them get the chance to close the gap.
+SELF_REPO_NAME = "jolarca-control"
+
 
 def load_yaml(filepath: Path) -> dict[str, Any]:
     with open(filepath, encoding="utf-8") as f:
@@ -182,6 +197,117 @@ def check_merge_policy(repos: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def check_sast_gate_wiring(
+    repos: dict[str, dict[str, Any]],
+    gates: dict[str, Any],
+    enforcement_matrix: dict[str, Any],
+) -> dict[str, Any]:
+    """A-08: if policy declares `sast` mandatory for this repo's tier, the
+    declared required-status-check contexts must include the SAST primary.
+
+    Scope is `jolarca-control` (this repo). Other fleet members carry the same
+    tier requirement but their own CI wiring is theirs to land; validating
+    them from here would fire red for 15 of 16 repos before any of them gets
+    the chance to close the gap — a D-23 class unverified-as-verified inversion
+    in the other direction (a permanent fail is as dishonest as a permanent
+    pass).
+
+    Three invariants, all read from declared config:
+    1. `gates.sast` exists AND declares `enforcement: mandatory` OR a
+       `mandatory_for_tier:` list that includes this repo's declared tier.
+    2. `enforcement_matrix[<tier>].required` includes `sast`.
+    3. `repos/jolarca-control.yml` branch_protection.main.required_status_checks
+       .contexts contains `SAST (semgrep)`.
+
+    Missing gate or missing tier: unverifiable, exit-code semantics preserved
+    by returning status=fail (this is a DECLARED-consistency script; live
+    drift belongs to scripts/drift_detect.py per the module docstring).
+    """
+    self_repo = repos.get(SELF_REPO_NAME)
+    if not isinstance(self_repo, dict):
+        return {
+            "check": "sast_gate_wiring",
+            "status": "fail",
+            "compliant": 0,
+            "total": 1,
+            "violations": [
+                (
+                    f"{SELF_REPO_NAME}.yml is missing or unreadable — cannot "
+                    "verify the SAST gate is wired"
+                ),
+            ],
+        }
+
+    tier = self_repo.get("tier")
+    if not tier:
+        return {
+            "check": "sast_gate_wiring",
+            "status": "fail",
+            "compliant": 0,
+            "total": 1,
+            "violations": [f"repos/{SELF_REPO_NAME}.yml does not declare a tier"],
+        }
+
+    tier_row = enforcement_matrix.get(tier) or {}
+    required_in_tier = tier_row.get("required") or []
+    sast_required = "sast" in required_in_tier
+
+    sast_gate = gates.get("sast") or {}
+    sast_enforcement = sast_gate.get("enforcement", "")
+    # `mandatory_for_tier:governance,devops` is the other spelling used in this
+    # file; parse the tier list so the check does not silently miss it.
+    mandatory_tiers: list[str] = []
+    if isinstance(sast_enforcement, str):
+        if sast_enforcement == "mandatory":
+            mandatory_tiers = [tier]  # applies to every tier
+        elif sast_enforcement.startswith("mandatory_for_tier:"):
+            mandatory_tiers = [t.strip() for t in sast_enforcement.split(":", 1)[1].split(",")]
+
+    gate_declares_mandatory_here = tier in mandatory_tiers or sast_enforcement == "mandatory"
+
+    violations: list[str] = []
+    if not (sast_required or gate_declares_mandatory_here):
+        # Neither policy path says SAST is required for this repo's tier.
+        # That is a policy-integrity defect, not a wiring defect. Fail loud.
+        violations.append(
+            f"policy/compliance-gates.yml neither lists 'sast' in "
+            f"enforcement_matrix['{tier}'].required nor declares gates.sast."
+            f"enforcement covering tier '{tier}' (observed enforcement: "
+            f"{sast_enforcement!r}). A 'mandatory' gate that is not required "
+            "anywhere is folklore, not a control (AGENTS.md §7, D-22)."
+        )
+    else:
+        bp = (self_repo.get("branch_protection") or {}).get("main") or {}
+        contexts = (bp.get("required_status_checks") or {}).get("contexts") or []
+        if not isinstance(contexts, list):
+            violations.append(
+                f"repos/{SELF_REPO_NAME}.yml branch_protection.main.required_status_checks"
+                f".contexts must be a list, got {type(contexts).__name__}"
+            )
+        elif SAST_PRIMARY_CONTEXT not in contexts:
+            violations.append(
+                f"repos/{SELF_REPO_NAME}.yml declares tier '{tier}' which "
+                f"requires the 'sast' gate (enforcement_matrix['{tier}']."
+                f"required), but its required_status_checks.contexts list "
+                f"{contexts!r} does not include {SAST_PRIMARY_CONTEXT!r}. "
+                "Either wire the workflow (see .github/workflows/sast.yml) "
+                "or amend the enforcement_matrix — do NOT silently remove "
+                "'sast' from the tier's required list without an ADR (RB-04)."
+            )
+
+    return {
+        "check": "sast_gate_wiring",
+        "status": "pass" if not violations else "fail",
+        "compliant": 1 - len(violations),
+        "total": 1,
+        "sast_required_for_tier": sast_required,
+        "primary_context": SAST_PRIMARY_CONTEXT,
+        "scope": f"self (repos/{SELF_REPO_NAME}.yml); siblings carry the same "
+        "tier requirement and must land their own SAST workflow",
+        "violations": violations,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run compliance checks on jolarca-control repo definitions"
@@ -198,6 +324,10 @@ def main() -> int:
         "require_signed_commits", True
     )
 
+    gates_doc = load_yaml(POLICY_DIR / "compliance-gates.yml")
+    gates = gates_doc.get("gates", {})
+    enforcement_matrix = gates_doc.get("enforcement_matrix", {})
+
     checks = [
         check_fleet_separation(repos),
         check_dependabot_coverage(repos),
@@ -206,6 +336,7 @@ def main() -> int:
         check_compliance_frameworks(repos),
         check_wiki_disabled(repos),
         check_merge_policy(repos),
+        check_sast_gate_wiring(repos, gates, enforcement_matrix),
     ]
 
     overall_status = "pass" if all(c["status"] == "pass" for c in checks) else "fail"

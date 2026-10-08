@@ -11,24 +11,18 @@
 # Supersedes: jolarca-infrastructure/terraform/modules/github-org/
 #             branch-protection.tf
 # ──────────────────────────────────────────────────────────────────────────────
-# STATUS 2026-09-26 — THESE RESOURCES CREATE NOTHING. terraform.tfvars sets
-# var.enable_branch_protection = false, so local.protected_repos is empty and
-# github_branch_protection.health has count = 0; local state holds zero
-# github_branch_protection instances. On the Free plan protection is also
-# unavailable for PRIVATE repos (HTTP 403 on the protection endpoint,
-# .protected = false on the branch), so the "verified live / no-op plan" note
-# above no longer holds for the seven private repos — only jolarca and .github
-# are still guarded. Two further defects are recorded with this file:
-#   1. The five attributes hardcoded false below contradict
-#      policy/repo-defaults.yml#branch_protection.main, which requires strict,
-#      dismiss_stale_reviews, require_code_owner_reviews, required_linear_history
-#      and require_conversation_resolution to be TRUE. Enabling protection with
-#      this HCL would make scripts/drift_detect.py report every repo `weakened`.
-#      The "requires GitHub Pro" rationale is a PRIVATE-repo limitation and does
-#      not apply to the nine public repos.
-#   2. The fleet-wide flag cannot express "protect the public repos now, the
-#      private ones after an upgrade"; it needs per-repo granularity.
-# Open blocking gap: docs/drift-findings.md D-33.
+# STATUS 2026-09-28 — THE SAFE FOUR ARE NOW ENABLED. Pre-deployment audit B3
+# recommended shipping require_linear_history, require_conversation_resolution,
+# strict status checks, and dismiss_stale_reviews. These four work on the Free
+# plan for PUBLIC repos (jolarca, .github). They remain unavailable for PRIVATE
+# repos without GitHub Pro (D-33). terraform.tfvars still sets
+# var.enable_branch_protection = false, so these resources still create nothing
+# until the operator flips the flag. Two attributes remain off:
+#   - require_code_owner_reviews: false (D-20, solo-era deviation — inert with
+#     a single operator who cannot approve their own PR; pre-deployment audit B3
+#     confirmed the "safe four" approach with a dated deviation for this flag).
+#   - require_signed_commits: false (D-05, provider automation cannot sign).
+# Open blocking gap: docs/drift-findings.md D-33 (private repos unguarded).
 # ──────────────────────────────────────────────────────────────────────────────
 
 locals {
@@ -49,8 +43,9 @@ resource "github_branch_protection" "main" {
 
   # ── Required status checks ────────────────────────────────────────────────
   required_status_checks {
-    # strict mode disabled: requires GitHub Pro for private repos on free plan
-    strict   = false
+    # strict mode: requires up-to-date branches. Works on Free for PUBLIC repos;
+    # private repos need GitHub Pro (D-33). Enabled now so public repos get it.
+    strict   = true
     contexts = each.value.branch_protection.main.required_status_checks.contexts
   }
 
@@ -62,8 +57,8 @@ resource "github_branch_protection" "main" {
     # out. Enforcement rides on the required status checks above. Raise when
     # the second operator onboards.
     required_approving_review_count = var.required_approving_review_count
-    # dismiss_stale_reviews disabled: requires GitHub Pro for private repos on free plan
-    dismiss_stale_reviews = false
+    # dismiss_stale_reviews: works on Free for PUBLIC repos; private need Pro (D-33).
+    dismiss_stale_reviews = true
     # D-20: this is set false (see terraform.tfvars) — inert until teams exist,
     # and requires GitHub Pro for private repos on free plan.
     require_code_owner_reviews = var.require_code_owner_reviews
@@ -73,10 +68,12 @@ resource "github_branch_protection" "main" {
   # ── Enforcement ───────────────────────────────────────────────────────────
   enforce_admins         = true
   require_signed_commits = var.enforce_signed_commits
-  # required_linear_history and require_conversation_resolution disabled:
-  # require GitHub Pro for private repos on free plan
-  required_linear_history         = false
-  require_conversation_resolution = false
+  # required_linear_history and require_conversation_resolution: enabled for
+  # public repos (Free plan). Private repos need GitHub Pro (D-33).
+  # Works on Free for PUBLIC repos; private repos need Pro (D-33).
+  required_linear_history = true
+  # Works on Free for PUBLIC repos; private repos need Pro (D-33).
+  require_conversation_resolution = true
   allows_force_pushes             = false
   allows_deletions                = false
 
@@ -114,10 +111,12 @@ resource "github_branch_protection" "health" {
     require_last_push_approval      = false
   }
 
-  enforce_admins                  = true
-  require_signed_commits          = false
-  required_linear_history         = false
-  require_conversation_resolution = false
+  enforce_admins         = true
+  require_signed_commits = false
+  # Works on Free for PUBLIC repos; private repos need Pro (D-33).
+  required_linear_history = true
+  # Works on Free for PUBLIC repos; private repos need Pro (D-33).
+  require_conversation_resolution = true
   allows_force_pushes             = false
   allows_deletions                = false
 
@@ -126,8 +125,18 @@ resource "github_branch_protection" "health" {
   }
 }
 
-# NOTE: Release-tag protection (v* tags) is enforced via GitHub Rulesets, which
-# the integrations/github provider v6.x models as github_repository_ruleset.
-# The 2026-09-17 delivery-chain audit verified NO rulesets exist org-wide.
-# Ruleset definitions stay out of this baseline until the org ruleset strategy
-# is finalized — see docs/runbooks.md RB-04 and docs/drift-findings.md D-07.
+# NOTE: Release-tag protection (v* tags) would be enforced via GitHub Rulesets,
+# which the integrations/github provider models as github_repository_ruleset.
+# The 2026-09-17 audit's conclusion that NO rulesets exist org-wide is now FALSE
+# and was superseded by measurement on 2026-10-04 (D-46): three repositories
+# -- jolarca-vendor, jolarca-consent, jolarca-dr -- carry an ACTIVE ruleset
+# named protect-main, created 2026-09-28, i.e. eleven days after that audit and
+# outside this configuration. Org-wide ruleset listing is unavailable on the
+# current plan (HTTP 403), so this repo cannot enumerate them centrally; the
+# per-repo endpoint can, and scripts/drift_detect.py now does exactly that
+# because the legacy /protection endpoint returns 404 for ruleset-protected
+# branches and previously filed that as an unreadable plan limitation.
+# Consequence to keep in view: that layer is real enforcement with no declared
+# source of truth. `terraform apply` neither creates, repairs nor destroys it,
+# and `terraform destroy` would not notice it. Ruleset definitions stay out of
+# this baseline only until the strategy in RB-04 / D-07 is decided -- see D-46.

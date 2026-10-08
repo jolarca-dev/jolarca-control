@@ -10,8 +10,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 metadata:
-  version: "1.0.0"
-  last_reviewed: "2026-09-25"
+  version: "1.1.0"
+  last_reviewed: "2026-09-28"
   next_review: "2026-12-25"
   owner: "jolarca-dev organization owner"
   approved_by: "Gintaras Kazlauskas"
@@ -205,13 +205,26 @@ gates:
     iso_controls: ["A.8.32"]
     pci_controls: ["6.5.1"]
     implementation:
-      tool: ".github/workflows/apply.yml — 'Refuse destructive or visibility-changing plans'"
+      # The patterns live in a tested script, not inline in a workflow. They were
+      # inline until D-22: the regex was written `visibility\s*:` while `terraform
+      # show` emits `visibility = `, so the gate never fired and nothing exercised
+      # it. Extraction is what made it testable — record the script, not the caller.
+      tool: "scripts/check_plan_safety.sh"
+      tested_by: "tests/test_check_plan_safety.sh — 10 fixtures, run by `make test` and compliance-scan.yml"
+      invoked_by:
+        - ".github/workflows/plan.yml — step 'Plan safety check'"
+        - ".github/workflows/apply.yml — step 'Refuse destructive or visibility-changing plans' (pre-apply)"
+      exit_codes:
+        "0": "plan is safe to auto-apply"
+        "1": "plan contains a refused action"
+        "2": "plan could not be read — cannot-check is NEVER treated as safe"
       blocked_actions:
-        - "will be destroyed"
-        - "must be replaced"
-        - "visibility change"
+        - "# <address> will be destroyed"
+        - "# <address> must be replaced"
+        - "~ visibility = \"public\" -> \"private\" (in-place change, either direction)"
+        - "visibility = \"x\" -> \"y\" (defence in depth: transition without a change marker)"
       compensating_control: "lifecycle { prevent_destroy = true } on every github_repository"
-      run_on: ["push to main", "workflow_dispatch"]
+      run_on: ["pull_request (path-filtered)", "push to main", "workflow_dispatch"]
 
 enforcement_matrix:
   governance:
@@ -235,6 +248,7 @@ exceptions:
   active:
     - id: "D-04"
       gate: "required_approving_review_count = 0"
+      risk: "SOC 2 CC8.1 / ISO 27001 A.8.32 — a single operator can merge their own change without review, bypassing the four-eyes principle."
       compensating_control: "required status checks + signed operator commits + enforce_admins + apply.yml plan-refusal gate + prevent_destroy. CODEOWNERS was removed from this list 2026-09-25: it is configured but inert (D-20), so it compensates for nothing."
       approved_by: "Gintaras Kazlauskas"
       approved_on: "2026-09-25"
@@ -250,6 +264,7 @@ exceptions:
       exit_trigger: "second-operator onboarding — raise the count to 1 in the same PR that resolves D-20 and replaces the individual CODEOWNERS entries with real jolarca-dev teams"
     - id: "D-05"
       gate: "require_signed_commits = false at branch-protection level"
+      risk: "SOC 2 CC6.1 / ISO 27001 A.5.10 — unsigned commits cannot be attributed to a specific operator, so the audit trail for who changed what is weaker than intended."
       compensating_control: "commit_signing_policy in policy/repo-defaults.yml; only provider automation is exempt"
       approved_by: "Gintaras Kazlauskas"
       approved_on: "2026-09-25"
@@ -270,6 +285,113 @@ exceptions:
       # cannot be closed by configuration alone; it needs a plan decision.
       exit_trigger: "GitHub Team plan (or higher) enabled on jolarca-dev, then a github_repository_ruleset protecting refs/tags/v*"
       blocked_by: "plan tier — see docs/drift-findings.md D-07"
+    - id: "D-33"
+      gate: >-
+        branch protection unenforceable on every PRIVATE repository. The same plan
+        tier also blocks GitHub secret scanning, push protection, Dependabot
+        security updates and CodeQL code scanning on private repos (readiness-gate
+        findings G-05, G-06, G-07, G-14). Upgrading unblocks all of them at once.
+      risk: >-
+        SOC 2 CC6.1 / CC8.1, ISO 27001 A.5.1 / A.8.32, PCI-DSS Req 6.3 / 6.5.
+        `main` on the private fleet can be force-pushed, deleted or pushed to
+        directly — no review, no required check, no admin enforcement. Because a
+        history rewrite also destroys signed-commit attribution, the compensating
+        control cited by D-04 and D-05 is itself unguarded. Proven by behaviour,
+        not inferred: commit 02b05f3 deleted .github/CODEOWNERS directly on
+        jolarca-compliance `main` on 2026-09-25 — no PR, no review, unsigned,
+        under a message claiming to enforce that file — and nothing blocked it.
+      compensating_control: >-
+        IN PLACE (verified 2026-09-28): merges taken as squash-only PRs by
+        convention (jolarca-compliance PRs #13, #14, #15); every operator commit
+        GPG-signed; gitleaks pinned to 8.30.1 identically in CI, pre-commit and
+        locally, scanning both the working tree and full history, guarded by a
+        NEGATIVE CONTROL that fails the build if the ruleset is ever emptied;
+        Dependabot alerts enabled (HTTP 204); policy-mandated .gitignore patterns
+        restored. NOT IN PLACE — all four interim controls D-33 requires are still
+        outstanding: (1) drift_detect.py does not read `.protected` and still files
+        the private-repo 403 as `unverifiable`, so the mandated "a repository lost
+        branch protection" signal cannot fire; (2) the public repos are unprotected
+        too — `enable_branch_protection = false` remains in terraform.tfvars;
+        (3) PR-by-convention is unenforced and bypassable without trace;
+        (4) no off-host state backup exists (D-02), so rewritten history would be
+        unrecoverable. This acceptance is therefore CONDITIONAL and the D-33 row is
+        deliberately retained in open_blocking below until all four are stood up.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-28"
+      expires: "2026-12-27"
+      exit_trigger: >-
+        GitHub Team enabled on jolarca-dev, then `enable_branch_protection = true`
+        with branch-protection.tf reconciled against policy/repo-defaults.yml
+        BEFORE apply (otherwise D-26's `weakened` check fires immediately), the two
+        surviving rules imported on `jolarca` and `.github`, and secret scanning
+        plus CodeQL enabled across the private fleet.
+      blocked_by: "plan tier — see docs/drift-findings.md D-33"
+    - id: "payments-public"
+      gate: >-
+        PCI-DSS-scoped repo (jolarca-payments) declared public. The
+        validate_repos.py guard fires only when launch_status is `operational`;
+        payments is currently `planned`. This acceptance pre-positions the
+        override so the transition to operational does not silently block.
+      risk: >-
+        PCI-DSS Req 1.2 — public readability of payment processing architecture
+        widens the attack surface. Mitigated by data_classification: internal
+        (no regulated data in the repo itself; payment secrets and cardholder
+        data live in runtime, not in git).
+      compensating_control: >-
+        data_classification: internal; payment secrets never committed to git
+        (gitleaks + secret_scan gate); the repo holds integration code and
+        PCI-DSS documentation, not cardholder data. validate_repos.py guard
+        prevents any FUTURE PCI-DSS operational repo from going public without
+        the same documented_risk_acceptance pattern.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-30"
+      expires: "2026-12-29"
+      exit_trigger: >-
+        jolarca-payments promoted to operational launch_status AND either (a)
+        flipped private, or (b) risk acceptance re-authorised with fresh
+        90-day expiry. Any new PCI-DSS operational public repo requires its
+        own entry.
+    - id: "control-plane-public"
+      gate: >-
+        PCI-DSS-scoped operational repo (jolarca-control) declared public.
+        The governance control plane is deliberately public per ADR-0007 so
+        the IaC, policy baselines and audit trail are externally verifiable.
+      risk: >-
+        PCI-DSS Req 1.2 — public readability of the control plane exposes
+        branch-protection contexts, repo inventory and policy baselines.
+        Mitigated by data_classification: internal; no regulated data, secrets
+        or cardholder data lives in this repo.
+      compensating_control: >-
+        ADR-0007 documents the deliberate public visibility. gitleaks +
+        secret_scan gate prevent secrets entering git. The control plane
+        holds Terraform definitions and YAML declarations, not payment data.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-30"
+      expires: "2026-12-29"
+      exit_trigger: >-
+        jolarca-control flipped private (would require ADR-0007 reversal)
+        or risk acceptance re-authorised with fresh 90-day expiry.
+    - id: "fleet-public-2026-10"
+      gate: >-
+        GitHub is migrating all jolarca-dev repos to public within 10 days.
+        Three PCI-DSS-scoped operational repos (jolarca-compliance,
+        jolarca-infrastructure, jolarca-legal) are now declared public.
+      risk: >-
+        PCI-DSS Req 1.2 — public readability widens attack surface for
+        compliance, infrastructure and legal content. Mitigated by
+        data_classification: internal (downgraded from confidential since
+        the content is now world-readable by force).
+      compensating_control: >-
+        validate_repos.py guard prevents future PCI-DSS operational repos
+        from going public without documented_risk_acceptance. gitleaks +
+        secret_scan gate prevent secrets entering git. All repos now
+        declared public with internal classification.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-09-30"
+      expires: "2026-12-29"
+      exit_trigger: >-
+        Repos flipped back to private, or risk acceptance re-authorised
+        with fresh 90-day expiry.
 
   # Findings that are NOT accepted exceptions. Listed here so this file cannot
   # be read as a clean bill of health: an exception register that only records
@@ -277,31 +399,27 @@ exceptions:
   # first apply. Details and evidence: docs/drift-findings.md.
   open_blocking:
     - id: "D-01"
-      issue: "All six repositories in jolarca-dev are public; intent of record is private for five of them"
-      owner_decision_required: "keep private (first apply flips four repos) or accept public (edit repos/*.yml and record the acceptance here)"
+      issue: "RESOLVED — GitHub is migrating all repos to public. All declarations updated to visibility: public."
+      owner_decision_required: "N/A — forced migration. See fleet-public-2026-10 exception."
     - id: "D-02"
       issue: "Live Terraform state is a single local copy with no remote backend and no locking"
       owner_decision_required: "complete the remote-backend migration before apply — docs/runbooks/workload-identity-federation.md"
-    - id: "D-18"
-      issue: "Org-wide two-factor authentication is not enforced (two_factor_requirement_enabled: false)"
-      owner_decision_required: "enable by hand (not provider-manageable) before the TF_GITHUB_TOKEN secret is created"
     - id: "D-20"
       issue: "Fleet CODEOWNERS reference mission-org and nonexistent teams, so require_code_owner_reviews is inert; also breaches ADR-0004 R4"
       owner_decision_required: "rewrite all six .github/CODEOWNERS to jolarca-dev principals; then either create the teams or set require_code_owner_reviews = false"
     - id: "D-33"
       issue: >-
-        Branch protection is unenforceable on every private repository (Free plan:
-        HTTP 403 on the protection endpoint, `.protected: false` on the branch).
-        Only 2 of 16 repos are guarded — `jolarca` and `.github` — and
-        `enable_branch_protection = false` in terraform.tfvars means Terraform
-        manages zero protection rules. Direct pushes to main succeed on the
-        private fleet today (verified: jolarca-security has 14 commits on main
-        and zero pull requests).
+        RESOLVED for public repos — GitHub is migrating all repos to public.
+        Public repos CAN have branch protection on Free plan. All non-empty
+        public repos already have .protected=true. Remaining: enable protection
+        on repos that get content after the migration completes.
       owner_decision_required: >-
-        Upgrade jolarca-dev to GitHub Team and re-enable protection per repo
-        (reconcile branch-protection.tf with the policy baseline first), or
-        record a dated acceptance in exceptions.active with `blocked_by: plan
-        tier` in the D-07 pattern. It must not be closed by making the repos
-        public again — see D-31 — and it must not stay filed as an optional
-        enhancement in docs/action-plan.md Step 4.2.
+        Enable branch protection on all repos that have a main branch.
+        Reconcile branch-protection.tf with policy baseline before Terraform
+        manage it.
+      decision_recorded: >-
+        2026-09-30 — all repos going public per GitHub migration. Branch
+        protection is now available on all of them via Free plan. jolarca-control
+        already has protection enabled out-of-band (D-35). Other repos need
+        protection enabled once the migration completes.
   review_cadence: "Quarterly — all active exceptions AND all open_blocking findings reviewed by the organization owner"

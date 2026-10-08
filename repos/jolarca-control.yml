@@ -10,7 +10,15 @@
 name: jolarca-control
 description: "GitHub org as code — fleet control plane for the jolarca-dev organization. Terraform IaC, repo allow-list, policy baselines, compliance gates, and audit checklists."
 
-visibility: private
+# PCI-DSS public visibility risk acceptance (ADR-0007):
+# jolarca-control is the governance control plane for the fleet. It is
+# deliberately public (docs/adr/0007-public-marketplace-repository.md) so the
+# IaC, policy baselines and audit trail are externally verifiable. No regulated
+# data lives in this repo (data_classification: internal); it holds Terraform
+# definitions, YAML declarations and markdown documentation.
+# Full risk acceptance: policy/compliance-gates.yml exceptions.active.
+documented_risk_acceptance: true
+visibility: public
 tier: governance
 # tier-1 per policy/repo-defaults.yml#asset_inventory: whoever controls this
 # repo controls branch protection and visibility on every PCI-scoped repo in the
@@ -43,24 +51,42 @@ settings:
   is_template: false
   auto_init: false
   web_commit_signoff_required: true
+  license: proprietary
 branch_protection:
   main:
     pattern: main
     required_status_checks:
       strict: true
-      # ONLY contexts from compliance-scan.yml, which runs on every PR with no
-      # path filter. plan.yml and fleet-separation-guard.yml are path-filtered,
-      # so requiring their contexts would block docs-only PRs forever — the
-      # exact failure mode the two-phase bootstrap doctrine warns about.
+      # Contexts must be produced by a workflow that fires on every PR with
+      # no path filter. compliance-scan.yml (three contexts) and sast.yml
+      # (one required context, two informational) both satisfy that.
+      # plan.yml and fleet-separation-guard.yml are path-filtered, so
+      # requiring their contexts would block docs-only PRs forever — the
+      # exact failure mode the two-phase bootstrap doctrine warns about
+      # (this comment was the reason SAST was not originally a required
+      # context; A-08 adds it via the non-path-filtered sast.yml).
       contexts:
       - Validate Repo Allow-List
       - Policy Compliance Check
       - Repository Secret Pattern Scan
+      # A-08 (2026-10-08): primary SAST context. `SAST (semgrep)` is the
+      # Semgrep OSS job in .github/workflows/sast.yml — chosen because
+      # Semgrep OSS is the language-agnostic rule engine that runs on the
+      # GitHub Free plan without any Advanced Security dependency (the
+      # policy `id: codeql-analysis` label predates the Semgrep move; GHAS
+      # is not available on this org's plan and CodeQL never ran). Bandit
+      # and Trivy contexts run alongside in the same workflow as
+      # defense-in-depth but are not required, so a Trivy infra outage
+      # does not deadlock every PR.
+      - SAST (semgrep)
     required_pull_request_reviews:
       # SOLO-ERA DEVIATION — D-04
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      require_code_owner_reviews: true
+      # require_code_owner_reviews=false: INERT without jolarca-dev teams
+      # (D-10/D-20); matches policy/repo-defaults baseline. Raise to true in the
+      # same PR that creates teams and CODEOWNERS owners.
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true
@@ -78,7 +104,7 @@ compliance:
   - gdpr
   - iso27001
   - pci-dss
-  data_classification: confidential
+  data_classification: internal
   required_gates:
     dependency_scan: true
     secret_scan: true

@@ -1,0 +1,80 @@
+# evidence-integrity.yml — weekly evidence hash verification.
+#
+# jolarca-control — marketplace (jolarca-dev) governance control plane.
+# SOC 2 CC4.1 / ISO 27001 A.5.31 / PCI-DSS 12.10.1
+#
+# Runs scripts/hash_evidence.sh --check against the COMMITTED registry in
+# docs/evidence-registry.csv. A mismatch means an evidence file changed without
+# being re-registered, which is an audit finding.
+#
+# ── WHY THERE IS NO REGISTER STEP ON THIS PATH ────────────────────────────────
+# This workflow used to run `hash_evidence.sh` (register) immediately before
+# `hash_evidence.sh --check`. Registration rewrites the registry from the very
+# files being checked, so the comparison ran against a baseline generated from
+# the same working tree moments earlier. It passed for every input, including
+# tampered evidence — a tautology, and the same failure class as D-20/D-22: a
+# gate that is present, runs, reports green, and detects nothing.
+#
+# The baseline must be committed for --check to mean anything. Registration is
+# therefore an explicit manual dispatch (mode=register) that uploads the
+# regenerated CSV as an artifact; the operator reviews the diff and commits it
+# in a PR, so the baseline of record stays versioned and attributable.
+# `permissions` remains `contents: read` — this workflow cannot write it.
+#
+# Also runs on PRs that touch evidence directories.
+
+name: Evidence Integrity
+
+on:
+  schedule:
+    # Weekly: Monday 06:00 UTC
+    - cron: "0 6 * * 1"
+  pull_request:
+    paths:
+      - "docs/adr/**"
+      - "audit/**"
+      - "policy/**"
+      - "repos/**"
+      - "docs/runbooks/**"
+      - "docs/security/**"
+      - "docs/evidence-registry.csv"
+      - "scripts/hash_evidence.sh"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check = verify against the committed baseline; register = regenerate the CSV as an artifact"
+        type: choice
+        default: "check"
+        options:
+          - check
+          - register
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-check:
+    name: Evidence Integrity Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The only automatic path. Exit 1 on a hash mismatch; exit 2 if the
+      # committed baseline is missing or holds no entries. Neither is OK.
+      # `inputs.mode` is empty for schedule/pull_request, so this runs there.
+      - name: Verify evidence hashes against the committed baseline
+        if: inputs.mode != 'register'
+        run: bash scripts/hash_evidence.sh --check
+
+      - name: Regenerate registry (manual dispatch only)
+        if: inputs.mode == 'register'
+        run: bash scripts/hash_evidence.sh
+
+      # Uploaded, never committed: the operator turns this into a reviewed PR.
+      - name: Upload regenerated registry
+        if: inputs.mode == 'register'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-registry-${{ github.sha }}
+          path: docs/evidence-registry.csv
+          retention-days: 90

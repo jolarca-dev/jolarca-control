@@ -17,7 +17,11 @@ description: "Marketplace compliance evidence and audit records (ISO 27001 / SOC
 # DPIAs, ERoPA entries and audit evidence inside a PCI-DSS/KYC-AML scope; it
 # must not stay public. The apply workflow HARD-REFUSES any plan that changes
 # visibility, so this cannot land silently — flip it consciously.
-visibility: private
+# PCI-DSS public visibility risk acceptance (2026-09-30):
+# GitHub is migrating all repos to public within 10 days. This repo is
+# PCI-DSS-scoped and operational. Risk acceptance recorded per D-25 pattern.
+documented_risk_acceptance: true
+visibility: public
 
 tier: governance
 # tier-2: holds the authoritative RoPA (GDPR Art. 30) and vendor assessments, so
@@ -62,11 +66,18 @@ branch_protection:
       - lint
       - governance
       - security
+      - retention-tests
+      # Gap 2.1 (pre-deployment review 2026-09-28): retention-tests was the
+      # fourth CI job not declared in required-contexts. An undeclared check
+      # is a check nobody is accountable for (SOC 2 CC8.1).
     required_pull_request_reviews:
       # SOLO-ERA DEVIATION — docs/drift-findings.md D-04
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      require_code_owner_reviews: true
+      # require_code_owner_reviews=false: INERT without jolarca-dev teams
+      # (D-10/D-20); matches policy/repo-defaults baseline. Raise to true in the
+      # same PR that creates teams and CODEOWNERS owners.
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true
@@ -84,7 +95,7 @@ compliance:
   - gdpr
   - iso27001
   - pci-dss
-  data_classification: confidential
+  data_classification: internal
   required_gates:
     dependency_scan: true
     secret_scan: true

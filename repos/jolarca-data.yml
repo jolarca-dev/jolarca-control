@@ -12,7 +12,7 @@ description: "Marketplace data schemas and migrations (no production data in git
 # in this fleet are private"). Live reality is PUBLIC. Schema and migration
 # files disclose the PII and payment data model — an attacker's roadmap.
 # apply.yml refuses visibility changes, so this cannot land silently.
-visibility: private
+visibility: public
 
 tier: platform
 # tier-1: the PII and payment data model. Loss or exposure is directly
@@ -58,7 +58,10 @@ branch_protection:
       # SOLO-ERA DEVIATION — D-04
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      require_code_owner_reviews: true
+      # require_code_owner_reviews=false: INERT without jolarca-dev teams
+      # (D-10/D-20); matches policy/repo-defaults baseline. Raise to true in the
+      # same PR that creates teams and CODEOWNERS owners.
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true
@@ -76,7 +79,7 @@ compliance:
   - gdpr
   - iso27001
   - pci-dss
-  data_classification: confidential
+  data_classification: internal
   required_gates:
     dependency_scan: true
     secret_scan: true

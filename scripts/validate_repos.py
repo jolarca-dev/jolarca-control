@@ -232,6 +232,27 @@ def validate_repo(filepath: Path, policy: dict[str, Any]) -> list[str]:
             f"'{criticality}' — tier-3 is defined as holding no regulated data."
         )
 
+    # PCI-DSS operational repos must not be public. A repo that is both
+    # PCI-DSS-scoped and operational ("actively relied on for a live obligation")
+    # sits in or adjacent to the CDE; public readability exposes the payment
+    # estate's structure. Override only with `documented_risk_acceptance: true`
+    # AND a matching entry in policy/compliance-gates.yml exceptions.active
+    # (D-25 dated-acceptance pattern: approved_by, ISO-8601 expires, exit_trigger).
+    launch = data.get("launch_status", "")
+    frameworks = compliance.get("frameworks") or []
+    if (
+        "pci-dss" in frameworks
+        and launch == "operational"
+        and vis == "public"
+        and not data.get("documented_risk_acceptance")
+    ):
+        errors.append(
+            f"{filepath.name}: PCI-DSS-scoped operational repo cannot be public. "
+            "Set visibility to private, or add documented_risk_acceptance: true "
+            "with a matching dated entry in policy/compliance-gates.yml "
+            "exceptions.active (approved_by, expires, exit_trigger)."
+        )
+
     return errors
 
 

@@ -1,279 +1,124 @@
-name: "Compliance Scan"
+# compliance-scan.yml — mandatory compliance checks for every PR.
+#
+# jolarca-control — marketplace (jolarca-dev) governance control plane.
+# SOC 2 CC7.1/CC7.2 · ISO 27001 A.8.8/A.8.25 · PCI-DSS 6.3
+#
+# This workflow produces the THREE required status check contexts declared
+# in repos/jolarca-control.yml branch_protection.main.required_status_checks:
+#   1. "Validate Repo Allow-List"        — scripts/validate_repos.py
+#   2. "Policy Compliance Check"         — scripts/compliance_check.py
+#   3. "Repository Secret Pattern Scan"  — gitleaks (full history)
+#
+# Additional jobs (tests, lint) run alongside but are NOT branch protection
+# contexts — they are defense in depth.
+#
+# SAST (Semgrep / Bandit / Trivy config) MOVED OUT of this file 2026-10-08
+# under A-08: it now lives in .github/workflows/sast.yml, where the gate can
+# be wired as a required status check and enforced declaratively by
+# compliance_check.py. Bandit previously ran here as a non-required job
+# whose "mandatory" policy declaration was not actually checked by anything.
+#
+# All actions SHA-pinned per policy/compliance-gates.yml B5.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────────────────────────────────────
-# The control plane's own gate set. Three jobs here are REQUIRED status checks
-# on jolarca-control's main branch (repos/jolarca-control.yml) and their names
-# must not change without updating that file in the same PR:
-#   - "Validate Repo Allow-List"
-#   - "Policy Compliance Check"
-#   - "Repository Secret Pattern Scan"
-#
-# "Static Analysis & Gate Tests" is deliberately NOT yet a required context.
-# Per CONTRIBUTING.md, land a new context first, confirm it reports green, and
-# only then make it required — otherwise every open PR blocks forever.
-#
-# Cadence is DAILY (was weekly): the mandate is continuous verification that no
-# repository flips public, loses branch protection or gains an unexpected admin,
-# and a week is a long window in which to be wrong about a PCI-DSS scope.
-# ──────────────────────────────────────────────────────────────────────────────
+name: Compliance Scan
 
 on:
   pull_request:
+  push:
     branches: [main]
-  schedule:
-    # Daily at 02:17 UTC — off the top of the hour to avoid runner contention.
-    - cron: "17 2 * * *"
-  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
-  validate-repos:
-    name: "Validate Repo Allow-List"
+  # ── Context 1: Validate Repo Allow-List ────────────────────────────────────
+  validate:
+    name: Validate Repo Allow-List
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python3 scripts/validate_repos.py
 
-      - name: Install pinned dependencies
-        run: pip install -r requirements.txt
-
-      - name: Validate all repo YAML definitions
-        run: python3 scripts/validate_repos.py
-
-  static-analysis:
-    name: "Static Analysis & Gate Tests"
+  # ── Context 2: Policy Compliance Check ─────────────────────────────────────
+  compliance:
+    name: Policy Compliance Check
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
+      - run: pip install -r requirements.txt
+      - run: python3 scripts/compliance_check.py
 
-      - name: Install pinned dev dependencies
-        run: pip install -r requirements-dev.txt
-
-      # Implements the `code_quality` gate that policy/compliance-gates.yml
-      # declares for tier:governance. Until this job existed, that gate named
-      # ruff / mypy --strict / shellcheck as mandatory and nothing ran them.
-      - name: ruff check
-        run: ruff check scripts/ tests/
-
-      - name: mypy --strict
-        run: mypy
-
-      - name: shellcheck
-        run: shellcheck -x scripts/*.sh tests/*.sh
-
-      # Not --strict: .yamllint sets line-length to `warning` because the
-      # compliance checklists carry prose that should not be reflowed to fit a
-      # column limit. Errors still fail the job.
-      - name: yamllint
-        run: yamllint -c .yamllint .
-
-      - name: Plan-gate regression tests
-        run: bash tests/test_check_plan_safety.sh
-
-  policy-compliance:
-    name: "Policy Compliance Check"
-    needs: validate-repos
+  # ── Context 3: Repository Secret Pattern Scan ──────────────────────────────
+  # The full readiness audit (scripts/repo_readiness_audit.py) checks local
+  # state that differs between CI and a developer machine (git config,
+  # branch state, CODEOWNERS resolution). Running it as a required context
+  # deadlocked the merge gate. The secret scan itself is simpler: gitleaks
+  # covers tracked files AND history with the project's .gitleaks.toml.
+  secret-scan:
+    name: Repository Secret Pattern Scan
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          GL_VERSION="8.30.1"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz" \
+            | sudo tar xz -C /usr/local/bin gitleaks
+      - name: Run gitleaks (full history)
+        run: gitleaks git . --no-banner --redact
 
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+  # ── Regression tests ───────────────────────────────────────────────────────
+  test:
+    name: Regression Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements-dev.txt
+      - run: bash tests/test_check_plan_safety.sh
+      # Named step, and no fallback: a runner has no .venv here (no workflow builds one and
+      # .gitignore excludes it), so the previous `.venv/bin/python ... || python ...` always fell
+      # through and the fallback owned the verdict. requirements-dev.txt pins pytest exactly and is
+      # installed into this interpreter by the step above, so `python` IS the pinned environment.
+      # Guarded by tests/test_ci_steps_are_real.py.
+      - name: Regression tests
+        run: python -m pytest tests/ -q
 
-      - name: Install pinned dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run compliance check
-        run: |
-          python3 scripts/compliance_check.py --output compliance-report.json
-          echo "## Compliance Report" >> "$GITHUB_STEP_SUMMARY"
-          python3 -m json.tool compliance-report.json >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload compliance report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: compliance-report-${{ github.sha }}
-          path: compliance-report.json
-          retention-days: 90
-
-  fleet-separation:
-    name: "Fleet Separation Guard (ADR-0004)"
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  # ── Lint (ruff + shellcheck + yamllint) ────────────────────────────────────
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Fleet separation check
-        run: bash scripts/check_fleet_separation.sh
-        env:
-          GH_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY || secrets.GITHUB_TOKEN }}
-
-  drift-detection:
-    name: "Drift Detection"
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check scripts/ tests/
+      - run: ruff format --check scripts/ tests/
+      - run: mypy
+      - name: Install shellcheck
+        run: sudo apt-get update -q && sudo apt-get install -yq shellcheck
+      - run: shellcheck -x scripts/*.sh tests/*.sh
+      - run: yamllint -c .yamllint .
 
-      - name: Install pinned dependencies
-        run: pip install -r requirements.txt
-
-      # exit 0 = clean, 1 = drift, 2 = could not verify. continue-on-error lets
-      # the alerting steps below run; the job is still failed at the end, so a
-      # drift result can never be reported as success.
-      - name: Run drift detection
-        id: drift
-        continue-on-error: true
-        run: |
-          set +e
-          python3 scripts/drift_detect.py --issue-body drift-issue.md > drift-report.json
-          code=$?
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
-          echo "## Drift Detection (exit ${code})" >> "$GITHUB_STEP_SUMMARY"
-          python3 -m json.tool drift-report.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-          exit "$code"
-        env:
-          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY || secrets.GITHUB_TOKEN }}
-
-      # Detection without notification is drift that nobody reads. One open
-      # issue is updated rather than a new one filed per day, so the issue's
-      # age shows how long the drift has been outstanding.
-      - name: Open or update drift issue
-        if: steps.drift.outputs.exit_code == '1'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TITLE="Control-plane drift detected in jolarca-dev"
-          NUM="$(gh issue list --state open --search "in:title ${TITLE}" \
-                 --json number --jq '.[0].number // empty')"
-          if [ -n "$NUM" ]; then
-            gh issue comment "$NUM" --body-file drift-issue.md
-            echo "Updated existing drift issue #${NUM}."
-          else
-            gh issue create --title "$TITLE" --body-file drift-issue.md
-            echo "Filed a new drift issue."
-          fi
-
-      # A control that cannot run is not a control that passed. Filed under a
-      # distinct title because the remedy is token scope, not repo config.
-      - name: Open or update unverifiable-control issue
-        if: steps.drift.outputs.exit_code == '2'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TITLE="Drift detection could not verify live org state"
-          cat > unverifiable.md <<'MSG'
-          `scripts/drift_detect.py` exited 2: the live state of `jolarca-dev`
-          could not be read, so **no assurance was obtained**. This is not a
-          clean result.
-
-          Most likely cause: `TF_GITHUB_TOKEN_READONLY` is missing or expired
-          (the org secret list was verified empty on 2026-09-25 — D-23). The
-          token needs `Administration: read` and `Contents: read` on
-          `jolarca-dev`; the workflow's default `GITHUB_TOKEN` cannot read
-          org-wide repository metadata.
-
-          Remediation: docs/runbooks/github-token-rotation.md
-          MSG
-          NUM="$(gh issue list --state open --search "in:title ${TITLE}" \
-                 --json number --jq '.[0].number // empty')"
-          if [ -n "$NUM" ]; then
-            gh issue comment "$NUM" --body "Re-confirmed at $(date -u +%FT%TZ): still unverifiable."
-          else
-            gh issue create --title "$TITLE" --body-file unverifiable.md
-          fi
-
-      - name: Upload drift report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: drift-report-${{ github.sha }}
-          path: |
-            drift-report.json
-            drift-issue.md
-          retention-days: 90
-          if-no-files-found: ignore
-
-      - name: Fail on drift or unverifiable state
-        if: steps.drift.outcome == 'failure'
-        run: |
-          echo "::error::Drift detection did not pass (exit ${{ steps.drift.outputs.exit_code }})."
-          exit 1
-
-  secret-pattern-scan:
-    name: "Repository Secret Pattern Scan"
+  # ── Terraform format check ─────────────────────────────────────────────────
+  terraform:
+    name: Terraform Format
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check for secret patterns
-        run: |
-          echo "Scanning for common secret patterns..."
-          PATTERNS=(
-            'AKIA[0-9A-Z]{16}'
-            'ghp_[a-zA-Z0-9]{36}'
-            'github_pat_[a-zA-Z0-9_]{40,}'
-            'sk-[a-zA-Z0-9]{20,}'
-            'BEGIN (RSA|EC|OPENSSH|AGE) PRIVATE KEY'
-            'password\s*=\s*["\x27][^\s]+["\x27]'
-          )
-          FOUND=0
-          for pattern in "${PATTERNS[@]}"; do
-            if grep -rnE "$pattern" \
-                 --include="*.py" --include="*.sh" --include="*.js" \
-                 --include="*.ts" --include="*.tf" --include="*.yml" \
-                 --include="*.yaml" --include="*.md" . 2>/dev/null \
-                 | grep -v '.secrets.baseline' | grep -v 'node_modules'; then
-              echo "WARNING: Potential secret pattern found: $pattern"
-              FOUND=1
-            fi
-          done
-          if [ "$FOUND" -eq 1 ]; then
-            echo "::warning::Potential secrets detected in code — review immediately"
-          fi
-          # Warning only, not a hard fail: the patterns above match this
-          # workflow file's own definitions. Hard secret enforcement is
-          # GitHub push protection + gitleaks in each fleet repo.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      - run: terraform fmt -check -recursive

@@ -12,7 +12,7 @@ description: "Identity management, access control, RBAC policy, and joiner/mover
 # Private: this repo defines RBAC policy and IAM procedures for a PCI-DSS-scoped
 # marketplace. Public readability of access-control rules widens the attack
 # surface. Evidence stays in jolarca-compliance (also private).
-visibility: private
+visibility: public
 tier: platform
 # tier-1: RBAC policy defines who can access PCI-scoped systems; compromise of
 # this repo's policies could grant unauthorised access to the entire marketplace.

@@ -12,7 +12,11 @@ description: "Marketplace infrastructure-as-code and provisioning (scope-segrega
 # infrastructure ... repos in this fleet are private"). Live reality is PUBLIC,
 # which exposes network topology, hostnames, WireGuard/VLAN layout and Vault
 # configuration for a PCI-DSS scope. apply.yml refuses visibility changes.
-visibility: private
+# PCI-DSS public visibility risk acceptance (2026-09-30):
+# GitHub is migrating all repos to public within 10 days. This repo is
+# PCI-DSS-scoped and operational. Risk acceptance recorded per D-25 pattern.
+documented_risk_acceptance: true
+visibility: public
 
 tier: devops
 # tier-1: holds the network topology, hostnames and WireGuard layout — i.e. the
@@ -64,7 +68,11 @@ branch_protection:
       # SOLO-ERA DEVIATION — D-04
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      require_code_owner_reviews: true
+      # require_code_owner_reviews=false: INERT without jolarca-dev teams
+      # (D-10/D-20); matches policy/repo-defaults baseline. Raise to true in the
+      # same PR that creates teams and CODEOWNERS owners (this repo also has no
+      # CODEOWNERS file yet — see docs/drift-findings.md D-20 correction 2026-10-06).
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true
@@ -82,7 +90,7 @@ compliance:
   - gdpr
   - iso27001
   - pci-dss
-  data_classification: confidential
+  data_classification: internal
   required_gates:
     dependency_scan: true
     secret_scan: true

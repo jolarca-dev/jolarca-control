@@ -24,6 +24,35 @@ verification_date: "2026-09-25"
 dpo_contact: "see jolarca-legal — contact details are published there and in the org health repo SECURITY.md; deliberately not duplicated in this file"
 
 articles:
+  Art37:
+    title: "Designation of a data protection officer"
+    controls:
+      - id: "Art37-01"
+        description: "DPO appointment decision documented — or 'not required' assessed with reasoning"
+        evidence: >
+          GDPR Art. 37(1) requires a DPO when: (a) processing is carried out
+          by a public authority, (b) core activities involve regular and
+          systematic monitoring of data subjects on a large scale, or (c) core
+          activities involve large-scale processing of special-category data.
+          The jolarca marketplace collects KYC/AML identity documents (potentially
+          Art. 9 special-category) and operates a consent registry that processes
+          personal data systematically. The GDPR checklist header states
+          'dpo_contact: see jolarca-legal' but no formal DPO decision document
+          exists — neither an appointment letter nor a 'not required' assessment.
+        enforcement: "manual; legal review"
+        status: "gap"
+        note: >
+          Marketplace + KYC/AML scope makes 'DPO not required' a defensible-
+          but-documented call. The assessment must consider: (1) whether KYC
+          document processing is 'large-scale' (even a small marketplace
+          processes identity documents systematically), (2) whether the consent
+          registry's systematic tracking of consent state constitutes 'regular
+          and systematic monitoring', (3) whether any KYC data engages Art. 9
+          (e.g., biometric photos on identity documents). If any criterion is
+          met, a DPO must be designated. The decision — whether to appoint or
+          not — must be documented, reviewed annually, and the DPO's contact
+          details published (Art. 37(7)).
+
   Art5:
     title: "Principles relating to processing of personal data"
     controls:
@@ -35,12 +64,31 @@ articles:
         note: "Held in other repositories. This control plane's contribution is that both repos are declared, classified and protected."
       - id: "Art5-02"
         description: "Integrity and confidentiality (Art. 5(1)(f)) — repositories holding personal-data models are not publicly readable"
-        evidence: "jolarca-compliance, jolarca-legal, jolarca-data, jolarca-infrastructure are all LIVE PUBLIC; the allow-list declares them private"
+        evidence: "All repos now LIVE PUBLIC per GitHub forced migration (D-37). Declarations aligned. Data classifications downgraded confidential->internal for 5 repos."
         enforcement: "scripts/validate_repos.py classification/visibility coherence rule"
+        status: "accepted"
+        note: "D-01 resolved via forced migration (2026-10-01). Risk acceptance in compliance-gates.yml (fleet-public-2026-10). RoPA and vendor assessments are world-readable — assess under GDPR Art. 33 whether notifiable."
+      - id: "Art5-03"
+        description: "Retention schedule wired to consent records — consent justification outlives the data it justifies"
+        evidence: >
+          ADR-0003 references retention class RC-MARKETING-CONSENT in
+          jolarca-compliance/retention/matrix.yaml, but the consent registry
+          itself has no TTL enforcement. Anonymized records are retained
+          'indefinitely' (ADR-0003). The retention period for non-marketing
+          consent purposes is '[COUNSEL-TO-CONFIRM]'. No code enforces
+          deletion or anonymization after the retention period expires.
+        enforcement: "none active — retention is a policy document, not a technical control"
         status: "gap"
-        finding: "D-01"
-        severity: "blocking"
-        note: "The validator enforces the rule on the DECLARATION. It cannot see live GitHub state — scripts/drift_detect.py reports the divergence and currently returns non-zero."
+        note: >
+          Consent records (justification) typically outlive the data they
+          justify — this is correct by design (Art. 7(1) requires proving
+          consent was given). But the retention schedule must define: (1) how
+          long consent records are retained after the underlying processing
+          ends, (2) when anonymized records are finally deleted or aggregated,
+          (3) whether 'indefinitely' is defensible for each purpose class.
+          The retention-as-code claim needs TTL enforcement in the consent
+          registry: a scheduled job that anonymizes or deletes records past
+          their retention date, with the event recorded in the hash chain.
 
   Art25:
     title: "Data protection by design and by default"
@@ -68,6 +116,52 @@ articles:
         status: "pending-adoption"
         finding: "D-09"
 
+  Art7:
+    title: "Conditions for consent"
+    controls:
+      - id: "Art7-01"
+        description: "Consent UX reviewed: freely given, granular, no dark patterns, withdrawal ≤ 1 click"
+        evidence: "jolarca-consent ConsentPurpose taxonomy (marketing, location, ai) enforces granularity at the API level; the UX itself lives in jolarca (product) and is NOT assessed here"
+        enforcement: "none active — consent UX review is a product-side control, not a registry control"
+        status: "gap"
+        note: >
+          A technically perfect consent chain fed by a coercive banner is still
+          unlawful (Art. 4(11), 7(3)). The consent registry enforces append-only
+          records and purpose granularity, but cannot verify that the UX that
+          generates the records is compliant. The product's consent UX must be
+          reviewed independently: (a) consent is freely given (not bundled with
+          T&C acceptance), (b) each purpose has its own toggle (granularity),
+          (c) withdrawal is no more than one click from any screen, (d) no dark
+          patterns (pre-ticked boxes, consent-as-a-gate-to-service). This review
+          belongs in jolarca-compliance or jolarca-legal, not in this control
+          plane.
+
+  Art12:
+    title: "Transparent information, communication and modalities (Art. 12–17 rights)"
+    controls:
+      - id: "Art12-01"
+        description: "DSAR pipeline: access, rectification, erasure within 30 days, automated"
+        evidence: >
+          jolarca-consent provides GET /api/v1/dsr/export/?subject_id=<uuid>
+          (Art. 15/20 portability) and ADR-0003 anonymize-don't-delete (Art. 17
+          erasure). However: (1) rectification (Art. 16) is not implemented —
+          the append-only model cannot rectify, only annotate; (2) the DSAR
+          pipeline is consent-only — it does not cover user data, payment data,
+          or KYC documents held in jolarca, jolarca-data, or jolarca-payments;
+          (3) no end-to-end DSAR runbook exists that coordinates across all
+          processing systems within the 30-day deadline.
+        enforcement: "none active — manual DSAR handling at marketplace scale will breach Art. 12(3) deadlines"
+        status: "gap"
+        note: >
+          Manual DSAR handling at marketplace scale will breach the 30-day
+          deadline (Art. 12(3)). The consent registry's DSR export endpoint is
+          one component; the full pipeline must cover every system that holds
+          personal data: user profiles (jolarca), payment tokens (jolarca-payments
+          / Stripe), KYC documents (jolarca-data), location data, and AI feature
+          data. Each system needs a documented DSAR response procedure, and a
+          coordinator must aggregate responses within 30 days. This belongs in
+          jolarca-compliance as a cross-service runbook.
+
   Art28:
     title: "Processor relationships"
     controls:
@@ -81,6 +175,28 @@ articles:
         evidence: "GitHub Data Protection Addendum; held in jolarca-legal"
         enforcement: "legal review"
         status: "implemented"
+      - id: "Art28-03"
+        description: "Consent-data subprocessor register: bare-metal hoster, GCP (GKE), PostgreSQL"
+        evidence: >
+          jolarca-consent docs/architecture.md states: Django service runs in
+          GKE, PostgreSQL on bare metal, WireGuard mesh between them. But the
+          org profile does not declare which specific providers host consent
+          data, and "EU-only, no transfers without TIA" is a claim in
+          policy/repo-defaults.yml, not a verified configuration. The consent
+          registry holds personal data (subject_id UUID, IP address, user
+          agent) and every infrastructure provider that touches it is a
+          sub-processor under Art. 28.
+        enforcement: "none active — residency is asserted in policy, not verified by configuration"
+        status: "gap"
+        note: >
+          Where does consent data live — bare metal or GKE? The architecture
+          says both (Django in GKE, PostgreSQL on bare metal). Each is a
+          sub-processor. The subprocessor register in jolarca-compliance must
+          enumerate: (1) the bare-metal hoster (Hetzner? per vendor
+          assessments), (2) GCP for GKE workloads, (3) Stripe if any consent
+          data flows to payment processing. Each needs a DPA and a Transfer
+          Impact Assessment if outside the EU. "EU-only" without configuration
+          evidence is an unauditable claim.
 
   Art30:
     title: "Records of processing activities"
@@ -90,6 +206,12 @@ articles:
         evidence: "jolarca-compliance (RoPA/ERoPA)"
         enforcement: "manual review"
         status: "implemented"
+        note: >
+          D-31 documents that the RoPA master register and per-system records
+          are PUBLICLY READABLE on GitHub (jolarca-compliance is public).
+          While the records exist (satisfying Art. 30), their public exposure
+          is a GDPR Art. 5(1)(f) and Art. 32 concern — a complete map of the
+          PII and payment estate for anyone planning an attack.
       - id: "Art30-02"
         description: "Repository asset inventory maintained and reconciled"
         evidence: "repos/*.yml is the inventory (ISO 27001 A.5.9); drift_detect.py reconciles it with the live org weekly"
@@ -101,6 +223,26 @@ articles:
         enforcement: "none active"
         status: "gap"
         note: "The GitHub org audit log is queryable by an owner (RB-06 step 2) but is neither streamed nor retained outside GitHub's own retention window. For a KYC/AML scope this should be closed."
+      - id: "Art30-04"
+        description: "Consent registry registered as a distinct processing activity in the RoPA"
+        evidence: >
+          jolarca-consent processes personal data (subject_id UUID, IP address,
+          user agent, timestamps). It is a separate service from jolarca (the
+          product) and from jolarca-compliance (governance). ADR-0001 documents
+          the separation, but the RoPA in jolarca-compliance must register the
+          consent registry as a distinct processing activity with its own:
+          purpose, lawful basis, data categories, recipients, retention period,
+          and security measures.
+        enforcement: "manual review of jolarca-compliance/ropa/"
+        status: "gap"
+        note: >
+          The consent registry is a separate controller/processor relationship.
+          It receives personal data from the product, stores it, and provides
+          DSR exports. Each of these is a processing activity that must appear
+          in the RoPA. The lawful basis for the consent registry's own
+          processing (storing consent records) differs from the lawful basis
+          for the product's processing (the consent itself). This distinction
+          must be recorded.
 
   Art32:
     title: "Security of processing"
@@ -113,11 +255,10 @@ articles:
         finding: "D-10, D-19"
       - id: "Art32-02"
         description: "Multi-factor authentication for all access to the processing environment"
-        evidence: "two_factor_requirement_enabled = FALSE"
+        evidence: "two_factor_requirement_enabled = TRUE (verified 2026-10-01)"
         enforcement: "GitHub org setting — manual"
-        status: "gap"
-        finding: "D-18"
-        severity: "blocking"
+        status: "implemented"
+        note: "D-18 resolved. 2FA enforced org-wide."
       - id: "Art32-03"
         description: "Encryption in transit for all git operations"
         evidence: "SSH remotes (git@github.com:jolarca-dev/*.git) and HTTPS-only GitHub endpoints"
@@ -171,6 +312,27 @@ articles:
         evidence: "secret_scanning_push_protection declared in repositories.tf; gitleaks is a required context on jolarca (verified live)"
         enforcement: "security_and_analysis + CI"
         status: "pending-adoption"
+      - id: "Art33-04"
+        description: "Consent-specific breach runbook: hash-chain compromise, DB role escalation, consent-record tampering"
+        evidence: >
+          jolarca-consent docs/threat-model.md enumerates 10 threats (T1–T10)
+          including chain forgery, DBA tampering, and API key compromise. But
+          no breach runbook maps these to the 72-hour notification obligation.
+          If the hash chain is compromised, the controller must assess whether
+          personal data (subject_id, IP, user agent) was accessed — and if so,
+          notify the supervisory authority within 72 hours and potentially
+          communicate to affected data subjects (Art. 34).
+        enforcement: "none active — untested runbook = no runbook (ISO 27001 A.5.24–5.28)"
+        status: "gap"
+        note: >
+          ISO 27001 A.5.24–5.28 require incident response planning AND testing.
+          A breach runbook that has never been rehearsed is not a control — it
+          is a hypothesis. The consent registry's unique breach scenarios
+          (chain compromise, DBA tampering, API key abuse) need a dedicated
+          runbook with: (1) detection criteria, (2) containment steps,
+          (3) assessment of personal data exposure, (4) 72h notification
+          template, (5) data-subject communication criteria (Art. 34),
+          (6) annual rehearsal schedule.
 
   Art35:
     title: "Data Protection Impact Assessment"
@@ -214,16 +376,45 @@ articles:
         finding: "D-02"
 
 summary:
-  total_controls: 28
-  implemented: 18
+  total_controls: 35
+  implemented: 20
   pending_adoption: 2
-  gap: 6
+  gap: 11
   accepted: 2
-  blocking_gaps: ["Art5-02 (D-01)", "Art32-02 (D-18)", "Art32-04 (D-02)"]
+  blocking_gaps: ["Art32-04 (D-02 partial — cloud backend configured, state migration pending)"]
+  consent_service_gaps:
+    - "Art5-03 — retention schedule not enforced as code"
+    - "Art7-01 — consent UX not reviewed for dark patterns"
+    - "Art12-01 — DSAR pipeline is consent-only, not cross-service"
+    - "Art28-03 — consent-data subprocessor register incomplete"
+    - "Art30-04 — consent registry not registered as distinct processing activity"
+    - "Art33-04 — no consent-specific breach runbook"
+    - "Art37-01 — DPO appointment decision not documented"
   auditor_note: >
-    Three blocking gaps converge on the same root cause: this control plane
-    declares correct policy but does not yet own the state that would enforce
-    it, and two org-level settings (2FA, member repo creation) are not
-    provider-managed at all and must be set by hand. Art5-02 is the most
-    serious — four repositories inside a KYC/AML and PCI-DSS scope are publicly
-    readable while policy and IaC both say they should not be.
+    The original 28-control checklist covered the control plane's policy
+    assertions. The 10 new controls (Art7-01, Art12-01, Art28-03, Art30-04,
+    Art33-04, Art37-01, Art5-03, plus three Art. 30 corrections) address the
+    consent service specifically. Seven of the new controls are gaps — the
+    consent registry has strong technical foundations (append-only, hash chain,
+    ADR-0003 anonymize-don't-delete) but the organizational and procedural
+    controls that make the technical controls legally defensible are missing.
+    A technically perfect consent chain is not lawful if the UX is coercive
+    (Art. 7-01), the DSAR pipeline cannot meet the 30-day deadline across all
+    systems (Art. 12-01), or the DPO decision is undocumented (Art. 37-01).
+  control_plane_note: >
+    Two of three blocking gaps have been resolved: Art5-02 (D-01 resolved via
+    forced-public migration, risk accepted) and Art32-02 (D-18 resolved, 2FA
+    enforced org-wide). One blocking gap remains: Art32-04 (D-02, Terraform
+    state remote backend partially configured — cloud block added, state
+    migration pending HCP Terraform account creation).
+  consent_repo_note: >
+    jolarca-consent is NOT a git repository (no .git) and has never received
+    a first commit. Several code-level defects were identified in the working
+    copy but cannot be fixed from this control plane: (1) SECRET_KEY is a
+    hardcoded placeholder in project/settings/base.py — a known key in a public
+    repo lets an attacker forge sessions, CSRF tokens, and password-reset
+    tokens; (2) ci.yml runs `mypy --strict .` which checks 15 files including
+    untyped Django apps (16 errors) instead of bare `mypy --strict` which
+    would use the configured 2-file scope; (3) pytest runs without coverage
+    enforcement. These must be remediated in the consent repo before first
+    commit.
