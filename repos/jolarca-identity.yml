@@ -28,10 +28,13 @@ criticality: tier-1
 # jolarca-dev still has ZERO teams and one member (D-10). Nothing has relied on
 # the procedures yet: jolarca-compliance/audits/access-reviews/ holds only the
 # convention README, no executed review.
-# Rubric caveat, recorded rather than papered over: `in-development` assumes "CI
-# runs", and it does not — the repo has no CI workflow (only Dependabot's
-# dynamic/dependabot/update-graph), main HEAD has zero check runs, so the
-# `ci` / `security` / `lint` contexts declared below cannot report.
+# Rubric caveat, corrected 2026-10-04: the CI-absence half of this note is no
+# longer true. The repo has .github/workflows/ci.yml and its `CI` workflow runs
+# green on main (measured at cb2f778), so the contexts below could not report for
+# a different reason entirely -- the jobs published as `shellcheck` and
+# `gitleaks (full history)` while [ci, security, lint] was declared. Contexts now
+# name the two stable job keys. The zero-teams and no-executed-access-review
+# caveats above stand unchanged.
 # Promote to `operational` when teams exist AND the first signed access review
 # lands in jolarca-compliance.
 launch_status: in-development
@@ -64,10 +67,14 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # GitHub names a required check after the job's `name:` when set, else the job
+      # key. identity's jobs are `lint` and `secret-scan` (jolarca-identity#3 dropped
+      # the display titles so a context cannot drift with its prose). The previous
+      # trio [ci, security, lint] matched nothing the workflow can report, so applying
+      # it under strict=true would have made every PR there permanently unmergeable.
       contexts:
-      - ci
-      - security
       - lint
+      - secret-scan
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true
