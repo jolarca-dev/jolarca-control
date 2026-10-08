@@ -486,7 +486,12 @@ def test_regex_hit_severity_depends_on_gitleaks_corroboration() -> None:
     key ships.
     """
     hits = ["audits/AUDIT_REPORT.md:108 AWS access key ID [AKIAQ3EG...[redacted 20 chars]]"]
-    root = Path("/tmp/example")
+    # B108 suppression: this is an in-memory argument to the pure function
+    # `_secret_finding`, not a filesystem write. The path never exists; the test
+    # asserts the S0/S2 severity grading of a `Path` object only. Refactoring
+    # to a `tmp_path` pytest fixture would make the assertion weaker, not
+    # stronger, because the function is not doing any I/O at this line.
+    root = Path("/tmp/example")  # nosec B108 - pure-function argument, not a real path
     assert rra._secret_finding("L-15", "tracked files", hits, None, root).severity == "S0"
     assert rra._secret_finding("L-15", "tracked files", hits, True, root).severity == "S0"
     assert rra._secret_finding("L-15", "tracked files", hits, False, root).severity == "S2"

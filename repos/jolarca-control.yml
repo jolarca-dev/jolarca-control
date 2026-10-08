@@ -57,14 +57,28 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
-      # ONLY contexts from compliance-scan.yml, which runs on every PR with no
-      # path filter. plan.yml and fleet-separation-guard.yml are path-filtered,
-      # so requiring their contexts would block docs-only PRs forever — the
-      # exact failure mode the two-phase bootstrap doctrine warns about.
+      # Contexts must be produced by a workflow that fires on every PR with
+      # no path filter. compliance-scan.yml (three contexts) and sast.yml
+      # (one required context, two informational) both satisfy that.
+      # plan.yml and fleet-separation-guard.yml are path-filtered, so
+      # requiring their contexts would block docs-only PRs forever — the
+      # exact failure mode the two-phase bootstrap doctrine warns about
+      # (this comment was the reason SAST was not originally a required
+      # context; A-08 adds it via the non-path-filtered sast.yml).
       contexts:
       - Validate Repo Allow-List
       - Policy Compliance Check
       - Repository Secret Pattern Scan
+      # A-08 (2026-10-08): primary SAST context. `SAST (semgrep)` is the
+      # Semgrep OSS job in .github/workflows/sast.yml — chosen because
+      # Semgrep OSS is the language-agnostic rule engine that runs on the
+      # GitHub Free plan without any Advanced Security dependency (the
+      # policy `id: codeql-analysis` label predates the Semgrep move; GHAS
+      # is not available on this org's plan and CodeQL never ran). Bandit
+      # and Trivy contexts run alongside in the same workflow as
+      # defense-in-depth but are not required, so a Trivy infra outage
+      # does not deadlock every PR.
+      - SAST (semgrep)
     required_pull_request_reviews:
       # SOLO-ERA DEVIATION — D-04
       required_approving_review_count: 0
