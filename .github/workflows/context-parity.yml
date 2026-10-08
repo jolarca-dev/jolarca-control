@@ -25,9 +25,14 @@ on:
       - ".github/workflows/context-parity.yml"
   push:
     branches: [main]
+    # Every pull_request path is repeated here on purpose: a merge that changes only the gate's
+    # own definition (its exemptions, its schedule, its permissions) must re-check trunk rather
+    # than wait for Monday's cron. Guarded by
+    # tests/test_check_declared_contexts.py::test_gate_reruns_on_main_when_its_own_definition_changes.
     paths:
       - "repos/**"
       - "scripts/check_declared_contexts.py"
+      - ".github/workflows/context-parity.yml"
   schedule:
     # Weekly sweep: catches a declaration drifting away from a repo's workflows
     # between PRs, and re-checks every repo even when nothing changed here.
@@ -56,14 +61,23 @@ jobs:
       - name: Check declared status-check contexts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Known drift, time-boxed rather than silenced. jolarca-identity: #3 renames
-          # its contexts and jolarca-control#29 aligns the declaration. jolarca-security:
-          # declared [lint, security] but publishes 'Markdown lint', 'YAML syntax
-          # validation' and 'gitleaks' -- same class, discovered by this check's first
-          # live run, recorded as D-47; no fix PR exists yet. Delete each entry once its
-          # declaration is satisfiable. If the date passes with an entry still listed,
-          # the job goes red on purpose: an exception without an expiry is how a known
-          # gap becomes a permanent one.
-          ALLOW_MISSING_REPOS: "jolarca-identity jolarca-security"
+          # Known drift, time-boxed rather than silenced. Delete each entry once its
+          # declaration is satisfiable. If the date passes with an entry still listed, the
+          # job goes red on purpose: an exception without an expiry is how a known gap
+          # becomes a permanent one.
+          #
+          # jolarca-identity stays: measured 2026-10-05 it declares ci/security/lint while
+          # its default branch reports 'gitleaks (full history)' and 'shellcheck' --
+          # unsatisfiable under strict:true until jolarca-identity#3 renames the jobs and
+          # jolarca-control#29 aligns the declaration.
+          #
+          # jolarca-security was REMOVED from this list on 2026-10-05, deliberately not
+          # before: the D-47 chain landed (jolarca-security#2 makes the checks runnable and
+          # green, #3 turns them into stable job keys, jolarca-control#32 declares
+          # markdown-lint/policy-tests/secret-scan/yaml-lint). With identity-only here the
+          # run reports 15 clean / 1 allowed, i.e. security passes on its merits. Leaving an
+          # inert entry would forgive the next regression in the fleet's security-scanning
+          # reference repo until 2026-11-15 -- which is precisely the D-47 failure class.
+          ALLOW_MISSING_REPOS: "jolarca-identity"
           ALLOW_MISSING_UNTIL: "2026-11-15"
         run: python3 scripts/check_declared_contexts.py

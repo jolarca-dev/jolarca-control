@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "check_declared_contexts.py"
 
 
@@ -122,6 +124,35 @@ def test_script_is_wired_into_a_workflow(monkeypatch: Any) -> None:
     ]
     assert hit, (
         "scripts/check_declared_contexts.py is invoked by no workflow; the check would be manual only"
+    )
+
+
+def test_gate_reruns_on_main_when_its_own_definition_changes() -> None:
+    """The trunk must re-check the gate after the gate itself is edited (D-22, applied to CI wiring).
+
+    Measured 2026-10-05: pull_request listed .github/workflows/context-parity.yml, push did not. A
+    merge that changed only this workflow -- its schedule, its permissions, its time-boxed exemption
+    list -- therefore produced no trunk run, so the tightened list first executed on main a week later
+    via the cron. Requiring every pull_request path to also be a push path keeps "verified on the PR"
+    and "verified on trunk" from drifting apart.
+
+    PyYAML 6 resolves the bare `on:` key to boolean True under YAML 1.1, so both spellings are probed
+    rather than guessed; asserting on the wrong one would silently read {} and pass.
+    """
+    root = Path(__file__).resolve().parent.parent
+    wf = root / ".github" / "workflows" / "context-parity.yml"
+    doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+    on: Any = doc.get("on", doc.get(True))
+    assert isinstance(on, dict) and on, f"cannot read triggers from {wf.name}: {type(on)}"
+
+    pr_paths = set(on["pull_request"]["paths"])
+    push_block = on["push"]
+    push_paths = set(push_block["paths"])
+
+    assert push_block["branches"] == ["main"], push_block["branches"]
+    missing = sorted(pr_paths - push_paths)
+    assert not missing, (
+        f"a merge touching only these paths would never re-run the gate on main: {missing}"
     )
 
 
