@@ -58,7 +58,10 @@ branch_protection:
       # SOLO-ERA DEVIATION — D-04
       required_approving_review_count: 0
       dismiss_stale_reviews: true
-      require_code_owner_reviews: true
+      # require_code_owner_reviews=false: INERT without jolarca-dev teams
+      # (D-10/D-20); matches policy/repo-defaults baseline. Raise to true in the
+      # same PR that creates teams and CODEOWNERS owners.
+      require_code_owner_reviews: false
       require_last_push_approval: false
     enforce_admins: true
     restrict_pushes: true

@@ -8,6 +8,15 @@
 
 ---
 
+> **Record status — 2026-10-06** (audit `docs/audit-plan-2026-10-06.md`). The
+> counts in this section are stale: the allow-list now holds **16** `repos/*.yml`
+> entries (**17** live repos incl. `.github`). Live-verified since this section was
+> written: org 2FA **is** enforced (D-18 closed) and org defaults hardened (D-19);
+> the fleet migrated to **public** (D-37/D-39). D-20 (CODEOWNERS) **remains open**
+> despite the register marking it fixed. Treat `repos/*.yml`,
+> `docs/drift-findings.md` and the audit as current — the "six repositories" figure
+> below is superseded.
+
 ## ⚠ NOT YET AUTHORITATIVE
 
 This repository declares the governance of six live, PCI-DSS-scoped

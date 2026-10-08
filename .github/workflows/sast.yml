@@ -1,0 +1,163 @@
+# sast.yml — Static Application Security Testing (SAST) on every PR.
+#
+# jolarca-control — marketplace governance control plane.
+# SOC 2 CC7.1/CC7.2 · ISO 27001 A.8.8/A.8.25 · PCI-DSS 6.3.1/6.3.2
+#
+# Why this exists (A-08):
+# `policy/compliance-gates.yml` declares the `sast` gate as
+# `enforcement: mandatory` for tier `governance` (which jolarca-control is
+# in), and the enforcement_matrix lists `sast` in the required set for all
+# three fleet tiers. Before this workflow that mandate was folklore: Bandit
+# ran as a non-required job inside compliance-scan.yml, and nothing checked
+# the wiring. AGENTS.md §7 — "a detection no pipeline runs is not a control,
+# it is a hypothesis" — this is the D-22 class in gate form.
+#
+# Three scanners, three signals:
+#   1. SAST (semgrep)   — Semgrep OSS, `p/default` + `p/python` registries.
+#      Language-agnostic pattern engine with security rules. No GHAS
+#      dependency: runs identically on the Free plan, on both public and
+#      private repos, without a license.
+#   2. SAST (bandit)    — Bandit `-ll -ii` over `scripts/` AND `tests/`
+#      (scope widened in A-08 — the previous job scanned scripts/ only and
+#      the drift was silent). Python AST security linter.
+#   3. Trivy Config Scan — Aqua Security Trivy misconfig scanner over the
+#      Terraform source at repo root, `.github/workflows/`, `policy/`,
+#      `repos/` and `audit/` (YAML/Terraform IaC scanning). HIGH + CRITICAL
+#      severities gate the run. Installed via curl into /usr/local/bin,
+#      mirroring the gitleaks pattern already used by the
+#      `Repository Secret Pattern Scan` job in compliance-scan.yml — the
+#      register at `docs/drift-findings.md:663` explicitly calls out
+#      `trivy-action@master` floating pins as the retarget vector AGENTS.md
+#      §5 exists to close, and installing the binary by exact version is
+#      strictly stronger than pinning the wrapper action. Trivy version
+#      verified live 2026-10-08 via
+#      `gh api repos/aquasecurity/trivy/releases/latest`.
+#
+# Required contexts declared in `repos/jolarca-control.yml`:
+#   - "SAST (semgrep)"        — wired in commit 2 alongside the compliance gate
+#   - "SAST (bandit)"         — informational (name preserved for continuity)
+#   - "Trivy Config Scan"     — informational (name preserved for continuity)
+#
+# Design constraints (AGENTS.md §5, §7):
+# - All actions SHA-pinned; no floating tags.
+# - `permissions: contents: read` at workflow scope; no job escalates.
+# - `pull_request` (NOT `pull_request_target`) — a PR from a fork never
+#   executes this workflow with write access to the base repo.
+# - No path filter: `SAST (semgrep)` is a required context, so the workflow
+#   must be able to produce it on every PR (path-filtered required contexts
+#   deadlock docs-only PRs — the exact failure mode called out at
+#   `repos/jolarca-control.yml:60-63`).
+# - `--error` on semgrep and `--exit-code 1` on trivy make findings block,
+#   not just report. A green SAST job means zero HIGH/CRITICAL findings.
+# - The `--severity HIGH,CRITICAL` filter on Trivy keeps the gate honest
+#   about what will actually be blocked without triaging every MEDIUM
+#   advisory; those are recorded in `.trivyignore.yaml` when they are
+#   accepted, not silently hidden by the severity threshold.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Static Analysis (SAST)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Semgrep OSS (default + python rulesets) ─────────────────────────────────
+  semgrep:
+    name: SAST (semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # Pinned to the exact version verified locally 2026-10-08 (0 findings
+      # across scripts/ + tests/). Floating versions in a security gate let
+      # a rule change silently break or silently pass; a human reviews this
+      # pin when it moves.
+      - name: Install semgrep (pinned)
+        run: pip install semgrep==1.179.0
+      # Non-zero on any ERROR- or WARNING-severity finding, per Semgrep's
+      # own rule metadata. `--metrics=off` because we do not send usage data
+      # from a governance control plane. `--config auto` is deliberately NOT
+      # used — it reaches out to the semgrep registry with a device id,
+      # which we don't want for a repo that governs SOC 2 evidence.
+      - name: Run semgrep (default + python)
+        run: |
+          semgrep scan \
+            --config p/default \
+            --config p/python \
+            --error \
+            --metrics=off \
+            --severity ERROR \
+            --severity WARNING \
+            scripts/ tests/
+
+  # ── Bandit (Python AST security linter) — scope widened to tests/ ──────────
+  bandit:
+    name: SAST (bandit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install bandit (pinned)
+        run: pip install bandit==1.9.4
+      # `-ll -ii`: fail on MEDIUM severity + MEDIUM confidence or higher.
+      # Scope expanded from `scripts/` only to `scripts/ tests/` per A-08
+      # prompt — a real secret or dangerous call in a test file is still a
+      # real finding. Any accepted false positive MUST carry an inline
+      # `# nosec Bxxx` with a rationale comment (see the B108 suppression
+      # at tests/test_repo_readiness_audit.py:489 as the pattern).
+      - name: Run bandit
+        run: bandit -r scripts/ tests/ -ll -ii
+
+  # ── Trivy config scan (Terraform source + workflow YAML + policy YAML) ─────
+  # Covers the "as feasible" clause in the A-08 prompt: Terraform at repo
+  # root, `.github/workflows/` YAML (actions permissions, checkout pin
+  # drift, secrets scope creep), and the fleet YAML under `policy/`,
+  # `repos/`, `audit/`. Aqua's own checks bundle handles Kubernetes /
+  # Dockerfile / Azure ARM / CloudFormation too, but this repo has none.
+  trivy-config:
+    name: Trivy Config Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Install the trivy binary by exact version (curl | tar), matching the
+      # gitleaks pattern already used at compliance-scan.yml:66-70. The
+      # `aquasecurity/trivy-action` wrapper (and its transitive `setup-trivy`
+      # helper) was tried first and its install step failed on the release
+      # asset fetch in a fresh CI run 2026-10-08; installing directly removes
+      # two layers of indirection and one more supply-chain pin to keep
+      # honest, and the version string is a first-class input we control.
+      - name: Install trivy
+        run: |
+          TRIVY_VERSION="0.75.0"
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | sudo tar xz -C /usr/local/bin trivy
+      - name: Run trivy config scan (HIGH+CRITICAL block)
+        # `--exit-code 1` makes HIGH or CRITICAL misconfig findings fail the
+        # job. Accepted findings must be recorded in `.trivyignore.yaml` with
+        # a dated rationale, not silenced by widening the severity filter
+        # (that is the AGENTS.md §5 weakening-prohibition pattern).
+        # `--ignorefile` must be passed EXPLICITLY: trivy's default is the
+        # plain-text `.trivyignore` (CVE-line style), NOT the YAML schema we
+        # use. Pointing it at `.trivyignore.yaml` opts in to the structured
+        # form with `id`, `statement`, `references` and `resolutions` fields
+        # that let each entry name the policy/compliance-gates.yml exception
+        # it maps to. Missing ignorefile is a fatal error in trivy, so the
+        # gate fails closed if the file is ever deleted.
+        run: |
+          trivy config \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --ignorefile .trivyignore.yaml \
+            .

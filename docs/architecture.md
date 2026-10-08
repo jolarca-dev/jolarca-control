@@ -40,7 +40,7 @@ is scoped to payment-related repos only.
 │  repos/*.yml              policy/                 Terraform         │
 │  ───────────              ──────                  ─────────         │
 │  Per-repo allow-list      repo-defaults.yml       main.tf           │
-│  (14 YAML files)          compliance-gates.yml    variables.tf      │
+│  (16 YAML files)          compliance-gates.yml    variables.tf      │
 │                                                   repositories.tf   │
 │                                                   branch-protection │
 │                                                   health-repo.tf    │
