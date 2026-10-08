@@ -125,8 +125,18 @@ resource "github_branch_protection" "health" {
   }
 }
 
-# NOTE: Release-tag protection (v* tags) is enforced via GitHub Rulesets, which
-# the integrations/github provider v6.x models as github_repository_ruleset.
-# The 2026-09-17 delivery-chain audit verified NO rulesets exist org-wide.
-# Ruleset definitions stay out of this baseline until the org ruleset strategy
-# is finalized — see docs/runbooks.md RB-04 and docs/drift-findings.md D-07.
+# NOTE: Release-tag protection (v* tags) would be enforced via GitHub Rulesets,
+# which the integrations/github provider models as github_repository_ruleset.
+# The 2026-09-17 audit's conclusion that NO rulesets exist org-wide is now FALSE
+# and was superseded by measurement on 2026-10-04 (D-46): three repositories
+# -- jolarca-vendor, jolarca-consent, jolarca-dr -- carry an ACTIVE ruleset
+# named protect-main, created 2026-09-28, i.e. eleven days after that audit and
+# outside this configuration. Org-wide ruleset listing is unavailable on the
+# current plan (HTTP 403), so this repo cannot enumerate them centrally; the
+# per-repo endpoint can, and scripts/drift_detect.py now does exactly that
+# because the legacy /protection endpoint returns 404 for ruleset-protected
+# branches and previously filed that as an unreadable plan limitation.
+# Consequence to keep in view: that layer is real enforcement with no declared
+# source of truth. `terraform apply` neither creates, repairs nor destroys it,
+# and `terraform destroy` would not notice it. Ruleset definitions stay out of
+# this baseline only until the strategy in RB-04 / D-07 is decided -- see D-46.

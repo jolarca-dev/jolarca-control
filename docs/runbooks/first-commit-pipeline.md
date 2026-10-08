@@ -267,11 +267,16 @@ moves to GitHub Team — flip one default and the gate hardens with no rewrite.
 
 ## Known issue — the gate reports S0 on this repository
 
-**Status: OPEN, owner decision required.**
+**Status: RESOLVED AT SOURCE 2026-09-28, HISTORY ACCEPTED AS FALSE POSITIVE 2026-10-07.**
+See `docs/security/f01-l16-synthetic-fixture-acceptance.md`.
 
-`make readiness REPO=jolarca-control` reports three S0 stop-work findings
-(`L-15`, `L-16`, `L-17`) because the readiness gate's own secret sweep and
-gitleaks both match **synthetic fixtures** in `tests/test_repo_readiness_audit.py`:
+Historically (before the 2026-09-28 runtime-assembly refactor landed in
+`ac0da96`), `make readiness REPO=jolarca-control` reported three S0
+stop-work findings (`L-15`, `L-16`, `L-17`) because the readiness gate's
+own secret sweep and gitleaks both matched **synthetic fixtures** in
+`tests/test_repo_readiness_audit.py`. That framing is preserved below for
+audit trail; the actual 2026-10-07 state is one S2 finding on history
+matches only.
 
 | String (redacted here on purpose) | Line | Nature |
 | --- | --- | --- |
@@ -286,7 +291,7 @@ gitleaks both match **synthetic fixtures** in `tests/test_repo_readiness_audit.p
 Neither was ever issued by AWS or Stripe. **Rotation is not applicable and must
 not be faked.**
 
-Consequences, in order of severity:
+Consequences — original framing (pre-2026-09-28), preserved verbatim:
 
 1. The control plane cannot pass its own readiness gate, so Step A of this
    pipeline blocks for `jolarca-control` permanently.
@@ -296,20 +301,36 @@ Consequences, in order of severity:
    S0. The readiness gate's own source warns about exactly this — *"an auditor who
    learns to ignore the secret check has lost the one check that matters."*
 
-Remediation, in order:
+Consequences — actual 2026-10-07 state:
 
-1. **Assemble fixtures at runtime** so no literal credential shape lands in source:
-   `token = "AKIA" + "Q3EG…"` (prefix and body concatenated). The runtime value is
-   identical, the test is unchanged in effect, and the source stops matching.
-2. Add `.gitleaksignore` for any fixture that must stay literal, each line
-   carrying a comment naming the test and the reason. There is currently **no**
-   `.gitleaksignore` and no `.gitleaks.toml`.
-3. The `AKIA…` fixture is **already in git history**, so step 1 alone does not
-   clear `L-16`. Purging needs `git-filter-repo` + force-push under RB-03, with a
-   change record. That rewrites published history on the governance repo and is
-   an **owner decision**, not a routine fix.
+1. Step A no longer BLOCKs. Readiness on `jolarca-control` returns
+   `verdict_counts: {READY: 0, READY-WITH-FIXES: 1, BLOCKED: 0}`.
+2. `secret_hits_head: []` — no regex hit anywhere in tracked files.
+3. `secret_hits_history: 2 matches` — L-16 fires at **S2** (not S0) because
+   the audit's own logic requires gitleaks corroboration for S0; gitleaks
+   reports `no leaks found` and cannot be corroborated.
+4. The S2 is accepted as a documented false positive. No history rewrite.
+   No `.gitleaksignore` entry needed (gitleaks is not what fires here).
+
+Remediation status, in the original order:
+
+1. **Assemble fixtures at runtime** so no literal credential shape lands in
+   source. DONE 2026-09-28 in `ac0da96`. Verified: `grep -c 'AKIA[0-9A-Z]{16}'
+   tests/test_repo_readiness_audit.py` returns 0; `gitleaks dir .` returns
+   `no leaks found`.
+2. Add `.gitleaksignore` for any fixture that must stay literal. NOT NEEDED.
+   `.gitleaksignore` exists with zero entries as a documented placeholder;
+   the runtime-assembly fix means no literal remains.
+3. Purge history to clear `L-16` on the pre-`ac0da96` blobs. NOT DONE — owner
+   decision. The 2026-10-07 acceptance in
+   `docs/security/f01-l16-synthetic-fixture-acceptance.md` records why the
+   risk-reward is negative: gitleaks does not flag the historical blobs
+   anyway, and force-push under RB-03 on a public governance repo with
+   downstream references is disproportionate to a documented S2.
 4. Do **not** solve this by excluding `tests/` from the secret sweep. A real
-   secret pasted into a test file is still a real secret.
+   secret pasted into a test file is still a real secret. RESPECTED 2026-10-07
+   — the path-based exclusion previously present in `.gitleaks.toml` under
+   ADR-0009 F-04 has been removed.
 
 ---
 

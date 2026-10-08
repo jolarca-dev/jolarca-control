@@ -3,6 +3,11 @@
 **Created:** 2026-09-25
 **Status:** IN PROGRESS
 
+> **Superseded in part (2026-10-06):** D-18 org 2FA is enforced and D-19 org
+> defaults are hardened (both live-verified), and the fleet migrated to public
+> (D-37/D-39) — so several PENDING statuses below are out of date. Current truth:
+> `docs/drift-findings.md` and `docs/audit-plan-2026-10-06.md`.
+
 ## Phase 1: Critical Security (BLOCKING)
 
 ### Step 1.1: Enable 2FA on jolarca-dev org
