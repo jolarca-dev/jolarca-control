@@ -15,9 +15,15 @@
 # recommended shipping require_linear_history, require_conversation_resolution,
 # strict status checks, and dismiss_stale_reviews. These four work on the Free
 # plan for PUBLIC repos (jolarca, .github). They remain unavailable for PRIVATE
-# repos without GitHub Pro (D-33). terraform.tfvars still sets
-# var.enable_branch_protection = false, so these resources still create nothing
-# until the operator flips the flag. Two attributes remain off:
+# repos without GitHub Pro (D-33). terraform.tfvars now sets
+# var.enable_branch_protection = true, so these resources ARE declared in the
+# plan; they are still not applied because `make apply` is gated on the unset
+# STATE_MIGRATION_COMPLETE variable and this control plane does not yet own the
+# live github_* state (D-02). The protection these repos actually run today was
+# created out-of-band via `gh api PUT` (including the A-08 SAST (semgrep)
+# required context), so the first real apply must import/reconcile that live
+# state rather than blind-create it, or Terraform and GitHub drift. Two
+# attributes remain off:
 #   - require_code_owner_reviews: false (D-20, solo-era deviation — inert with
 #     a single operator who cannot approve their own PR; pre-deployment audit B3
 #     confirmed the "safe four" approach with a dated deviation for this flag).
