@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: help setup validate compliance drift fleet-audit org-audit readiness \
-        first-commit evidence-check evidence-register \
+        first-commit evidence-check evidence-register findings-check \
         init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
 
@@ -97,6 +97,15 @@ readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
 	  $(if $(REPORT),--markdown $(REPORT)) >/dev/null
 context-parity: ## Declared required status checks must be checks the repo can report
 	python3 scripts/check_declared_contexts.py
+
+# A-07 register-integrity guard. Detects a `### D-nn` heading duplicated on the
+# working copy or claimed with a different title by main and an open PR branch --
+# the exact collision class closed manually for A-02 on 2026-10-07. Same 0/1/2
+# contract as every other gate in this repo: exit 2 on "could not verify" is never
+# a pass (D-23). Wired into the required `Validate Repo Allow-List` context in
+# compliance-scan.yml, so a collision genuinely blocks a merge (A-07).
+findings-check: ## Every `### D-nn` heading must be unique on main and across open PRs
+	python3 scripts/check_findings_register.py
 
 # Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
 # STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target
