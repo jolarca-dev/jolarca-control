@@ -31,6 +31,7 @@ docs/runbooks/deployment-rehearsal.md,ce07bd6ef407b9a5850150f61fd35cf018f89d3d11
 docs/runbooks/first-commit-pipeline.md,eb9461e3c61f38f13f3faa27dd7231cb273d44d15629c7b83eb31cb5470439ec,2026-10-07
 docs/runbooks/github-token-rotation.md,8ae25edeba271a2e67c2ee64f600d341dec3150a6f4414233083d2ee99b7e77f,2026-09-28
 docs/runbooks/workload-identity-federation.md,2953cc6ce183d28a7bfed099e1e515e45fd7de603b9d0e18ad0927225579510e,2026-09-28
+docs/security/d33-enforcement-rehearsal-2026-10-08.md,4bcac633f43ab7ee791088326744ad58234d3e9ffc8b30d647d57fdfe983b6f3,2026-10-08
 docs/security/dpia-marketplace-launch.md,125af31733cedd11b75752d91befff024bd8e828d6233f03e1c85533626f4470,2026-09-28
 docs/security/f01-l16-synthetic-fixture-acceptance.md,bd4647063bce9a09829ace0b833bf6abc09967505a7b3696733ed4c55034823f,2026-10-07
 docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9ae8c43694991343c80,2026-09-28
