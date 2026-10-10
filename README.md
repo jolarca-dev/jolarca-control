@@ -17,35 +17,21 @@
 > `docs/drift-findings.md` and the audit as current — the "six repositories" figure
 > below is superseded.
 
-## ⚠ NOT YET AUTHORITATIVE
+## ✓ AUTHORITATIVE
 
-This repository declares the governance of six live, PCI-DSS-scoped
-repositories — but **it does not own their Terraform state yet**. That state is
-still in
-`jolarca-infrastructure/terraform/environments/production/terraform.tfstate`
-(`module.github_org.*`).
+This repository owns the Terraform state for all `jolarca-dev` GitHub
+resources. State is stored in HCP Terraform (ADR-0006), workspace
+`jolarca-dev/jolarca-control`.
 
-Consequences, all deliberate:
+Consequences:
 
-- `make apply` **refuses** to run.
-- `.github/workflows/apply.yml` aborts unless the repository variable
-  `STATE_MIGRATION_COMPLETE` is `true`.
-- `.github/workflows/plan.yml` skips the live plan and says so on the PR
-  instead of showing a misleading empty diff.
-- `make plan` only offers an offline `-refresh=false` plan.
-
-Applying from an empty state would attempt to **create repositories that
-already exist** while another Terraform root still owns them. That is dual
-ownership of production PCI scope, and it is how repositories get destroyed.
+- `make apply` still refuses locally (safety: applies go through CI `apply.yml`
+  which enforces `STATE_MIGRATION_COMPLETE` and plan-safety gates).
+- `.github/workflows/apply.yml` runs on merge to `main`.
+- `.github/workflows/plan.yml` produces a live refresh plan on every PR.
 
 **Read [`docs/state-migration-runbook.md`](docs/state-migration-runbook.md)
-before running anything.** It is a gated, reversible procedure with a verified
-off-host backup as step 0.
-
-Also read [`docs/drift-findings.md`](docs/drift-findings.md): 22 findings,
-each verified against the live GitHub API on 2026-09-25, including two
-**blocking** ones (D-01 four PCI-scope repos are publicly readable; D-18
-org-wide 2FA is not enforced).
+for the migration history and rollback procedure.**
 
 ---
 
@@ -180,13 +166,12 @@ make fleet-audit   # ADR-0004 separation guard
 make org-audit     # delivery-chain evidence capture
 ```
 
-### Plan / apply — **BLOCKED**
+### Plan / apply
 ```bash
-make plan          # offers an offline -refresh=false plan only
-make apply         # refuses outright
+make plan          # offers an offline -refresh=false plan (local safety)
+make apply         # refuses locally; applies run via apply.yml on merge to main
 ```
-Both are gated until `docs/state-migration-runbook.md` step 9 flips
-`STATE_MIGRATION_COMPLETE`.
+`STATE_MIGRATION_COMPLETE=true` is set; CI `apply.yml` is the apply path.
 
 ## Provenance
 
