@@ -92,8 +92,9 @@ jobs:
         run: terraform init -input=false
 
       - name: Terraform Plan
-        run: terraform plan -input=false -no-color -local -out=tfplan
+        run: terraform plan -input=false -no-color -out=tfplan
         env:
+          TF_CLOUD_OPERATIONS: "false"
           GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
 
       # ── Plan review gate ───────────────────────────────────────────────────
@@ -112,8 +113,9 @@ jobs:
           bash scripts/check_plan_safety.sh plan.txt
 
       - name: Terraform Apply
-        run: terraform apply -input=false -auto-approve -local tfplan
+        run: terraform apply -input=false -auto-approve tfplan
         env:
+          TF_CLOUD_OPERATIONS: "false"
           GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
 
       - name: Post-apply compliance snapshot
