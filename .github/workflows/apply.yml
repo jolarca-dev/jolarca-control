@@ -92,7 +92,7 @@ jobs:
         run: terraform init -input=false
 
       - name: Terraform Plan
-        run: terraform plan -input=false -no-color -out=tfplan
+        run: terraform plan -input=false -no-color -local -out=tfplan
         env:
           GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
 
@@ -112,7 +112,7 @@ jobs:
           bash scripts/check_plan_safety.sh plan.txt
 
       - name: Terraform Apply
-        run: terraform apply -input=false -auto-approve tfplan
+        run: terraform apply -input=false -auto-approve -local tfplan
         env:
           GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
 
