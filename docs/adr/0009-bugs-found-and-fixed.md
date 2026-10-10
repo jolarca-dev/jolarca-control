@@ -164,6 +164,83 @@ workflow that emits it is merged (two-phase bootstrap, AGENTS.md §8).
 
 ---
 
+## HCP Terraform migration bugs (2026-10-10)
+
+### B-01 `terraform init -migrate-state` invalid for `cloud {}` backend
+
+**Severity:** S2 (operational confusion, no data loss)
+**Framework:** N/A (tooling)
+
+`terraform init -migrate-state` aborts with "Invalid command-line option — HCP
+Terraform migrations have additional steps, configured by interactive prompts."
+The local state upload must use plain `terraform init`, which prompts
+interactively to copy the existing `terraform.tfstate` into the workspace.
+
+**Fix:** use plain `terraform init`; confirm upload with `terraform state list`.
+
+### B-02 `terraform login` blocked by existing `~/.terraformrc`
+
+**Severity:** S3 (confusing error)
+**Framework:** N/A (tooling)
+
+Once a `credentials "app.terraform.io" { token = ... }` block is written
+manually into `~/.terraformrc`, `terraform login` aborts with "Credentials are
+manually configured" and cannot proceed.
+
+**Fix:** keep the manual token path; do not attempt `terraform login` after
+writing the block.
+
+### B-03 HCP org "not found" despite valid token
+
+**Severity:** S2 (misread as invalid token)
+**Framework:** N/A (tooling)
+
+Even with a valid API token, `terraform init` fails until the organization and
+workspace actually exist on app.terraform.io. The error surface reports the org
+as "not existing", which reads as an invalid token.
+
+**Fix:** create org `jolarca-dev` + workspace `jolarca-control` (CLI-Driven) in
+the HCP UI first, then `terraform init`.
+
+### B-04 `-local` flag rejected by setup-terraform wrapper
+
+**Severity:** S1 (CI apply broken)
+**Framework:** CC7.1 (change management)
+
+`terraform plan -local` with a `cloud {}` backend is rejected by the
+`hashicorp/setup-terraform` wrapper: "flag provided but not defined: -local".
+The wrapper intercepts the command and does not pass the flag through.
+
+**Fix:** set `TF_CLOUD_OPERATIONS: "false"` as a step env var instead of the
+CLI flag. This is the documented way to force local execution with a cloud
+backend.
+
+### B-05 HCP remote plan timeout on free tier
+
+**Severity:** S1 (CI apply hangs 48+ min)
+**Framework:** CC7.1 (change management)
+
+With a `cloud {}` backend, `terraform plan` triggers a remote run on HCP
+workers. On the free tier the run queues and can exceed job timeouts (48+ min
+observed, then cancelled).
+
+**Fix:** `TF_CLOUD_OPERATIONS=false` forces the plan to execute on the GH
+Actions runner while state remains in HCP.
+
+### B-06 Missing `TF_GITHUB_TOKEN_READONLY` secret
+
+**Severity:** S2 (post-apply verification fails)
+**Framework:** CC7.2 (monitoring)
+
+`apply.yml` uses `TF_GITHUB_TOKEN_READONLY` for the fleet-separation guard and
+post-apply drift detection. Without it those steps fail even when the apply
+succeeds.
+
+**Fix:** create a read-only fine-grained PAT (Administration: read, Contents:
+read, Metadata: read) scoped to `jolarca-dev` and store as the secret.
+
+---
+
 ## Summary
 
 | Bug | Severity | Framework | Status |
@@ -174,6 +251,12 @@ workflow that emits it is merged (two-phase bootstrap, AGENTS.md §8).
 | F-04 Push protection flags allowlist | S1 | CC6.1 | SUPERSEDED 2026-10-07 — path exclusion removed, no allowlist needed |
 | F-05 Mandatory SAST gate not enforced | S1 | CC7.1/A.8.25 | FIXED A-08 2026-10-08 — sast.yml + compliance wiring + negative-control proof |
 | D-28 class IDE metadata | S1 | A.8.1 | CHECK EXISTS |
+| B-01 migrate-state invalid for cloud | S2 | tooling | FIXED 2026-10-10 |
+| B-02 login blocked by terraformrc | S3 | tooling | FIXED 2026-10-10 |
+| B-03 org not found despite token | S2 | tooling | FIXED 2026-10-10 |
+| B-04 -local flag rejected by wrapper | S1 | CC7.1 | FIXED 2026-10-10 (TF_CLOUD_OPERATIONS=false) |
+| B-05 HCP remote plan timeout | S1 | CC7.1 | FIXED 2026-10-10 (local execution) |
+| B-06 missing READONLY secret | S2 | CC7.2 | FIXED 2026-10-10 |
 
 **Professional opinion:** Every finding except F-03 has been fixed or
 superseded. F-03 is a schema inconsistency that requires an owner decision,
