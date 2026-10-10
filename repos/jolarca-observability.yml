@@ -52,10 +52,13 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # Contexts are the job `name:` fields from .github/workflows/ci.yml
+      # (fires on push+PR). compliance-scan.yml is schedule/PR-only and its
+      # jobs are not stable enough to gate merges (PCI-DSS alerting may not
+      # exist for every PR touching docs).
       contexts:
-      - ci
-      - security
-      - compliance
+      - "Lint & Type Check"
+      - Tests
     required_pull_request_reviews:
       # SOLO-ERA DEVIATION — docs/drift-findings.md D-04
       required_approving_review_count: 0

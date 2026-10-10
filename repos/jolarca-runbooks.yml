@@ -29,8 +29,11 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # Job IDs from .github/workflows/ci.yml (no `name:` overrides, so context
+      # = job-id). Both fire on push+PR.
       contexts:
-      - lint
+      - lint-validate-test
+      - secret-scan
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true
