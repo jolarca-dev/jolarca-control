@@ -58,8 +58,9 @@ sh-lint: ## shellcheck over every shell script
 yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 	yamllint -c .yamllint .
 
-test: ## Regression tests: plan-safety (D-22) + readiness gate + first-commit gate
+test: ## Regression tests: plan-safety (D-22) + execution mode + readiness + first-commit
 	bash tests/test_check_plan_safety.sh
+	bash tests/test_check_workspace_execution_mode.sh
 	.venv/bin/python -m pytest tests/ -q
 
 # ── Live checks (read-only, need gh / GITHUB_TOKEN) ──────────────────────────
@@ -151,6 +152,6 @@ count-repos: ## Count managed repositories
 	@echo "Managed repositories: $$(ls -1 repos/*.yml | wc -l)"
 
 clean: ## Remove generated files
-	rm -f tfplan plan-output.txt plan.txt compliance-report.json \
+	rm -f tfplan plan-output.txt plan.txt workspace.json compliance-report.json \
 	      compliance-snapshot.json quarterly-report.json \
 	      docs/evidence-registry.csv.new

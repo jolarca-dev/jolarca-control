@@ -1,6 +1,6 @@
 file,sha256,registered_date
 docs/adr/0004-mission-marketplace-separation.md,cf6ef7d1ec8c46aec74db552ba2f7af813246ef71ba3ce5846b40837575b1f13,2026-09-28
-docs/adr/0006-remote-state-backend.md,2ccd803b0d13c9d963ff0589565aa701e23072832421d5313a6769e6c9e15e64,2026-09-28
+docs/adr/0006-remote-state-backend.md,37ce629ac8cc4c8cc1c8ae4c32c4a8b9dd9b73cf6856abbb9d95d0cf533af8f5,2026-10-12
 docs/adr/0007-public-marketplace-repository.md,b25d7e35fd2b42a135ccf45d1772861e95b7b992de9027f22ecf23e1e04256c8,2026-09-28
 docs/adr/0008-soc2-type-ii-observation.md,6d3eb39b5cfc56e83614b74e9c638956547c8fbe04630da0cfd1dd215849c751,2026-09-28
 docs/adr/0009-bugs-found-and-fixed.md,4b0372865450c63c473650f3ce03c0a5a402cee4ee17181bf83816bf3966399a,2026-10-10
