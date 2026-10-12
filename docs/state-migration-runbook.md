@@ -323,24 +323,42 @@ terraform state list | grep -c branch_protection   # expect 14
 > its first iteration can silently skip the rest — the `|| echo FAILED` and the
 > post-loop count are both mandatory, per D-13's state-rm lesson.
 
-**Do not apply on the strength of a green import.** With the thirteen rules
-adopted, `terraform plan` still proposes in-place changes that the plan-safety
-gate does not refuse (it catches destroy/replace/visibility only). Measured
-declared-vs-live deltas on 2026-10-12 that a human must decide per repo first:
+**Do not apply on the strength of a green import.** The imports were run on
+2026-10-12 and `terraform state list | grep -c branch_protection` returned
+**14**, as predicted. A full-refresh plan with the operator's token then reported:
 
-| Repo | Live | Declared | Effect of applying as declared |
+```
+Plan: 3 to add, 25 to change, 0 to destroy
+Outputs: compliance_summary.protected_repos 13 -> 16
+```
+
+The three adds are exactly `jolarca-consent`, `jolarca-dr`, `jolarca-vendor` — the
+repos with no live rule — so the inventory above held. `0 to destroy` held too.
+What did **not** hold is the idea that the remaining 25 are reconciliations: Terraform
+itself lists six changes that alter a live control, and `check_plan_safety.sh`
+would pass every one (it refuses destroy / replace / visibility only).
+
+| Change in the plan | Repos | Direction | Why it needs a human, not a green gate |
 |---|---|---|---|
-| `jolarca` | 12 contexts | 9 | **removes** `frontend-unit`, `frontend-openapi-drift`, `frontend-build` from required checks — weakens the flagship gate |
-| `jolarca` | `required_linear_history=false` | `true` | forces linear history on the app repo |
-| `jolarca-docs` | `require_code_owner_reviews=true` | `false` (tfvars) | **removes** code-owner review |
-| `jolarca-identity` | no contexts | `ci,security,lint` | those three are **not producible** by its workflows (it reports `gitleaks (full history)`, `shellcheck`) → every merge deadlocks (L-19, S1) |
-| `jolarca-data`, `jolarca-legal`, `jolarca-security` | no contexts | 2–3 each | adds required checks that do exist — strengthening, but unreviewed |
-| 13 repos | `require_conversation_resolution` unset | `true` | turns the requirement on fleet-wide |
+| `require_code_owner_reviews = true -> false` | `jolarca-docs` | **removes** | the fleet's only live code-owner gate (D-54) |
+| `require_signed_commits = true -> false` | `jolarca-docs` | **removes** | live requires signed commits; `terraform.tfvars` sets `enforce_signed_commits = false`, so the same unreviewed apply turns off a second control on the same repo (D-57) |
+| `restrict_pushes { push_allowances = ["/JourneyOfLife"] -> null }` | `jolarca-payments` | **removes** | deletes the whole push-restriction rule from `main` on the PCI-scoped repo, so any writer can push there. The allowance is also a **cross-plane actor name** (ADR-0004) that no file-based audit can see — `check_fleet_separation.sh` greps files, not live GitHub config |
+| `- restrict_pushes { blocks_creations = false, push_allowances = [] }` | 12 more | removes | an empty restriction rule disappears; low impact, but it is a change nobody asked for and it will recur until the config expresses it |
+| `- template { owner = "journeyoflife-org", repository = "jol-repo-template" }` | `jolarca-legal` | removes | a live template source pointing at the **mission platform** org — the exact separation ADR-0004 exists to enforce. Removing it is right for separation and should be recorded as such, not landed as a side effect |
+| `required_linear_history = false -> true`, `require_conversation_resolution = false -> true` | `.github`, `jolarca`, `jolarca-payments` | adds | strengthening; on a single-operator repo these are workflow rules that can block merges, so they are accepted in writing or deferred per repo |
+| `has_issues` | `jolarca` `false -> true`, `jolarca-data` `true -> false` | both ways | declared settings disagree with live on both; `jolarca-data` loses its issue tracker on merge |
+| `secret_scanning` / `secret_scanning_push_protection` `disabled -> enabled` | `jolarca-docs`, `-observability`, `-runbooks`, `-security` | adds | welcome, and it should land — as its own reviewed change |
 
-The repo's own doctrine is to encode the **verified live** value and raise it
-deliberately (see D-08, D-20 correction (b)). So: reconcile `repos/*.yml` and
-`terraform.tfvars` to the table above, or record each strengthening as an
-accepted change, before letting `apply.yml` land it.
+Contexts are now reconciled and the plan proves it: after #67 there is **no
+`~ contexts` line for `jolarca`** (12 declared = 12 live) and `jolarca-identity`
+shows `+ contexts = ["gitleaks (full history)", "shellcheck"]` — the two names its
+workflows actually report, instead of the unproducible `ci,security,lint`.
+
+Apply is currently **blocked anyway**, by a defect in CI rather than by policy:
+`terraform plan` in Actions cannot acquire the state lock under the workspace token
+(D-56), while the identical command succeeds locally. Do not work around that with
+`-lock=false` — the lock is the only thing preventing two concurrent writers against
+single-copy state (D-55).
 
 Plan, then read it line by line:
 
@@ -358,22 +376,26 @@ GitHub moved the fleet public and every `repos/*.yml` now declares
 `visibility: public`. Applying against the old list would have read a plan
 containing real regressions as "as expected".
 
-- [ ] `0 to add` other than the three protection rules that genuinely do not
-      exist live yet (`jolarca-consent`, `jolarca-dr`, `jolarca-vendor`)
-- [ ] `0 to destroy`, no `must be replaced`
-- [ ] **no `~ contexts` line on any repository** — a context list changing means
-      `repos/<repo>.yml` disagrees with the live rule. The measured conflicts on
-      2026-10-12 are `jolarca` (live 12 → declared 9) and `jolarca-identity`
-      (declares `ci,security,lint`, which its workflows cannot report).
-      `check_plan_safety.sh` does not catch this class.
-- [ ] no `~ require_code_owner_reviews` where live is `true` — `jolarca-docs` is
-      live `true` and the fleet default in `terraform.tfvars` is `false`, so an
-      unreviewed apply removes the only live code-owner gate in the fleet
-- [ ] every one of the **sixteen** allow-list repositories appears exactly once,
-      plus `.github` as `github_branch_protection.health[0]`
-- [ ] `require_conversation_resolution` changing `unset → true` on the other 13
-      repos is either accepted in writing here or deferred per repo — it is a
-      behaviour change on live repositories, not a no-op
+- [x] `0 to add` other than the three protection rules that genuinely do not
+      exist live yet (`jolarca-consent`, `jolarca-dr`, `jolarca-vendor`) —
+      measured: `3 to add`, those three, and no others
+- [x] `0 to destroy`, no `must be replaced` — measured
+- [x] **no `~ contexts` line on any repository** — satisfied by #67 for
+      `jolarca` and `jolarca-identity`; `jolarca-data`, `-legal`, `-security`,
+      `-consent`, `-dr`, `-vendor` still gain contexts, which Context Parity
+      (`scripts/check_declared_contexts.py`, 16 checked / 16 clean) certifies as
+      producible but does not certify as *intended*
+- [ ] no `~ require_code_owner_reviews` / `~ require_signed_commits` where live
+      is `true` — **currently violated on `jolarca-docs`** (D-54, D-57); the
+      removal must be either exempted or accepted in writing before any apply
+- [ ] no `- restrict_pushes` on `jolarca-payments` — **currently violated**
+      (D-57); deleting the rule opens `main` to every writer on a PCI-scoped repo
+- [x] every one of the **sixteen** allow-list repositories appears exactly once,
+      plus `.github` as `github_branch_protection.health[0]` — 14 in state +
+      3 created = 17 addresses
+- [ ] `require_conversation_resolution` / `required_linear_history` changing
+      `false → true` is either accepted in writing here or deferred per repo —
+      it is a behaviour change on live repositories, not a no-op
 
 If `destroy` or `replace` appears anywhere: **stop**, restore from the step-0
 backup, and diagnose. `prevent_destroy` should already have aborted the plan.
