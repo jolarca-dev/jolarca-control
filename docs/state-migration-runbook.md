@@ -354,11 +354,21 @@ Contexts are now reconciled and the plan proves it: after #67 there is **no
 shows `+ contexts = ["gitleaks (full history)", "shellcheck"]` — the two names its
 workflows actually report, instead of the unproducible `ci,security,lint`.
 
-Apply is currently **blocked anyway**, by a defect in CI rather than by policy:
-`terraform plan` in Actions cannot acquire the state lock under the workspace token
-(D-56), while the identical command succeeds locally. Do not work around that with
-`-lock=false` — the lock is the only thing preventing two concurrent writers against
-single-copy state (D-55).
+Apply is currently **blocked anyway**, and not by policy: `terraform plan` in
+Actions cannot read organisation settings or acquire the state lock under
+`TFC_TOKEN`, while the identical command succeeds with the operator's own user
+token. The secret authenticates — `terraform init` selects
+`jolarca-dev/jolarca-control` — but its identity lacks the org-level privileges a
+run needs (D-56, root cause proven 2026-10-12). Fix it by issuing the token from
+the owner account, or by granting the service account's team organisation read
+plus workspace **Runs: Plan + Apply**.
+
+Order matters: `apply.yml` uses the same secret, so repairing it re-enables an
+unattended `terraform apply -auto-approve` of everything above. Attach required
+reviewers to the `production` environment first (D-58 — it currently has
+`protection_rules: []`). And do not work around the lock with `-lock=false` —
+against single-copy state (D-55) the lock is the only thing preventing two
+concurrent writers.
 
 Plan, then read it line by line:
 
