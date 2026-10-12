@@ -44,6 +44,11 @@ jobs:
   prod-apply:
     name: "Production — Apply"
     runs-on: ubuntu-latest
+    # Backstop for the 2026-10-12 incident: a remote-execution plan sat in the
+    # HCP worker queue for 33 minutes with `terraform apply -auto-approve`
+    # waiting behind it. The execution-mode gate below refuses that shape up
+    # front; this bounds the damage if the queue degrades for another reason.
+    timeout-minutes: 20
     environment:
       name: production
       url: https://github.com/orgs/jolarca-dev/repositories
@@ -89,13 +94,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY }}
 
+      # ── Execution-mode gate ────────────────────────────────────────────────
+      # A `cloud {}` workspace in REMOTE execution mode sends `terraform plan`
+      # to HashiCorp's workers instead of running it on this runner. On the Free
+      # plan that queue is unbounded from here: run 38239257880 hung 33 minutes
+      # on 2026-10-12 while an auto-approved apply waited behind it.
+      #
+      # Two earlier "fixes" for this were no-ops and are recorded so they are
+      # not re-added: `terraform plan -local` is not a flag in Terraform 1.16.1
+      # (measured against `terraform plan -help`), and `TF_CLOUD_OPERATIONS`
+      # is not a documented Terraform environment variable — both were in this
+      # file while runs kept landing on remote workers. The real lever is the
+      # workspace setting `execution-mode: local`, which this step asserts.
+      #
+      # The JSON:API media type is required on HCP Terraform POST/PATCH calls;
+      # a missing Content-Type is refused with HTTP 415 (measured 2026-10-12).
+      - name: Assert workspace execution mode is local
+        env:
+          TFC_TOKEN: ${{ secrets.TFC_TOKEN }}
+        run: |
+          set -eu
+          curl -sS -m 30 \
+            -H "Authorization: Bearer $TFC_TOKEN" \
+            -H "Content-Type: application/vnd.api+json" \
+            https://app.terraform.io/api/v2/organizations/jolarca-dev/workspaces/jolarca-control \
+            > workspace.json
+          bash scripts/check_workspace_execution_mode.sh workspace.json local
+
       - name: Terraform Init
         run: terraform init -input=false
 
       - name: Terraform Plan
         run: terraform plan -input=false -no-color -out=tfplan
         env:
-          TF_CLOUD_OPERATIONS: "false"
           GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
 
       # ── Plan review gate ───────────────────────────────────────────────────
@@ -116,7 +147,6 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -input=false -auto-approve tfplan
         env:
-          TF_CLOUD_OPERATIONS: "false"
           GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
 
       - name: Post-apply compliance snapshot

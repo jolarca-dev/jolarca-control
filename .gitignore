@@ -63,9 +63,12 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Terraform plan output
+# Terraform plan output and generated CI artefacts
 tfplan
 plan-output.txt
+plan.txt
+# apply.yml execution-mode gate response (workspace metadata, not a secret)
+workspace.json
 
 # Compliance reports (generated)
 compliance-report.json
