@@ -276,44 +276,71 @@ import {
 }
 ```
 
-Branch protection import IDs are the part most likely to be wrong, because the
-provider keys that resource by the **GraphQL node ID of the protection rule**,
-not by repo name. Fetch the real IDs first:
+Branch protection import IDs are the part most likely to be wrong — and the
+original instruction here ("key it by the GraphQL node ID of the rule, fetch
+with `branchProtectionRules(first: 5)` on Repository") was **wrong on both
+counts** and was corrected by reading the provider source rather than the docs:
+
+- `integrations/github` v6.13.0, `github/resource_github_branch_protection.go`:
+  `Importer: {State: resourceGithubBranchProtectionImport}` calls
+  `parseID2(d.Id())` → `(repoName, pattern)`, then resolves the repository node
+  ID and the rule ID itself via `getBranchProtectionID(repoID, pattern)` before
+  calling Read. **The import ID is `<repo-name>:<pattern>`, e.g.
+  `jolarca:main`.** A raw `BPR_…` node ID has no `:` and fails to parse.
+- The `id` attribute *stored in state* is the `BPR_…` node ID (Read keys on
+  `node(id: $id)`). Import ID ≠ state ID. That distinction is what makes this
+  step look contradictory when compared with `terraform state show`.
+- `Repository.branchProtectionRules` is not a field in the current GraphQL
+  schema; the reachable path is
+  `repository{branch(name:"main"){branchProtectionRule{id}}}`.
+
+Verified inventory for `jolarca-dev` on 2026-10-12 (`gh api
+repos/jolarca-dev/<repo>/branches/main/protection`, read-only):
+
+| Live state | Repos |
+|---|---|
+| Rule exists, already in Terraform state | `jolarca-hermes-agents` |
+| Rule exists, **not** in state → import | `jolarca`, `jolarca-compliance`, `jolarca-control`, `jolarca-data`, `jolarca-docs`, `jolarca-identity`, `jolarca-infrastructure`, `jolarca-legal`, `jolarca-observability`, `jolarca-payments`, `jolarca-runbooks`, `jolarca-security`, `.github` (`health[0]`) |
+| **No rule** (HTTP 404 "Branch not protected") → cannot import, apply will create | `jolarca-consent`, `jolarca-dr`, `jolarca-vendor` |
+| Rule exists with `required_status_checks: null` (no contexts configured) | `jolarca-data`, `jolarca-identity`, `jolarca-legal`, `jolarca-security` |
+
+Import the thirteen existing rules (operator-run: §5 forbids an agent executing
+`import`/`state rm`), then verify the count before planning:
 
 ```bash
-gh api graphql -f query='
-{
-  organization(login: "jolarca-dev") {
-    repositories(first: 20) {
-      nodes {
-        name
-        branchProtectionRules(first: 5) {
-          nodes { id pattern }
-        }
-      }
-    }
-  }
-}'
+cd /opt/jolarca/repos/jolarca-control
+for r in jolarca jolarca-compliance jolarca-control jolarca-data jolarca-docs \
+         jolarca-identity jolarca-infrastructure jolarca-legal \
+         jolarca-observability jolarca-payments jolarca-runbooks jolarca-security; do
+  terraform import -input=false "github_branch_protection.main[\"$r\"]" "$r:main" || echo "FAILED: $r"
+done
+terraform import -input=false 'github_branch_protection.health[0]' '.github:main'
+terraform state list | grep -c branch_protection   # expect 14
 ```
 
-Then add one `import` block per rule using the returned `id`:
+> `terraform import` on a `for_each`/`count` address must be quoted exactly as
+> above (the shell otherwise eats the brackets), and a `for` loop that errors on
+> its first iteration can silently skip the rest — the `|| echo FAILED` and the
+> post-loop count are both mandatory, per D-13's state-rm lesson.
 
-```hcl
-import {
-  to = github_branch_protection.main["jolarca"]
-  id = "<node ID from the query above>"
-}
-# ... one per protected repo, plus:
-import {
-  to = github_branch_protection.health[0]
-  id = "<node ID for .github>"
-}
-```
+**Do not apply on the strength of a green import.** With the thirteen rules
+adopted, `terraform plan` still proposes in-place changes that the plan-safety
+gate does not refuse (it catches destroy/replace/visibility only). Measured
+declared-vs-live deltas on 2026-10-12 that a human must decide per repo first:
 
-> Confirm the exact `id` format against the `integrations/github` **6.13.0**
-> docs before applying. A wrong ID makes `terraform plan` fail loudly and
-> harmlessly — that is the intended safety behaviour, so treat a plan failure
-> here as information, not as something to force past.
+| Repo | Live | Declared | Effect of applying as declared |
+|---|---|---|---|
+| `jolarca` | 12 contexts | 9 | **removes** `frontend-unit`, `frontend-openapi-drift`, `frontend-build` from required checks — weakens the flagship gate |
+| `jolarca` | `required_linear_history=false` | `true` | forces linear history on the app repo |
+| `jolarca-docs` | `require_code_owner_reviews=true` | `false` (tfvars) | **removes** code-owner review |
+| `jolarca-identity` | no contexts | `ci,security,lint` | those three are **not producible** by its workflows (it reports `gitleaks (full history)`, `shellcheck`) → every merge deadlocks (L-19, S1) |
+| `jolarca-data`, `jolarca-legal`, `jolarca-security` | no contexts | 2–3 each | adds required checks that do exist — strengthening, but unreviewed |
+| 13 repos | `require_conversation_resolution` unset | `true` | turns the requirement on fleet-wide |
+
+The repo's own doctrine is to encode the **verified live** value and raise it
+deliberately (see D-08, D-20 correction (b)). So: reconcile `repos/*.yml` and
+`terraform.tfvars` to the table above, or record each strengthening as an
+accepted change, before letting `apply.yml` land it.
 
 Plan, then read it line by line:
 
