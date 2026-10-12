@@ -182,6 +182,16 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   `strict`, linear-history or code-owner changes) and `prevent_destroy`. Measured
   2026-10-12: run 38248126765 (merge of #65) failed at `Terraform Plan`, so
   nothing applied; that was luck about the outcome, not a control.
+- **There is no manual approval gate on the production apply.** `apply.yml`
+  names `environment: production`, which reads like a reviewer standing in the
+  way, and its own header claimed "a manual approval gate" until 2026-10-12.
+  Measured: `gh api repos/jolarca-dev/jolarca-control/environments/production`
+  returns `protection_rules: []`, `wait_timer` absent. So a merge to `main`
+  touching `repos/**`, `policy/**`, `*.tf`, `*.tfvars` or `apply.yml` itself
+  plans and then runs `terraform apply -input=false -auto-approve tfplan` with
+  nobody between. Treat every such merge as the apply itself and read the plan
+  before merging — the plan gate (D-56) is the only place it is visible first.
+  PR #41 (D-53) is the change that makes the claim true.
 - **There is no targeted-apply mechanism.** `apply.yml` runs a whole-state
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`

@@ -1,7 +1,22 @@
 name: "Terraform Apply"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Single-stage production apply with a manual approval gate.
+# Single-stage production apply. There is NO manual approval gate here.
+#
+# Corrected 2026-10-12: this header claimed "a manual approval gate", and the
+# job does reference `environment: production` — but
+# `gh api repos/jolarca-dev/jolarca-control/environments/production` returns no
+# protection rules, so GitHub does not pause for a reviewer. A merge to `main`
+# that touches any path in the `on: push` filter below plans and then runs
+# `terraform apply -auto-approve` unattended. Recorded as D-58; PR #41 (D-53)
+# is the change that would make the claim true by adding required reviewers.
+#
+# What actually stands between a merge and a live change to the org: the
+# execution-mode gate, `check_plan_safety.sh` (destroy / replace / visibility
+# only — D-22) and `prevent_destroy`. As of 2026-10-12 the plan step also fails
+# in CI because the workspace token cannot acquire the state lock (D-56), so no
+# apply has been able to land. That is a defect acting as a brake, not a
+# control — do not rely on it and do not "fix" it with `-lock=false`.
 #
 # This deliberately does NOT replicate jol-control's dev → staging → prod
 # promotion. A GitHub-organization control plane has exactly ONE target: the
