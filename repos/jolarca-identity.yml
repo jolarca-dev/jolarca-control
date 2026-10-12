@@ -64,10 +64,18 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # Corrected 2026-10-12: this declared ['ci', 'security', 'lint'], and none
+      # of those three is a context jolarca-identity can report — its workflows
+      # emit 'gitleaks (full history)' and 'shellcheck'. GitHub names a required
+      # check after the job's `name:` (or job key), so applying the old list
+      # would have made every pull request unmergeable forever (readiness
+      # finding L-19, same class as D-22/D-27: a control that can never be
+      # satisfied is not a control). Live measured value on 2026-10-12 is a
+      # protection rule with NO required_status_checks, so this is a deliberate
+      # strengthening to the two real job names, not a no-op reconciliation.
       contexts:
-      - ci
-      - security
-      - lint
+      - gitleaks (full history)
+      - shellcheck
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true

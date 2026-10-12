@@ -52,6 +52,16 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # Encoded from the LIVE rule, not from intent: measured 2026-10-12 via
+      # `gh api repos/jolarca-dev/jolarca/branches/main/protection` (12 contexts)
+      # and cross-checked against the job names that repository's workflows
+      # actually report (`gh api .../commits/main/check-runs`). The list here
+      # previously held nine, so an apply would have REMOVED frontend-unit,
+      # frontend-openapi-drift and frontend-build from required checks on the
+      # flagship application repo — a silent weakening that
+      # scripts/check_plan_safety.sh cannot catch (it refuses destroy / replace /
+      # visibility only, per D-22). Order matches the live array so the plan
+      # shows no spurious diff.
       contexts:
       - gitleaks
       - codeql
@@ -62,6 +72,9 @@ branch_protection:
       - backend
       - trivy
       - dependency-audit
+      - frontend-unit
+      - frontend-openapi-drift
+      - frontend-build
     required_pull_request_reviews:
       # SOLO-ERA DEVIATION — docs/drift-findings.md D-04
       required_approving_review_count: 0

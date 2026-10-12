@@ -8,6 +8,25 @@
 # a no-op for branch protection. Per-repo required status-check contexts live
 # in repos/*.yml because they legitimately differ per repository.
 #
+# ── CORRECTION (2026-10-12): the "should be a no-op" claim above is FALSE. ────
+# Measured with `gh api repos/jolarca-dev/<repo>/branches/main/protection` across
+# the fleet: 13 repositories carry a live protection rule, but only ONE of them
+# (jolarca-hermes-agents) is in Terraform state. The others were created
+# out-of-band and never imported, so `terraform plan` reports them as
+# `github_branch_protection.main["<repo>"] will be created` — a create replaces
+# the live rule with whatever repos/*.yml declares. Two of those replacements
+# were regressions, both invisible to scripts/check_plan_safety.sh because it
+# refuses destroy / replace / visibility only:
+#   - jolarca: live 12 required contexts vs 9 declared (apply drops three)
+#   - jolarca-docs: live require_code_owner_reviews=true while every declaration
+#     says false (apply removes the fleet's only live code-owner gate)
+# The contexts are now reconciled in repos/jolarca.yml and repos/jolarca-
+# identity.yml; the code-owner conflict is recorded as D-54 (live jolarca-docs
+# enforces it, all sixteen declarations say off, and this resource reads the
+# global variable — the per-repo registry key is consumed by nothing).
+# Import the 13 live rules first — see docs/state-migration-runbook.md step 6.
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Supersedes: jolarca-infrastructure/terraform/modules/github-org/
 #             branch-protection.tf
 # ──────────────────────────────────────────────────────────────────────────────

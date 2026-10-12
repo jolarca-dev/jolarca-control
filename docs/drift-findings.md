@@ -19,14 +19,16 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 
 ## S0 — stop-work
 
-### D-02 · Live Terraform state is single-copy with no remote backend — **PARTIALLY FIXED**
-| | |
+### D-02 · Live Terraform state is single-copy with no remote backend — **PARTIALLY FIXED (backend landed 2026-10-10, backup did not)**
+
+|  |  |
 |---|---|
 | Evidence | `main.tf` has `cloud {}` block (HCP Terraform, ADR-0006). Workflows updated with `cli_config_credentials_token`. **Local state frozen:** `terraform.tfstate` (67KB, serial 151, 6 resources) exists on disk but `terraform state list` fails with "HCP Terraform initialization required" — the cloud block prevents local state access until `terraform init -migrate-state` runs. |
 | Impact | State file safe on disk but inaccessible via Terraform CLI. No `terraform plan`, `apply`, or `import` can run until the HCP account is created and state is migrated. |
 | Fix in progress | **Blocked on manual step:** owner must sign up at https://portal.terraform.io/, create org `jolarca-dev`, workspace `jolarca-control`, generate API token, set `TFC_TOKEN` GitHub secret, then run `terraform init -migrate-state`. |
 | Local state contents | 2 `github_repository`, 2 `github_repository_vulnerability_alerts`, 1 `github_branch_protection`, 1 `github_organization_webhook`. |
-| Interim control | AGE-encrypted state backup via `scripts/state_backup.sh` (pubkey at `.state-backup-pubkey.txt`, identity at `~/.config/age/state-backup-key.txt`). Legacy state (jolarca-infrastructure) is empty — D-13 fully resolved. |
+| Status of the rows above (2026-10-12) | The Evidence / Impact / "Fix in progress" / "Local state contents" rows describe the **pre-migration** world and are kept as the original observation, not as current state. Measured today: `terraform init -input=false` succeeds against the cloud backend, `terraform state list` returns **35** resources in org `jolarca-dev` / workspace `jolarca-control` (`ws-w6NSnTXXmYgh78Su`, Terraform 1.16.5), and the 6-resource local file survives only as `terraform.tfstate.backup` (67 KB) beside a 0-byte `terraform.tfstate`. The manual steps in "Fix in progress" are complete. **What is still open is the backup half — see D-55 — and the fact that 13 live branch-protection rules are not in this state (see D-54 / runbook step 6).** |
+| Interim control | **Claimed:** AGE-encrypted state backup via `scripts/state_backup.sh` (pubkey at `.state-backup-pubkey.txt`, identity at `~/.config/age/state-backup-key.txt`). Legacy state (jolarca-infrastructure) is empty — D-13 fully resolved. **Correction (2026-10-12): this control is inert.** The script reads `$REPO_ROOT/terraform.tfstate`, which has been 0 bytes since the state moved to HCP Terraform; running it exits 1 (`ERROR: terraform.tfstate is not valid JSON`), `docs/backup-log.tsv` does not exist, and no encrypted copy exists anywhere on the host. See **D-55** — until that lands, D-02's custody risk is *not* mitigated and nothing in this row should be quoted as a compensating control. |
 
 ### D-13 · Dual-ownership window between the two roots — **FIXED**
 | | |
@@ -829,3 +831,35 @@ registering `.github`) remain open operator decisions. The two findings below ca
 | Blast radius / who executes | The actual remediation is **cross-repo** (`jolarca-compliance`, `jolarca-infrastructure`) and includes an **irreversible history rewrite** + support purge — AGENTS.md §5 reserves those to the operator. This repo's contribution is the accurate register + the enumerated artifact inventory as the runbook seed. No live mutation or cross-repo change is executed from here. |
 | Verified vs assumed | **Verified:** privating breaks Context Parity (CI exit 2 vs local exit 1, same commit); the records are present/public/populated (recursive tree, `TRUNC=false`). **Assumed:** that an age/encrypted destination exists or is provisionable; that the file *bodies* are confidential as-written (paths + sizes confirmed, bodies not read — the classification call is the owner's); that a history rewrite will not break downstream consumers of those repos. |
 | Related | D-31 (the finding this remediates — its option (a) is withdrawn here), D-37 (its "D-31 superseded" claim corrected), D-33 (private repos unprotected — compounds why privating is not a fix), D-23 (exit 2 is never a pass), D-02 (apply blocked, hence out-of-band was the only live channel), D-34/D-35/D-36/D-38/D-39 (recorded out-of-band mutation precedent). |
+
+---
+
+## 2026-10-12 — Branch-protection adoption and the single-copy state
+
+Findings from the HCP Terraform custody check that turned into a CI-execution
+investigation (ADR-0006 §8 records the incident itself). Numbering continues from
+D-52; **D-53 is deliberately skipped** — open PR #41 (`feat/deploy-gate-check`)
+already claims that ID for a deploy-gate finding, and reusing it is the collision
+class this register has been corrected for before.
+
+### D-54 · Live `jolarca-docs` enforces code-owner reviews that the registry and Terraform both declare off — the first apply removes it, and the per-repo key is not consumed anyway — **S1, OPEN, owner decision**
+
+|  |  |
+|---|---|
+| Evidence | `gh api repos/jolarca-dev/jolarca-docs/branches/main/protection` (2026-10-12) returns `require_code_owner_reviews: true` — the only repository of the 13 with a live rule where it is on; every other live rule returns `false`. Against that, all sixteen `repos/*.yml` entries declare `require_code_owner_reviews: false`, and `terraform.tfvars` sets `var.require_code_owner_reviews = false`. `branch-protection.tf` builds the resource with `require_code_owner_reviews = var.require_code_owner_reviews`, i.e. the **global** variable. |
+| Impact | Two defects, one visible and one latent. **(1)** Adopting `jolarca-docs`' live rule and applying turns the fleet's only live code-owner gate off. `scripts/check_plan_safety.sh` cannot catch it — it refuses destroy / replace / visibility only (D-22's scope) — so the change goes through `-auto-approve` unreviewed. **(2)** Latent: the per-repo key in `repos/*.yml` is read by nothing in the Terraform graph, so the registry can state a per-repo posture that the configuration ignores. Today all sixteen say `false`, which is why (2) is harmless *now*; the day one repo needs `true`, the declaration will look enforced and be inert — the D-20/D-22/D-27 class exactly. |
+| Not fixed here | Flipping the declaration to `true` for `jolarca-docs` (or wiring the per-repo value through with `lookup(each.value…, "require_code_owner_reviews", var.require_code_owner_reviews)`) is a **semantic** change with a live effect, and `jolarca-dev` still has no teams — D-20's finding is that the requirement is unsatisfiable without them, so turning it on fleet-wide risks deadlocking merges. §4 assigns that decision to the owner. |
+| Options | **(a)** Keep `jolarca-docs` as it runs: exempt it in `policy/repo-defaults.yml` / `exceptions.active` with a dated rationale, and `lifecycle { ignore_changes = [required_pull_request_reviews] }` on that one rule so Terraform stops proposing the removal; **(b)** accept the removal deliberately — turn it off out-of-band first so live and declared match, and record why; **(c)** wire the per-repo attribute through the resource and set only `jolarca-docs` to `true`, acknowledging the D-20 condition. Whichever is chosen, the registry must stop carrying a key nothing reads. |
+| Verified vs assumed | **Verified:** live `true` on `jolarca-docs` and `false` on the other twelve rules read today; all sixteen registry declarations are `false`; the resource consumes the variable, not the registry value. **Assumed:** that the three repos with no live rule (`jolarca-consent`, `jolarca-dr`, `jolarca-vendor`) are unaffected — they have no rule to change, and the first apply would create one with `false`. |
+| Related | D-20 (code-owner reviews inert without teams; its correction (b) already flagged a declared-vs-live conflict on this attribute), D-08 (out-of-band protection history), D-22 (a gate that cannot see the class), D-33 (Free-plan protection availability), D-55. |
+
+### D-55 · The D-02 off-host state backup does not run against the cloud backend — the authoritative state has exactly one copy — **S0, OPEN**
+
+|  |  |
+|---|---|
+| Evidence | `scripts/state_backup.sh` resolves `STATE_FILE="$REPO_ROOT/terraform.tfstate"`, which is **0 bytes** since the state moved to HCP Terraform. Measured 2026-10-12: `BACKUP_DEST=$(mktemp -d) bash scripts/state_backup.sh` → `ERROR: terraform.tfstate is not valid JSON`, **exit 1**. `docs/backup-log.tsv` does not exist. `find /opt/jolarca/backups -name '*.age' -o -name '*tfstate*'` returns nothing — that tree holds `postgres-*.sql.gz` and `redis-*.rdb` dumps only. HCP workspace `ws-w6NSnTXXmYgh78Su` reports `resource-count: 35`. |
+| Impact | `docs/drift-findings.md` D-02 records "AGE-encrypted state backup via `scripts/state_backup.sh`" as its **interim control**, and ADR-0006 previously claimed HCP outage risk was "mitigated by local state backup". Neither is true. The 35-resource record of who owns every fleet repository exists in one place, on a vendor's side, with no verified copy — and the org is on a plan whose activation this session had to negotiate. A lost workspace is not a restore exercise; it is an ownership question with no answer. |
+| Why the gate is silent | The script has no negative control for the cloud case, so nothing distinguishes "backed up" from "refused". It exits 1 honestly when run — but nothing runs it, and no CI job asserts a fresh entry in the log it never creates. This is the D-22/D-50 class again: a control present in configuration, never exercised. |
+| Required | Make the backup cloud-aware (`terraform state pull` when `.terraform/terraform.tfstate` declares `"type": "cloud"`, instead of reading the local file), write and verify an `age`-encrypted copy to a real `BACKUP_DEST`, create `docs/backup-log.tsv`, and add a fixture that must fail when the state source is empty or absent. Then re-read D-02 and close it only against that evidence. `scripts/**` is high blast radius (§4) and the destination is a custody decision — owner-executed. |
+| Consequence for other work | Until this lands, **no account, organization or workspace deletion is permissible**, and any apply that could replace state should be treated as unrecoverable-by-design. This is the finding that makes the step-0 backup in `docs/state-migration-runbook.md` a prerequisite rather than a formality. |
+| Related | D-02 (partially fixed: remote backend landed, backup did not), D-13 (legacy root drained — the remaining `.backup` files are not a second authority), ADR-0006 §7–§8, D-54. |
