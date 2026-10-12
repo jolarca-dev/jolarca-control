@@ -276,44 +276,71 @@ import {
 }
 ```
 
-Branch protection import IDs are the part most likely to be wrong, because the
-provider keys that resource by the **GraphQL node ID of the protection rule**,
-not by repo name. Fetch the real IDs first:
+Branch protection import IDs are the part most likely to be wrong — and the
+original instruction here ("key it by the GraphQL node ID of the rule, fetch
+with `branchProtectionRules(first: 5)` on Repository") was **wrong on both
+counts** and was corrected by reading the provider source rather than the docs:
+
+- `integrations/github` v6.13.0, `github/resource_github_branch_protection.go`:
+  `Importer: {State: resourceGithubBranchProtectionImport}` calls
+  `parseID2(d.Id())` → `(repoName, pattern)`, then resolves the repository node
+  ID and the rule ID itself via `getBranchProtectionID(repoID, pattern)` before
+  calling Read. **The import ID is `<repo-name>:<pattern>`, e.g.
+  `jolarca:main`.** A raw `BPR_…` node ID has no `:` and fails to parse.
+- The `id` attribute *stored in state* is the `BPR_…` node ID (Read keys on
+  `node(id: $id)`). Import ID ≠ state ID. That distinction is what makes this
+  step look contradictory when compared with `terraform state show`.
+- `Repository.branchProtectionRules` is not a field in the current GraphQL
+  schema; the reachable path is
+  `repository{branch(name:"main"){branchProtectionRule{id}}}`.
+
+Verified inventory for `jolarca-dev` on 2026-10-12 (`gh api
+repos/jolarca-dev/<repo>/branches/main/protection`, read-only):
+
+| Live state | Repos |
+|---|---|
+| Rule exists, already in Terraform state | `jolarca-hermes-agents` |
+| Rule exists, **not** in state → import | `jolarca`, `jolarca-compliance`, `jolarca-control`, `jolarca-data`, `jolarca-docs`, `jolarca-identity`, `jolarca-infrastructure`, `jolarca-legal`, `jolarca-observability`, `jolarca-payments`, `jolarca-runbooks`, `jolarca-security`, `.github` (`health[0]`) |
+| **No rule** (HTTP 404 "Branch not protected") → cannot import, apply will create | `jolarca-consent`, `jolarca-dr`, `jolarca-vendor` |
+| Rule exists with `required_status_checks: null` (no contexts configured) | `jolarca-data`, `jolarca-identity`, `jolarca-legal`, `jolarca-security` |
+
+Import the thirteen existing rules (operator-run: §5 forbids an agent executing
+`import`/`state rm`), then verify the count before planning:
 
 ```bash
-gh api graphql -f query='
-{
-  organization(login: "jolarca-dev") {
-    repositories(first: 20) {
-      nodes {
-        name
-        branchProtectionRules(first: 5) {
-          nodes { id pattern }
-        }
-      }
-    }
-  }
-}'
+cd /opt/jolarca/repos/jolarca-control
+for r in jolarca jolarca-compliance jolarca-control jolarca-data jolarca-docs \
+         jolarca-identity jolarca-infrastructure jolarca-legal \
+         jolarca-observability jolarca-payments jolarca-runbooks jolarca-security; do
+  terraform import -input=false "github_branch_protection.main[\"$r\"]" "$r:main" || echo "FAILED: $r"
+done
+terraform import -input=false 'github_branch_protection.health[0]' '.github:main'
+terraform state list | grep -c branch_protection   # expect 14
 ```
 
-Then add one `import` block per rule using the returned `id`:
+> `terraform import` on a `for_each`/`count` address must be quoted exactly as
+> above (the shell otherwise eats the brackets), and a `for` loop that errors on
+> its first iteration can silently skip the rest — the `|| echo FAILED` and the
+> post-loop count are both mandatory, per D-13's state-rm lesson.
 
-```hcl
-import {
-  to = github_branch_protection.main["jolarca"]
-  id = "<node ID from the query above>"
-}
-# ... one per protected repo, plus:
-import {
-  to = github_branch_protection.health[0]
-  id = "<node ID for .github>"
-}
-```
+**Do not apply on the strength of a green import.** With the thirteen rules
+adopted, `terraform plan` still proposes in-place changes that the plan-safety
+gate does not refuse (it catches destroy/replace/visibility only). Measured
+declared-vs-live deltas on 2026-10-12 that a human must decide per repo first:
 
-> Confirm the exact `id` format against the `integrations/github` **6.13.0**
-> docs before applying. A wrong ID makes `terraform plan` fail loudly and
-> harmlessly — that is the intended safety behaviour, so treat a plan failure
-> here as information, not as something to force past.
+| Repo | Live | Declared | Effect of applying as declared |
+|---|---|---|---|
+| `jolarca` | 12 contexts | 9 | **removes** `frontend-unit`, `frontend-openapi-drift`, `frontend-build` from required checks — weakens the flagship gate |
+| `jolarca` | `required_linear_history=false` | `true` | forces linear history on the app repo |
+| `jolarca-docs` | `require_code_owner_reviews=true` | `false` (tfvars) | **removes** code-owner review |
+| `jolarca-identity` | no contexts | `ci,security,lint` | those three are **not producible** by its workflows (it reports `gitleaks (full history)`, `shellcheck`) → every merge deadlocks (L-19, S1) |
+| `jolarca-data`, `jolarca-legal`, `jolarca-security` | no contexts | 2–3 each | adds required checks that do exist — strengthening, but unreviewed |
+| 13 repos | `require_conversation_resolution` unset | `true` | turns the requirement on fleet-wide |
+
+The repo's own doctrine is to encode the **verified live** value and raise it
+deliberately (see D-08, D-20 correction (b)). So: reconcile `repos/*.yml` and
+`terraform.tfvars` to the table above, or record each strengthening as an
+accepted change, before letting `apply.yml` land it.
 
 Plan, then read it line by line:
 
@@ -323,42 +350,59 @@ terraform init -input=false
 terraform plan -input=false -no-color -out=tfplan | tee plan.txt
 ```
 
-**Acceptance criteria for this plan — all must hold:**
+**Acceptance criteria for this plan — all must hold.** Rewritten 2026-10-12: the
+previous version of this list still described the pre-migration world ("six
+repositories", "the only in-place updates are the D-01 visibility changes (four
+repos `public → private`)"), and D-01 has since been resolved the other way —
+GitHub moved the fleet public and every `repos/*.yml` now declares
+`visibility: public`. Applying against the old list would have read a plan
+containing real regressions as "as expected".
 
-- [ ] `0 to add` other than the `import` moves themselves
-- [ ] `0 to destroy`
-- [ ] no `must be replaced`
-- [ ] the **only** in-place updates are the D-01 visibility changes (four
-      repos `public → private`) and any `security_and_analysis` additions
-- [ ] every one of the six repositories appears exactly once
+- [ ] `0 to add` other than the three protection rules that genuinely do not
+      exist live yet (`jolarca-consent`, `jolarca-dr`, `jolarca-vendor`)
+- [ ] `0 to destroy`, no `must be replaced`
+- [ ] **no `~ contexts` line on any repository** — a context list changing means
+      `repos/<repo>.yml` disagrees with the live rule. The measured conflicts on
+      2026-10-12 are `jolarca` (live 12 → declared 9) and `jolarca-identity`
+      (declares `ci,security,lint`, which its workflows cannot report).
+      `check_plan_safety.sh` does not catch this class.
+- [ ] no `~ require_code_owner_reviews` where live is `true` — `jolarca-docs` is
+      live `true` and the fleet default in `terraform.tfvars` is `false`, so an
+      unreviewed apply removes the only live code-owner gate in the fleet
+- [ ] every one of the **sixteen** allow-list repositories appears exactly once,
+      plus `.github` as `github_branch_protection.health[0]`
+- [ ] `require_conversation_resolution` changing `unset → true` on the other 13
+      repos is either accepted in writing here or deferred per repo — it is a
+      behaviour change on live repositories, not a no-op
 
 If `destroy` or `replace` appears anywhere: **stop**, restore from the step-0
 backup, and diagnose. `prevent_destroy` should already have aborted the plan.
 
 ---
 
-## Step 7 — Decide D-01 before applying
+## Step 7 — Decide the visibility question before applying — **SUPERSEDED**
 
-The plan from step 6 will contain the visibility change. Choose, in writing,
-in the change record:
+This step asked the owner to choose between making four repos private and
+keeping them public. The choice was taken out of the control plane's hands:
+GitHub migrated the fleet public, `policy/compliance-gates.yml` records D-01 as
+`RESOLVED — forced migration`, and all sixteen `repos/*.yml` entries now declare
+`visibility: public`. Do not re-open it here.
 
-- **(a) Make them private** — correct per the intent of record and per
-  PCI-DSS Req 1.2 / GDPR Art. 32. First check what breaks: public forks,
-  GitHub Pages, external contributor PRs, any CI in another org that clones
-  over HTTPS anonymously.
-- **(b) Keep them public** — edit the four `repos/*.yml` files to
-  `visibility: public`, and add a signed risk acceptance to
-  `docs/drift-findings.md` D-01 with compensating controls and a review date.
-  Note that `scripts/validate_repos.py` will then fail the
-  classification↔visibility coherence rule on all four (each is
-  `confidential`, and `docs/data-classification.md` forbids `confidential` in a
-  public repo). Reclassifying them is part of choosing (b), and
-  reclassification is itself a decision that needs recording.
+What survives this step unchanged is its **doctrine**, and it is the reason step 6
+carries the acceptance list above: *split the adoption from the contested change.*
+Apply the imports with no other diff, then land each behavioural change as its own
+reviewed PR. The live contested item is now **D-31 / D-52** — regulated records
+(RoPA, KYC, DPAs, network topology) sitting in public git — and its remediation is
+moving those records out, **not** flipping visibility: privating a governed repo
+makes this control plane's `Context Parity` required context exit 2, which is why
+D-31's original "flip private" option was withdrawn on 2026-10-06.
 
-Either way, split it: **apply the adoption first with visibility unchanged**,
-then land the visibility decision as its own reviewed PR. Two small auditable
-changes beat one big one. To adopt without touching visibility, temporarily
-set the four YAML entries to their live value (`public`), apply, then flip.
+So the split still applies, just not to visibility: **apply the adoption first
+with nothing else changing**, then land each behavioural change (contexts,
+`strict`, linear history, code-owner reviews, conversation resolution) as its own
+reviewed PR. Two small auditable changes beat one big one. The old instruction to
+"temporarily set the four YAML entries to their live value (`public`)" is obsolete
+— they already declare `public`.
 
 ---
 
