@@ -69,16 +69,37 @@ jobs:
       - name: Terraform fmt -check
         run: terraform fmt -check -recursive
 
+      # ── Backend MUST be initialised ───────────────────────────────────────
+      # This step used to run `terraform init -backend=false`. With the `cloud {}`
+      # block in main.tf that leaves the backend uninitialised, so the gated plan
+      # step below could never succeed — and it never did. Measured on run
+      # 38062308506 (2026-10-10T15:07Z, fix/close-d33-branch-protection): step 9
+      # was `skipped` and step 10 `Record skipped plan` succeeded, i.e. every
+      # historical green "Validate & Plan" predates STATE_MIGRATION_COMPLETE=true
+      # and reports assurance it did not earn. The first PR to run the step for
+      # real (#67, 2026-10-12) failed in 11 seconds. Same class as D-22 and D-50.
+      # The cloud-backend token comes from cli_config_credentials_token above.
       - name: Terraform Init
-        run: terraform init -input=false -backend=false
+        run: terraform init -input=false
 
       - name: Terraform Validate
         run: terraform validate
 
       # ── Live plan is GATED ─────────────────────────────────────────────────
+      # `shell: bash {0}` is deliberate: the default runner shell is `bash -e`,
+      # which aborts on `-detailed-exitcode`'s exit 2 ("succeeded, there is a
+      # diff") before the exit code can be recorded. That would turn every
+      # legitimate .tf change into a red gate — denial-of-pipeline, the L-19
+      # lesson — and would hide the plan text the PR comment exists to show.
+      # Genuine errors still fail, via "Fail on plan error" at the end.
+      # GITHUB_TOKEN is deliberately NOT used here: the default workflow token is
+      # scoped to jolarca-control alone, and a plan that refreshes the other 15
+      # repositories' branch protection and settings would fail on it. The plan
+      # needs the same read-capable credential apply.yml uses (D-56).
       - name: Terraform Plan (gated on STATE_MIGRATION_COMPLETE)
         id: plan
         if: vars.STATE_MIGRATION_COMPLETE == 'true'
+        shell: bash {0}
         run: |
           set -o pipefail
           terraform plan \
@@ -88,7 +109,7 @@ jobs:
             2>&1 | tee plan-output.txt
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
 
       - name: Record skipped plan
         if: vars.STATE_MIGRATION_COMPLETE != 'true'
