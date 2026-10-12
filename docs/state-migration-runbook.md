@@ -370,6 +370,44 @@ reviewers to the `production` environment first (D-58 — it currently has
 against single-copy state (D-55) the lock is the only thing preventing two
 concurrent writers.
 
+### Considered and rejected: moving the backend to local for the first deploy
+
+Proposed 2026-10-12: drop the `cloud {}` block, apply from the laptop, pay for
+HCP later, then restore `Validate & Plan`. It does not solve the problem it is
+aimed at, and it opens two worse ones. Measured reasoning, kept here so nobody
+re-litigates it:
+
+1. **The blocker is a credential, not the backend, and it costs nothing.** The
+   same plan that fails in Actions succeeds with the operator's own user token
+   (exit 2, 623 lines). Putting a token from that identity into `TFC_TOKEN` makes
+   `Validate & Plan` green for $0; the Free tier's 500-resource ceiling is
+   irrelevant at 48. Paying is not a prerequisite for the gate.
+2. **A local backend turns a read failure into a write hazard.** `terraform.tfstate`
+   is gitignored, so CI would check out an *empty* state and plan to **create**
+   all sixteen repositories, their branch protection and the
+   `github_repository_file` SECURITY.md/CODEOWNERS contents. `apply.yml`'s only
+   hard gate is `Assert state migration complete`, which reads
+   `vars.STATE_MIGRATION_COMPLETE` and would still pass; `check_plan_safety.sh`
+   refuses destroy / replace / visibility and demonstrably let `3 to add` through.
+   This is the exact failure already lived once: applying from a root without
+   state returned 422 "name already exists" and then needed `state rm` loops to
+   unwind.
+3. **State would have one copy on one disk, with the backup gate proven inert**
+   (D-55: `scripts/state_backup.sh` exits 1 against the 0-byte file, no
+   `docs/backup-log.tsv`). Migrating back later needs interactive
+   `terraform init -migrate-state`, reopening a dual-ownership window (D-13).
+
+What was done instead, immediately: a read-only `terraform state pull` (serial 14,
+7 resource blocks) snapshotted to
+`/opt/jolarca/backups/terraform/jolarca-control-hcp-serial14-2026-10-12.json.gz`
+— gzip, **not** age-encrypted, so treat it as insurance against accidental loss,
+not as the D-55 control. Current size of the authoritative state, measured the same
+time: `terraform state list | wc -l` = **48** instance addresses and HCP
+`resource-count: 48` (35 before the thirteen imports) — so the "35 resources"
+figure dated 2026-10-12 in ADR-0006 §7 is a superseded observation, not a target.
+The correct sequence is: gate the environment (D-58) → fix the token's identity
+(D-56) → decide D-54 and D-57 → apply once, with a human reading the plan.
+
 Plan, then read it line by line:
 
 ```bash
