@@ -138,21 +138,50 @@ Recorded so no agent assumes protection that does not exist. Verify live before
 relying on any of these; details and expiries in `policy/compliance-gates.yml`.
 
 - **Branch protection IS active on this repo's `main`** (verified 2026-10-06,
-  legacy endpoint HTTP 200): `strict = true`, `enforce_admins = true`, three
-  required contexts (`Validate Repo Allow-List`, `Policy Compliance Check`,
-  `Repository Secret Pattern Scan`), `required_approving_review_count = 0`. It is
-  legacy branch protection created out-of-band, not a ruleset (this repo has none),
-  and Terraform does not yet manage it (no apply — D-02). The old D-33 Free-plan
+  legacy endpoint HTTP 200; re-proven 2026-10-12 when a direct `git push origin
+  main` was refused with `GH006: Protected branch update failed` — "Changes must
+  be made through a pull request" and "4 of 4 required status checks are
+  expected"): `strict = true`, `enforce_admins = true`, **four** required
+  contexts (`Validate Repo Allow-List`, `Policy Compliance Check`,
+  `Repository Secret Pattern Scan`, `SAST (semgrep)` — the fourth was added by
+  A-08 on 2026-10-08; this file said three until 2026-10-12),
+  `required_approving_review_count = 0`. It is
+  legacy branch protection created out-of-band, not a ruleset (this repo has none).
+  Terraform holds the state now (D-02 backend migrated) but **does not own these
+  rules**: 13 fleet protection rules are live and only `jolarca-hermes-agents` is
+  in state, so an apply creates the rest (see
+  `docs/state-migration-runbook.md` step 6). The old D-33 Free-plan
   "cannot protect" rationale no longer applies here because this repo is public
   (corrects D-42).
 - **`required_approving_review_count = 0`** — the sole operator can merge their
   own change (D-04, dated acceptance).
 - **Tag protection is unenforceable** — release tags can be moved or deleted (D-07).
-- **Open blocking findings** D-01, D-02, D-20, D-33 block the first
-  `terraform apply`. D-18 is resolved (org 2FA enforced 2026-10-01, removed from
-  `exceptions.open_blocking`); D-20's cross-org CODEOWNERS breach is resolved but
-  `require_code_owner_reviews` stays inert until `jolarca-dev` teams exist; D-33 is
-  moot for public repos. Remaining items are listed in `exceptions.open_blocking`.
+- **Open blocking findings.** The list in `exceptions.open_blocking` is stale in
+  both directions and must be re-read before use. Measured 2026-10-12: D-01 is
+  RESOLVED (GitHub moved the fleet public; every `repos/*.yml` now declares
+  `visibility: public`), D-20's cross-org CODEOWNERS breach is FIXED though
+  `require_code_owner_reviews` stays inert until `jolarca-dev` teams exist, and
+  D-33 is closed (13 fleet repos now return a protection rule; `jolarca-consent`,
+  `jolarca-dr` and `jolarca-vendor` return HTTP 404 "Branch not protected", so
+  the first apply **creates** rules there). What genuinely still blocks an
+  unreviewed apply is D-02's second half — the off-host state backup is inert
+  (see the next bullet) — plus the unreconciled branch-protection declarations
+  recorded in `docs/state-migration-runbook.md` step 6.
+- **The state backup gate does not work.** `scripts/state_backup.sh` is keyed to
+  `$REPO_ROOT/terraform.tfstate`, which is 0 bytes now that state lives in HCP
+  Terraform; running it exits 1 ("terraform.tfstate is not valid JSON"), no
+  `docs/backup-log.tsv` exists, and `/opt/jolarca/backups/` holds only
+  PostgreSQL/Redis dumps. The authoritative 35-resource state has exactly one
+  copy. Do not delete an account, org or workspace, and do not treat D-02 as
+  closed: only the remote-backend half landed.
+- **A merge to `main` that touches `apply.yml`'s own paths triggers a real
+  apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
+  `*.tfvars` and itself, then runs `terraform apply -input=false -auto-approve
+  tfplan`. The only brakes are the execution-mode gate, `check_plan_safety.sh`
+  (destroy / replace / visibility — it does **not** catch required-context,
+  `strict`, linear-history or code-owner changes) and `prevent_destroy`. Measured
+  2026-10-12: run 38248126765 (merge of #65) failed at `Terraform Plan`, so
+  nothing applied; that was luck about the outcome, not a control.
 - **There is no targeted-apply mechanism.** `apply.yml` runs a whole-state
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`

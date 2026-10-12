@@ -350,42 +350,59 @@ terraform init -input=false
 terraform plan -input=false -no-color -out=tfplan | tee plan.txt
 ```
 
-**Acceptance criteria for this plan — all must hold:**
+**Acceptance criteria for this plan — all must hold.** Rewritten 2026-10-12: the
+previous version of this list still described the pre-migration world ("six
+repositories", "the only in-place updates are the D-01 visibility changes (four
+repos `public → private`)"), and D-01 has since been resolved the other way —
+GitHub moved the fleet public and every `repos/*.yml` now declares
+`visibility: public`. Applying against the old list would have read a plan
+containing real regressions as "as expected".
 
-- [ ] `0 to add` other than the `import` moves themselves
-- [ ] `0 to destroy`
-- [ ] no `must be replaced`
-- [ ] the **only** in-place updates are the D-01 visibility changes (four
-      repos `public → private`) and any `security_and_analysis` additions
-- [ ] every one of the six repositories appears exactly once
+- [ ] `0 to add` other than the three protection rules that genuinely do not
+      exist live yet (`jolarca-consent`, `jolarca-dr`, `jolarca-vendor`)
+- [ ] `0 to destroy`, no `must be replaced`
+- [ ] **no `~ contexts` line on any repository** — a context list changing means
+      `repos/<repo>.yml` disagrees with the live rule. The measured conflicts on
+      2026-10-12 are `jolarca` (live 12 → declared 9) and `jolarca-identity`
+      (declares `ci,security,lint`, which its workflows cannot report).
+      `check_plan_safety.sh` does not catch this class.
+- [ ] no `~ require_code_owner_reviews` where live is `true` — `jolarca-docs` is
+      live `true` and the fleet default in `terraform.tfvars` is `false`, so an
+      unreviewed apply removes the only live code-owner gate in the fleet
+- [ ] every one of the **sixteen** allow-list repositories appears exactly once,
+      plus `.github` as `github_branch_protection.health[0]`
+- [ ] `require_conversation_resolution` changing `unset → true` on the other 13
+      repos is either accepted in writing here or deferred per repo — it is a
+      behaviour change on live repositories, not a no-op
 
 If `destroy` or `replace` appears anywhere: **stop**, restore from the step-0
 backup, and diagnose. `prevent_destroy` should already have aborted the plan.
 
 ---
 
-## Step 7 — Decide D-01 before applying
+## Step 7 — Decide the visibility question before applying — **SUPERSEDED**
 
-The plan from step 6 will contain the visibility change. Choose, in writing,
-in the change record:
+This step asked the owner to choose between making four repos private and
+keeping them public. The choice was taken out of the control plane's hands:
+GitHub migrated the fleet public, `policy/compliance-gates.yml` records D-01 as
+`RESOLVED — forced migration`, and all sixteen `repos/*.yml` entries now declare
+`visibility: public`. Do not re-open it here.
 
-- **(a) Make them private** — correct per the intent of record and per
-  PCI-DSS Req 1.2 / GDPR Art. 32. First check what breaks: public forks,
-  GitHub Pages, external contributor PRs, any CI in another org that clones
-  over HTTPS anonymously.
-- **(b) Keep them public** — edit the four `repos/*.yml` files to
-  `visibility: public`, and add a signed risk acceptance to
-  `docs/drift-findings.md` D-01 with compensating controls and a review date.
-  Note that `scripts/validate_repos.py` will then fail the
-  classification↔visibility coherence rule on all four (each is
-  `confidential`, and `docs/data-classification.md` forbids `confidential` in a
-  public repo). Reclassifying them is part of choosing (b), and
-  reclassification is itself a decision that needs recording.
+What survives this step unchanged is its **doctrine**, and it is the reason step 6
+carries the acceptance list above: *split the adoption from the contested change.*
+Apply the imports with no other diff, then land each behavioural change as its own
+reviewed PR. The live contested item is now **D-31 / D-52** — regulated records
+(RoPA, KYC, DPAs, network topology) sitting in public git — and its remediation is
+moving those records out, **not** flipping visibility: privating a governed repo
+makes this control plane's `Context Parity` required context exit 2, which is why
+D-31's original "flip private" option was withdrawn on 2026-10-06.
 
-Either way, split it: **apply the adoption first with visibility unchanged**,
-then land the visibility decision as its own reviewed PR. Two small auditable
-changes beat one big one. To adopt without touching visibility, temporarily
-set the four YAML entries to their live value (`public`), apply, then flip.
+So the split still applies, just not to visibility: **apply the adoption first
+with nothing else changing**, then land each behavioural change (contexts,
+`strict`, linear history, code-owner reviews, conversation resolution) as its own
+reviewed PR. Two small auditable changes beat one big one. The old instruction to
+"temporarily set the four YAML entries to their live value (`public`)" is obsolete
+— they already declare `public`.
 
 ---
 
