@@ -210,7 +210,7 @@ gates:
       # show` emits `visibility = `, so the gate never fired and nothing exercised
       # it. Extraction is what made it testable — record the script, not the caller.
       tool: "scripts/check_plan_safety.sh"
-      tested_by: "tests/test_check_plan_safety.sh — 16 fixtures (4 refusal classes added 2026-10-15 for D-61/D-26, plus two non-vacuity controls proving a no-op refresh and a security-feature ENABLEMENT are still allowed), run by `make test` and compliance-scan.yml"
+      tested_by: "tests/test_check_plan_safety.sh — 19 fixtures, run by `make test` and compliance-scan.yml; every refusal class has a negative control transcribed from real `terraform show` output, and two allowed-direction controls (no-op refresh, security-feature ENABLING) prove the gate is not a blanket block"
       invoked_by:
         - ".github/workflows/plan.yml — step 'Plan safety check'"
         - ".github/workflows/apply.yml — step 'Refuse destructive or visibility-changing plans' (pre-apply)"
@@ -225,9 +225,10 @@ gates:
         - "visibility = \"x\" -> \"y\" (defence in depth: transition without a change marker)"
         # Added 2026-10-15 after D-61 proved the four rules above passed a real
         # refreshed plan (`3 to add, 25 to change`) as safe to auto-apply.
-        - "# github_branch_protection.<...> will be created (live rules were created out-of-band and are not in state; a create overwrites them)"
-        - "~ require_signed_commits | require_code_owner_reviews | requires_approving_reviews | required_status_checks | required_pull_request_reviews | dismiss_stale_reviews | require_last_push_approval | required_linear_history | require_conversation_resolution | block_force_pushes | block_deletions | enforce_admins | strict  (any change, either direction — tightening can deadlock a merge as badly as weakening exposes the fleet)"
+        - "# github_branch_protection.<...> will be created (Terraform has never adopted this rule; on 2026-10-15 the three creates were jolarca-consent/-dr/-vendor, where live returns HTTP 404 'Branch not protected', so these ADD protection — a human confirms that is intended rather than an auto-approve landing it)"
+        - "~ / - on any protection attribute: require_signed_commits | require_code_owner_reviews | requires_approving_reviews | required_status_checks | required_pull_request_reviews | dismiss_stale_reviews | dismissal_restrictions | require_last_push_approval | required_linear_history | require_conversation_resolution | block_force_pushes | block_deletions | allows_force_pushes | allows_deletions | enforce_admins | strict | lock_branch | restrict_pushes | push_allowances | blocks_creations — either marker, because Terraform renders a REMOVED nested block with `-`: 11 of the 25 changes in the live plan were '- restrict_pushes { … }', deleting the push restriction (D-26 class)"
         - "~ secret_scanning | secret_scanning_push_protection | dependabot_security_updates | vulnerability_alerts -> false|\"disabled\"  (disable direction only; enabling is deliberately allowed)"
+        - "~ status = \"enabled\" -> \"disabled\" on a nested block under security_and_analysis — this is how Terraform actually renders the transition, so matching on the feature name alone is inert (measured 2026-10-15)"
       operator_path: >-
         A refusal is not an override. The human reading it chooses one of: import
         the live objects into state (runbook step 6), narrow the declaration, or

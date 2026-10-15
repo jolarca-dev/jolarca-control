@@ -306,8 +306,55 @@ repos/jolarca-dev/<repo>/branches/main/protection`, read-only):
 | **No rule** (HTTP 404 "Branch not protected") → cannot import, apply will create | `jolarca-consent`, `jolarca-dr`, `jolarca-vendor` |
 | Rule exists with `required_status_checks: null` (no contexts configured) | `jolarca-data`, `jolarca-identity`, `jolarca-legal`, `jolarca-security` |
 
+### Step 6 status, re-measured 2026-10-15 — the imports are DONE, the reconciliation is not
+
+The table above is a dated record of 2026-10-12 and is kept as written. It is no
+longer the live picture, and reading it as one would send an operator to import
+objects that are already adopted:
+
+```bash
+terraform state list | grep -c branch_protection     # → 14  (was 1 on 2026-10-12)
+terraform state list | wc -l                         # → 48 addresses; workspace resource-count: 48
+```
+
+`github_branch_protection.health[0]` plus `main["…"]` for 13 repos are in state.
+The three absentees — `jolarca-consent`, `jolarca-dr`, `jolarca-vendor` — have **no
+live rule** either (`gh api repos/jolarca-dev/<r>/branches/main/protection` →
+HTTP 404 `"Branch not protected"`, measured 2026-10-15), so there is nothing to
+import for them and the plan's `3 to add` is a genuine *addition* of protection,
+not an overwrite. That corrects the reasoning recorded in D-61's first draft.
+
+What is left in step 6 is therefore **attribute reconciliation**, not adoption. A
+refreshed plan on 2026-10-15 renders `3 to add, 25 to change, 0 to destroy`, and
+`scripts/check_plan_safety.sh` now refuses it (exit 1). Per-resource,
+read from `terraform show` of that plan:
+
+| Class | Change | Resources | Effect if applied as declared |
+|---|---|---|---|
+| **WEAKEN** | `- restrict_pushes { blocks_creations, push_allowances }` | 11 protection rules | deletes the "only these actors may push" restriction; the rule becomes pushable by anyone the branch scope allows |
+| **WEAKEN** | `~ required_status_checks { contexts = [ - "frontend-build", - "frontend-openapi-drift", - "frontend-unit" ] }` | `jolarca` | flagship loses three required checks (live 12 → declared 9) |
+| **WEAKEN** | `~ require_code_owner_reviews` / `~ require_signed_commits` / `~ required_pull_request_reviews` | `jolarca-docs` | removes the fleet's only live code-owner review gate (inert per D-20, but the declaration still moves) |
+| TIGHTEN | `~ require_conversation_resolution = false -> true`, `~ required_linear_history = false -> true` | `.github` (`health[0]`), `jolarca`, `jolarca-payments` | turns two requirements on |
+| TIGHTEN | `~ status = "disabled" -> "enabled"` inside `security_and_analysis { secret_scanning / secret_scanning_push_protection }` | `jolarca-docs`, `-observability`, `-runbooks`, `-security`, `-vendor` | enables secret scanning and push protection where live reports disabled |
+| TIGHTEN | `~ allow_merge_commit`, `~ allow_rebase_merge` → false, `~ delete_branch_on_merge`, `~ has_projects` → false | same five plus `-identity` | enforces the squash-only baseline from `policy/repo-defaults.yml` |
+| NEUTRAL | `~ description`, `~ topics`, `~ has_issues` | `jolarca-control`, `jolarca`, `jolarca-data`, `jolarca-dr`, `jolarca-payments`, `jolarca-identity` | metadata and issue-tracker flags |
+| UNRESOLVED | `~ branch_protection`, `~ compliance_summary`, `~ protected_repos` | `jolarca-vendor` only | three attribute names that are not `github_repository` arguments; **verify with `terraform state show 'github_repository.repo["jolarca-vendor"]'` before applying anything to that repo** — they most likely come from a provider upgrade, and guessing here is how a fleet-wide apply starts |
+
+The operator's path, in order, is the same one step 7's doctrine states: **land the
+adoption alone first.** Narrow `repos/*.yml` / `terraform.tfvars` to the live
+values for the three WEAKEN rows (or record each as an accepted change here), so a
+refreshed plan reads `0 to change` for everything except the deliberate
+tightenings; then apply; then land each behavioural change as its own reviewed PR.
+The refusal gate stays in front of all of it, so "forgot to reconcile" now fails
+CI rather than shipping.
+
+
 Import the thirteen existing rules (operator-run: §5 forbids an agent executing
-`import`/`state rm`), then verify the count before planning:
+`import`/`state rm`), then verify the count before planning. **Retained for the
+record and for any future re-adoption — as measured above it is already done**
+(`terraform state list | grep -c branch_protection` → 14 on 2026-10-15; re-running
+`terraform import` on an address already in state is a no-op at best and re-reads
+live rules over adopted state at worst).
 
 ```bash
 cd /opt/jolarca/repos/jolarca-control
@@ -326,8 +373,12 @@ terraform state list | grep -c branch_protection   # expect 14
 > post-loop count are both mandatory, per D-13's state-rm lesson.
 
 **Do not apply on the strength of a green import.** With the thirteen rules
-adopted, `terraform plan` still proposes in-place changes that the plan-safety
-gate does not refuse (it catches destroy/replace/visibility only). Measured
+adopted, `terraform plan` still proposes in-place changes ~~that the plan-safety
+gate does not refuse (it catches destroy/replace/visibility only)~~ — **corrected
+2026-10-15: the gate now refuses those classes too** (D-61 added protection
+creates, every protection attribute in either direction including
+`restrict_pushes` removal, and security-feature disables), so an unreconciled plan
+fails before `apply` rather than landing silently. Measured
 declared-vs-live deltas on 2026-10-12 that a human must decide per repo first:
 
 | Repo | Live | Declared | Effect of applying as declared |
@@ -367,7 +418,10 @@ containing real regressions as "as expected".
       `repos/<repo>.yml` disagrees with the live rule. The measured conflicts on
       2026-10-12 are `jolarca` (live 12 → declared 9) and `jolarca-identity`
       (declares `ci,security,lint`, which its workflows cannot report).
-      `check_plan_safety.sh` does not catch this class.
+      ~~`check_plan_safety.sh` does not catch this class.~~ **Corrected
+      2026-10-15: it does now** — `required_status_checks`, `restrict_pushes` and
+      every other protection attribute are refused classes under D-61, so an
+      unreconciled plan fails `Plan safety check` instead of reaching `apply`.
 - [ ] no `~ require_code_owner_reviews` where live is `true` — `jolarca-docs` is
       live `true` and the fleet default in `terraform.tfvars` is `false`, so an
       unreviewed apply removes the only live code-owner gate in the fleet
