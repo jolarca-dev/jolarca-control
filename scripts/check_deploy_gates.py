@@ -5,18 +5,23 @@ GitHub creates a deployment environment *empty* the first time a workflow refere
 block is therefore a claim, not a control: what matters is whether that environment has a protection rule,
 and whether administrators can bypass it. Measured 2026-10-05 across the organisation, all five existing
 environments report `can_admins_bypass: true` and four of five have `protection_rules: []`. In this
-repository `.github/workflows/apply.yml` opens with "Single-stage production apply with a manual approval
-gate" and points at `production`, which has no rules at all -- so the only thing between a merge touching
-`repos/**` and `terraform apply -auto-approve` against the whole org is one unset repository variable.
-D-22 again: a control that no pipeline verifies is folklore.
+repository `.github/workflows/apply.yml` pointed at `production`, which then had no rules at all -- the
+header's "manual approval gate" claim was therefore about a gate that did not exist (D-58). State as of
+2026-10-16: `production` has `wait_timer=30` and `can_admins_bypass=false` (D-70), and `STATE_MIGRATION_COMPLETE`
+measures 'true', so the unset-variable stop no longer exists either. This check still flags that
+configuration, deliberately: a wait is not an approval, so an all-clear here would be a lie about the
+control. D-22 again: a control that no pipeline verifies is folklore.
 
 Exit codes follow the fleet's three-valued contract: 0 clean, 1 findings, 2 could-not-verify. 2 is never
 a pass (D-23) -- a missing token or an unreadable environment is reported as unverified, never as green.
 
 Known limit, stated rather than hidden: the clean-path `required_reviewers` object shape in the tests is
 inferred from the documented Create-or-update-an-environment body, because no environment in this
-organisation currently has reviewers, so the green path has never been observed here. The red path is
-observed, and verdicts use only fields the live API returns (`protection_rules`, `can_admins_bypass`).
+organisation has reviewers, so the fully-green path has never been observed here. What IS observed now
+(2026-10-16, after D-70) is the intermediate state: `wait_timer` present, `can_admins_bypass` false, no
+reviewers -- live output reads `rules are ['wait_timer'], with no required_reviewers, so no human approves
+the deploy` and exits 1, which is the intended verdict, not a false alarm. Verdicts use only fields the
+live API returns (`protection_rules`, `can_admins_bypass`).
 
 Scope defaults to this repository. `DEPLOY_GATE_REPOS="owner/repo …"` widens it by reading other repos'
 workflows over the API, as context-parity does. Widening is deliberately not wired into CI yet: three of
