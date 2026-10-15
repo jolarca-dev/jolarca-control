@@ -62,6 +62,18 @@ branch_protection:
       - backend
       - trivy
       - dependency-audit
+      - frontend-unit
+      - frontend-openapi-drift
+      - frontend-build
+      # Added 2026-10-15 (step-6 reconciliation). These three are required on the
+      # LIVE rule and are still produced by jolarca's workflows — verified from
+      # `gh api repos/jolarca-dev/jolarca/commits/main/check-runs`, which listed
+      # frontend-build, frontend-unit and frontend-openapi-drift among the 17
+      # recent check names. Without them the declaration was stale by three
+      # contexts, so `terraform apply` would have silently dropped three required
+      # checks from the flagship repository (packet row WEAKEN-2 in
+      # docs/state-migration-runbook.md). Declaring the live value is the repo's
+      # own doctrine (D-08): encode verified reality, change it deliberately.
     required_pull_request_reviews:
       # SOLO-ERA DEVIATION — docs/drift-findings.md D-04
       required_approving_review_count: 0

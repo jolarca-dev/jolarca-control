@@ -321,24 +321,38 @@ terraform state list | wc -l                         # → 48 addresses; workspa
 The three absentees — `jolarca-consent`, `jolarca-dr`, `jolarca-vendor` — have **no
 live rule** either (`gh api repos/jolarca-dev/<r>/branches/main/protection` →
 HTTP 404 `"Branch not protected"`, measured 2026-10-15), so there is nothing to
-import for them and the plan's `3 to add` is a genuine *addition* of protection,
-not an overwrite. That corrects the reasoning recorded in D-61's first draft.
+import for them and the plan's `3 to add` is not an overwrite of a legacy rule
+either — all three carry an **active, undeclared `protect-main` ruleset**
+(`gh api repos/jolarca-dev/jolarca-vendor/rulesets` → `protect-main`,
+`enforcement: active`, `current_user_can_bypass: never`, measured 2026-10-15).
+So the create would lay a **second, differently-configured enforcement mechanism**
+beside the ruleset that is actually in force (D-46), not "add protection". An
+earlier draft of this section and of D-61 said the creates merely add protection;
+that was wrong and is corrected here. The open decision is D-46's: adopt the
+rulesets as `github_repository_ruleset`, or delete them and let the legacy rule
+stand — not a blind create.
 
-What is left in step 6 is therefore **attribute reconciliation**, not adoption. A
-refreshed plan on 2026-10-15 renders `3 to add, 25 to change, 0 to destroy`, and
-`scripts/check_plan_safety.sh` now refuses it (exit 1). Per-resource,
-read from `terraform show` of that plan:
+A refreshed plan on 2026-10-15 rendered `3 to add, 25 to change, 0 to destroy`, and
+`scripts/check_plan_safety.sh` refused it only after D-61's fix. Per-resource,
+read from `terraform show`. **Two rows below are marked FIXED: the declaration was
+repaired on 2026-10-15, which took the plan from 25 changes to 20** — and the
+largest weakening in it disappeared entirely:
 
-| Class | Change | Resources | Effect if applied as declared |
+| Class | Change | Resources | Status |
 |---|---|---|---|
-| **WEAKEN** | `- restrict_pushes { blocks_creations, push_allowances }` | 11 protection rules | deletes the "only these actors may push" restriction; the rule becomes pushable by anyone the branch scope allows |
-| **WEAKEN** | `~ required_status_checks { contexts = [ - "frontend-build", - "frontend-openapi-drift", - "frontend-unit" ] }` | `jolarca` | flagship loses three required checks (live 12 → declared 9) |
-| **WEAKEN** | `~ require_code_owner_reviews` / `~ require_signed_commits` / `~ required_pull_request_reviews` | `jolarca-docs` | removes the fleet's only live code-owner review gate (inert per D-20, but the declaration still moves) |
-| TIGHTEN | `~ require_conversation_resolution = false -> true`, `~ required_linear_history = false -> true` | `.github` (`health[0]`), `jolarca`, `jolarca-payments` | turns two requirements on |
-| TIGHTEN | `~ status = "disabled" -> "enabled"` inside `security_and_analysis { secret_scanning / secret_scanning_push_protection }` | `jolarca-docs`, `-observability`, `-runbooks`, `-security`, `-vendor` | enables secret scanning and push protection where live reports disabled |
-| TIGHTEN | `~ allow_merge_commit`, `~ allow_rebase_merge` → false, `~ delete_branch_on_merge`, `~ has_projects` → false | same five plus `-identity` | enforces the squash-only baseline from `policy/repo-defaults.yml` |
-| NEUTRAL | `~ description`, `~ topics`, `~ has_issues` | `jolarca-control`, `jolarca`, `jolarca-data`, `jolarca-dr`, `jolarca-payments`, `jolarca-identity` | metadata and issue-tracker flags |
-| UNRESOLVED | `~ branch_protection`, `~ compliance_summary`, `~ protected_repos` | `jolarca-vendor` only | three attribute names that are not `github_repository` arguments; **verify with `terraform state show 'github_repository.repo["jolarca-vendor"]'` before applying anything to that repo** — they most likely come from a provider upgrade, and guessing here is how a fleet-wide apply starts |
+| **WEAKEN → FIXED** | `- restrict_pushes { blocks_creations, push_allowances }` | 11 protection rules | `branch-protection.tf` never declared a block that policy (`repo-defaults.yml: restrict_pushes: true`) and all eleven live rules had, so any apply deleted the push restriction fleet-wide. Now declared per repo from `terraform state show`, **including `jolarca-payments`' `push_allowances = ["/JourneyOfLife"]`** — a blanket `[]` would have removed the operator's own allowance, i.e. fixing one regression by adding another. Zero `restrict_pushes` lines remain in the plan. |
+| **WEAKEN → FIXED** | `~ required_status_checks { contexts = [ - "frontend-build", - "frontend-openapi-drift", - "frontend-unit" ] }` | `jolarca` | Those three are live-required and still produced: `gh api repos/jolarca-dev/jolarca/commits/main/check-runs` lists all of them among 17 recent checks. `repos/jolarca.yml` was stale at 9 of 12; now declares 12, so the flagship keeps its checks. |
+| **WEAKEN → ACCEPTED** | `~ require_code_owner_reviews = true -> false`, `~ require_signed_commits = true -> false` | `jolarca-docs` | Deliberate, and aligned to policy: D-20 (no teams can satisfy code-owner review) and D-05 (`github_repository_file` automation commits to fleet repos and cannot sign). Recorded rather than quietly applied: `docs/drift-findings.md` D-20 correction (b) already tracks that seven repos declare `true` against the `false` baseline. |
+| TIGHTEN (accepted, policy says on) | `~ require_conversation_resolution = false -> true`, `~ required_linear_history = false -> true` | `.github` (`health[0]`), `jolarca`, `jolarca-payments` | Enacts `repo-defaults.yml`; live is behind policy. |
+| TIGHTEN (accepted, verified producible) | `+ required_status_checks { contexts = […] }` | `jolarca-data` (and `-legal`, `-security` where absent) | Live rule has no required contexts. `scripts/check_declared_contexts.py` (exit 1) flags only `jolarca-identity` as unproducible, so data's declared contexts are producible — adding them will not deadlock its merges. |
+| TIGHTEN | `~ allow_merge_commit`/`~ allow_rebase_merge` → false, `~ delete_branch_on_merge` → true, `~ has_projects` → false, topics, description | `jolarca-docs`, `-observability`, `-runbooks`, `-security`, `-vendor`, `-identity`, `-dr`, `-legal`, `-payments`, `-control`, `-data`, `-compliance` | Enforces the squash-only linear-history baseline from `policy/repo-defaults.yml`. |
+| NOT A DEFECT | `branch_protection`, `compliance_summary`, `protected_repos` | — | An earlier draft of this table listed these as "attributes that are not `github_repository` arguments" on `jolarca-vendor`. Wrong: they are the plan's **Outputs** section (`protected_repos = 13 -> 16`), which the attribute parser had swept into the last resource block. `terraform state show 'github_repository.repo["jolarca-vendor"]'` confirms no such attributes exist. Nothing to investigate. |
+
+Remaining before any apply: the three creates (D-46 decision above), and the six
+repos whose live rules lack a push restriction while policy demands one
+(`jolarca-docs`, `jolarca-hermes-agents`, plus the three unadopted repos and
+`.github`) — recorded as **D-66**, deliberately not tightened as a side effect of
+fixing the deletions.
 
 The operator's path, in order, is the same one step 7's doctrine states: **land the
 adoption alone first.** Narrow `repos/*.yml` / `terraform.tfvars` to the live
