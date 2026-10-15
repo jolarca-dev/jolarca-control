@@ -145,6 +145,54 @@ assert 1 secret-scanning-nested-disable <<'PLAN'
     }
 PLAN
 
+# Colourised input is the fourth way this gate was fooled, and it was found by running the
+# same plan twice: `terraform show tfplan` (colour on) exited 0 while `terraform show
+# -no-color tfplan` exited 1 on the identical 370-line plan, because every pattern here
+# anchors at line start and ANSI bytes sit in front of the markers. Colourised text is now
+# exit 2 (cannot verify). The pair below proves both halves: the guard fires, and it is the
+# FORMAT that changed — strip the escapes and the same content is still refused.
+colour_case() {
+  local name="$1" want="$2" f="$TMP/$1.txt" got
+  printf '' > "$f"
+  { printf '  # github_branch_protection.main["jolarca"] will be updated in-place\n'
+    printf '  # github_repository.repo["jolarca"] will be updated in-place\n'
+    printf '  ~ resource "github_branch_protection" "main" {\n'
+    printf '  \033[0m~ required_status_checks {\n'
+    printf '  \033[0m~ strict   = true -> false\n'
+    printf '        }\n    }\n'; } >> "$f"
+  bash "$GATE" "$f" >"$TMP/$name.out" 2>&1
+  got=$?
+  if [ "$got" -eq "$want" ]; then
+    printf 'ok   %-28s exit=%s\n' "$name" "$got"
+    pass=$((pass + 1))
+  else
+    printf 'FAIL %-28s want exit=%s got=%s\n' "$name" "$want" "$got"
+    sed 's/^/       /' "$TMP/$name.out"
+    fail=$((fail + 1))
+  fi
+}
+colour_case coloured-plan 2
+
+# Non-vacuity for the guard: the escape-stripped twin of the same fixture must still be
+# refused, so a passing guard cannot be hiding a broken protection rule.
+stripped_case() {
+  local f="$TMP/coloured-plan.txt" out="$TMP/stripped-plan.txt" esc
+  # GNU sed does not expand \033 inside a BRE, so the escape byte comes from printf.
+  esc=$(printf '\033')
+  sed "s/${esc}\[0m//g" "$f" > "$out"
+  bash "$GATE" "$out" >"$TMP/stripped.out" 2>&1
+  local got=$?
+  if [ "$got" -eq 1 ]; then
+    printf 'ok   %-28s exit=%s\n' "stripped-still-refused" "$got"
+    pass=$((pass + 1))
+  else
+    printf 'FAIL %-28s want exit=1 got=%s\n' "stripped-still-refused" "$got"
+    sed 's/^/       /' "$TMP/stripped.out"
+    fail=$((fail + 1))
+  fi
+}
+stripped_case
+
 # ── Must be ALLOWED (exit 0) ─────────────────────────────────────────────────
 # Real shape of the bootstrap plan: every repo created, visibility SET (not
 # changed). Refusing this would block the legitimate first apply.

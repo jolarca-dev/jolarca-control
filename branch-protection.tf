@@ -53,10 +53,38 @@ locals {
   # Repos that declare branch protection in their allow-list entry. The org
   # health repo is handled separately below — it carries a deliberately
   # minimal rule (content-only repo, no CI to gate on).
+  #
+  # INTERIM MITIGATION for D-46 (decided 2026-10-15, pending the owner's endgame):
+  # jolarca-consent, jolarca-dr and jolarca-vendor are excluded from the legacy
+  # resource even though their repos/*.yml declares branch_protection.main. Measured
+  # content of their ACTIVE `protect-main` rulesets (`gh api repos/jolarca-dev/<r>/rulesets`
+  # then `/rulesets/{numeric-id}`; the NAME form 404s):
+  #   consent (24087580) — deletion + non-fast-forward + linear history only, no PR rule,
+  #            no status-checks rule at all
+  #   dr      (24136490) — plus a PR rule (0 approvals) and required [lint, gitleaks],
+  #            strict false
+  #   vendor  (24138288) — plus a PR rule allowing merge/squash/rebase and a
+  #            status-checks rule whose context list is EMPTY, strict false
+  # Creating a legacy rule beside those would give each repo TWO mechanisms with
+  # different content, and GitHub enforces the union — so the resource would read as
+  # the control while the ruleset is what actually bites. The exclusion costs nothing
+  # in state (these three were never imported: `terraform state list` holds 14
+  # addresses, `3 to add` included them), and it removes the only remaining create from
+  # D-61's plan. Read the trade-off honestly: their declared required_status_checks
+  # (consent's 7, vendor's and dr's `lint`) are enforced by NOTHING today, and stay that
+  # way until D-46's option A (import rulesets as github_repository_ruleset) or B
+  # (delete rulesets, let the legacy rule be the single source) is executed by the
+  # operator. B has an exposure window unless sequenced after a working apply.
   protected_repos = {
     for name, def in local.repo_defs : name => def
     if can(def.branch_protection.main) && var.enable_branch_protection
+    && !contains(local.ruleset_protected_repos, name)
   }
+
+  # Repos whose main branch is enforced by an undeclared ruleset rather than a legacy
+  # rule. Kept as its own local so the exclusion is greppable and D-46's resolution is
+  # a one-line deletion rather than a search through a comprehension.
+  ruleset_protected_repos = ["jolarca-consent", "jolarca-dr", "jolarca-vendor"]
 
   # Repos whose live branch protection actually carries a push restriction,
   # enumerated from `terraform state show` on 2026-10-15 (11 of the 14
@@ -142,7 +170,7 @@ resource "github_branch_protection" "main" {
 
   # ── Push restrictions ─────────────────────────────────────────────────────
   # Declared 2026-10-15 for exactly the repos whose live rule has it, per
-  # local.restrict_pushes_repos above. Before this the block was absent from the
+  # local.restrict_pushes_rules above. Before this the block was absent from the
   # configuration while eleven live rules and policy/repo-defaults.yml had it, so
   # any apply silently removed the "only these actors may push to main" restriction
   # fleet-wide — the largest weakening in D-61's plan, invisible to the safety gate
