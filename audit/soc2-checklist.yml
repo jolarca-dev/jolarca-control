@@ -220,21 +220,30 @@ trust_service_criteria:
       - id: "CC8.1-04"
         description: "Production apply requires manual approval"
         evidence: >-
-          NOT satisfied. `gh api
+          PARTIAL as of 2026-10-16. A deployment wait timer is configured and admins
+          cannot bypass it: `gh api
           repos/jolarca-dev/jolarca-control/environments/production` returns
-          `protection_rules: []` and no `wait_timer` (measured 2026-10-12,
-          re-cited in AGENTS.md §8). The environment EXISTS — an earlier draft of
-          this row claimed it did not — it simply has no required reviewers and
-          no wait, so a merge to main on an apply path runs
-          `terraform apply -input=false -auto-approve tfplan` with nobody between.
-        enforcement: "none"
-        status: "gap"
-        finding: "D-58, D-53 (PR #41)"
+          `protection_rules: [{"type": "wait_timer", "wait_timer": 30}]` and
+          `can_admins_bypass: false` (the PUT returned rc 0; the values above are an
+          independent GET re-read, not the write's own status). This is **delay, not
+          approval** — nobody signs anything, so the control this row describes is still
+          unmet. What changed is that an unattended `apply -auto-approve` now has a
+          30-minute window in which a human can cancel the pending job.
+          Assertion trap, recorded because the previous version of this row fell for it:
+          the scalar `wait_timer` field on that response stays `null` — the live value
+          is in `protection_rules[].wait_timer`. Assert on the array.
+        enforcement: "deployment wait timer (30 min), can_admins_bypass=false"
+        status: "partial"
+        finding: "D-58, D-70, D-53 (PR #41)"
         note: >-
-          Required reviewers cannot be used by a solo operator — GitHub blocks
-          self-approval of one's own deployment — so the viable friction is a
-          deployment wait timer, and the durable answer is the pre-apply refusal
-          gate, which since D-61 also refuses protection-layer changes.
+          Two claims in the earlier draft are corrected here rather than left standing.
+          (1) "Required reviewers cannot be used by a solo operator — GitHub blocks
+          self-approval" is NOT verified: the environment UI exposes *Prevent
+          self-review* as an option, which implies self-approval is allowed unless that
+          box is ticked. Left untested deliberately, because a reviewer that turns out
+          to be unsatisfiable would wedge every deploy; if it is ever measured, do not
+          enable prevent-self-review for a one-person org. (2) The old text said the
+          environment had "no wait"; since 2026-10-16 that is false.
       - id: "CC8.1-05"
         description: "Destructive and visibility-changing plans are refused automatically"
         evidence: "apply.yml 'Refuse destructive or visibility-changing plans' step; lifecycle prevent_destroy on every github_repository"
@@ -284,10 +293,16 @@ summary:
   implemented: 12
   pending_adoption: 4
   declared: 4
-  gap: 7
+  gap: 6
+  partial: 1
   accepted: 2
   blocking_gaps: ["CC6.1-03 (D-18)", "CC6.1-06 (D-01)", "CC6.7-03 (D-02)", "CC8.1-02 (D-20)"]
   revision_note: >
+    2026-10-16 — CC8.1-04 moved gap → partial: a 30-minute deployment wait timer is live
+    on the `production` environment with `can_admins_bypass: false` (D-70). That is
+    mechanical delay, not approval, so the row stays open and no approval claim is made.
+    Counts adjusted: gap 7 → 6, and a `partial` bucket is introduced because this file
+    had none while `audit/pci-dss-checklist.yml` already used one.
     2026-09-25 — CC8.1-02 reclassified from pending-adoption to gap on the
     evidence in D-20 (CODEOWNERS review is configured but does not fire). Counts
     adjusted accordingly: pending_adoption 5 to 4, gap 6 to 7. CC8.1-02 added to
