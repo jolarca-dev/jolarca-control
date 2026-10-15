@@ -119,6 +119,32 @@ assert 1 security-feature-disabled <<'PLAN'
     }
 PLAN
 
+# Added 2026-10-15 after the first version of these rules was written against an
+# imagined rendering. Terraform puts the transition on a NESTED `status` and marks
+# a removed block with `-`, so both of the real weakenings slipped past. Fixtures
+# below are transcribed from `terraform show` of the live plan.
+assert 1 protection-restrict-pushes-removed <<'PLAN'
+  # github_branch_protection.main["jolarca-compliance"] will be updated in-place
+  ~ resource "github_branch_protection" "main" {
+        id                              = "BPR_kwDOT4w_Rs4FCtBP"
+      - restrict_pushes {
+          - blocks_creations = false -> null
+          - push_allowances  = [] -> null
+        }
+    }
+PLAN
+
+assert 1 secret-scanning-nested-disable <<'PLAN'
+  # github_repository.repo["jolarca-docs"] will be updated in-place
+  ~ resource "github_repository" "repo" {
+      ~ security_and_analysis {
+          ~ secret_scanning {
+              ~ status = "enabled" -> "disabled"
+            }
+        }
+    }
+PLAN
+
 # ── Must be ALLOWED (exit 0) ─────────────────────────────────────────────────
 # Real shape of the bootstrap plan: every repo created, visibility SET (not
 # changed). Refusing this would block the legitimate first apply.
@@ -165,6 +191,27 @@ assert 0 security-feature-enabled <<'PLAN'
       ~ secret_scanning                 = false -> true
       ~ secret_scanning_push_protection = false -> true
     }
+PLAN
+
+# The nested form of the same allowance. The live 2026-10-15 plan turns secret
+# scanning ON for five repos; if the refusal rule caught enabling, no apply could
+# ever land that fix and someone would eventually delete the rule (AGENTS.md §5).
+assert 0 security-and-analysis-nested-enabling <<'PLAN'
+  # github_repository.repo["jolarca-docs"] will be updated in-place
+  ~ resource "github_repository" "repo" {
+        name         = "jolarca-docs"
+      ~ has_projects = true -> false
+      ~ security_and_analysis {
+          ~ secret_scanning {
+              ~ status = "disabled" -> "enabled"
+            }
+          ~ secret_scanning_push_protection {
+              ~ status = "disabled" -> "enabled"
+            }
+        }
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
 PLAN
 
 # ── Cannot-check must NEVER be safe (exit 2) ─────────────────────────────────

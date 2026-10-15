@@ -103,15 +103,30 @@ refuse "a branch-protection resource being created" \
 # Any change to a protection attribute, in either direction. Direction is not
 # parsed because tightening looks identical to weakening in a plan diff
 # (`~ strict = true -> false` and `false -> true`), and both need a human eye.
+# The block-level names (`restrict_pushes`, `push_allowances`,
+# `dismissal_restrictions`) are listed too because Terraform renders a REMOVED
+# nested block with a `-` marker: 11 of the 25 changes in the real 2026-10-15
+# plan were `- restrict_pushes { blocks_creations, push_allowances }` — deleting
+# the "only these actors may push" rule. The first version of this rule matched
+# only `~`, so it stared straight through the plan's dominant weakening.
 refuse "a branch-protection attribute change" \
-  '^[[:space:]]*~[[:space:]]+(require_signed_commits|require_code_owner_reviews|requires_approving_reviews|required_status_checks|required_pull_request_reviews|dismiss_stale_reviews|require_last_push_approval|required_linear_history|require_conversation_resolution|block_force_pushes|block_deletions|enforce_admins|strict)[[:space:]]*(\{|=|->)' \
+  '^[[:space:]]*[~-][[:space:]]+(require_signed_commits|require_code_owner_reviews|requires_approving_reviews|required_status_checks|required_pull_request_reviews|dismiss_stale_reviews|dismissal_restrictions|require_last_push_approval|required_linear_history|require_conversation_resolution|block_force_pushes|block_deletions|allows_force_pushes|allows_deletions|enforce_admins|strict|lock_branch|restrict_pushes|push_allowances|blocks_creations)[[:space:]]*(\{|=|->)' \
   "D-26: protection attributes are the gate between an unreviewed change and main. Weakening is a fleet-wide exposure; tightening can deadlock merges (a required context that no workflow can report — see the Context Parity class). Either way a human reads it."
 
-# Security-feature switches, weakening direction only. These are the settings
-# compliance-gates.yml claims are mandatory for the fleet.
+# Security-feature switches. Terraform renders the change on the NESTED `status`
+# attribute inside `security_and_analysis { secret_scanning { … } }`, so matching
+# on the feature name alone never fires on real output — the first draft of this
+# rule was inert against the very plan it was written for. The nested `status`
+# line is matched directly, in the disable direction only: the real 2026-10-15
+# plan moves several repos `"disabled" -> "enabled"`, and refusing that would
+# block the fix this repo exists to make.
 refuse "a security feature being disabled" \
   '^[[:space:]]*~[[:space:]]+(secret_scanning|secret_scanning_push_protection|dependabot_security_updates|vulnerability_alerts|has_security_policies)[[:space:]]*=.*(->[[:space:]]*(false|"disabled"))' \
   "compliance-gates.yml declares secret scanning, push protection and Dependabot alerts mandatory; a plan that turns one off is a compliance regression, not a cleanup."
+
+refuse "a security feature being disabled (nested status form)" \
+  '^[[:space:]]*~[[:space:]]+status[[:space:]]*=[[:space:]]*"enabled"[[:space:]]*->[[:space:]]*"disabled"' \
+  "Same rule, real Terraform rendering: the transition lives on a nested status attribute under security_and_analysis, not on the feature name. Enabling (disabled -> enabled) is deliberately not refused."
 
 if [ "$status" -eq 0 ]; then
   echo "Plan contains no destroy, replace, visibility change, protection-layer change or security-feature disable."

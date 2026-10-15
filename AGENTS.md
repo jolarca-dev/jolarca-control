@@ -229,19 +229,18 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   `STATE_MIGRATION_COMPLETE` measures `'true'`. The refusal there is
   `scripts/check_plan_safety.sh`, which since 2026-10-15 also covers
   protection-layer changes and security-feature disables (D-61).
-- **The branch-protection verification method in this file no longer works.**
-  Measured 2026-10-15: `gh api repos/jolarca-dev/jolarca-control/branches/main`
-  → `.protected = true`, `…/rulesets` → `[]`, but BOTH
-  `…/branches/main/protection` and
-  `…/protection/required_status_checks` return **HTTP 404**. So the sentence
-  above ("legacy endpoint HTTP 200") can no longer be re-proved the way it was
-  written, and an agent that probes it will read 404 as "unprotected" — the
-  opposite of the truth. Use the signals that still answer: `.protected` on the
-  branch, `gh pr view <n> --json mergeStateStatus` (was `UNSTABLE`/`BLOCKED`
-  across pushes today, `BLOCKED` transiently), the push rejection itself
-  (`GH006`), and the declared list in `repos/jolarca-control.yml`. WHY the
-  endpoint changed is not established here — the cause was not determined within
-  two probes, so it is recorded as an open question rather than guessed at.
+- **A 404 from the branch-protection endpoint means nothing on its own.**
+  Measured twice on 2026-10-15 with the same token and the same path:
+  `gh api repos/jolarca-dev/jolarca-control/branches/main/protection` answered
+  **HTTP 404** in one window (and the `…/required_status_checks` sub-endpoint
+  with it) and **HTTP 200** with the full document hours later, while
+  `.protected` was `true` and `…/rulesets` was `[]` throughout. Nothing about the
+  protection changed. So: re-read before writing a finding, never infer
+  "unprotected" from a single 404, and prefer the signals that stayed
+  consistent — `.protected` on the branch, `gh pr view --json
+  mergeStateStatus`, the `GH006` push rejection, and the declared list in
+  `repos/jolarca-control.yml`. Cause of the blip is unexplained and cannot be
+  chased from here (org audit log is HTTP 404 on the Free plan). See D-63.
 - **`policy/repo-defaults.yml` used to name a required context that nothing
   reports** ("Fleet Separation Guard"; the job is "Fleet Separation (ADR-0004)"
   and it is path-filtered to `repos/**`) while omitting the fourth real one,

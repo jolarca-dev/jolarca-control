@@ -156,6 +156,46 @@ findings, all fixed in-repo rather than only registered:
   `repos/*.yml` (so every instance plans for deletion) aborted with
   `Error: Instance cannot be destroyed` instead of producing a destroy plan.
 
+### Fixed — 2026-10-15 (third batch: two holes in the D-61 gate, and the 404 that wasn't)
+
+Preparing the step-6 packet and testing the plan-safety refusal **against real
+Terraform output instead of shapes I had assumed** found that half of yesterday's
+fix could not fire:
+
+- **`- restrict_pushes` was invisible to it.** Terraform marks a removed nested
+  block with `-`, and 11 of the 25 live changes are `- restrict_pushes {
+  blocks_creations, push_allowances }` — deleting the push restriction, the
+  plan's dominant weakening. The refusal pattern allowed only `~`. Now both
+  markers, plus the block-level names (`restrict_pushes`, `push_allowances`,
+  `blocks_creations`, `dismissal_restrictions`, `lock_branch`,
+  `allows_force_pushes`, `allows_deletions`, …).
+- **The security-feature rule could never match.** The transition renders on a
+  nested `status = "disabled" -> "enabled"` inside `security_and_analysis`, not on
+  the feature name. Added the nested pattern, disable direction only, with
+  fixtures proving enabling is still allowed — a gate that blocks the fleet's own
+  remediation gets deleted under pressure (AGENTS.md §5).
+- Re-checked against the real plan: exit **1**, naming all 11 `restrict_pushes`
+  removals. Fixtures 19/19 (was 16); `shellcheck` also caught a backtick inside
+  a double-quoted rationale, which would have been command substitution at runtime.
+- **D-61's premise about the three creates was wrong and is corrected.**
+  `jolarca-consent`, `jolarca-dr` and `jolarca-vendor` return HTTP 404
+  `"Branch not protected"` — there is no live rule to overwrite, so those creates
+  *add* protection. Adoption is otherwise complete: 14 `github_branch_protection`
+  addresses in state, so step 6's "import the thirteen" is done and what remains
+  is attribute reconciliation. The refusal stays (a human should approve a
+  protection change), the justification is fixed.
+- **New: the step-6 packet** in `docs/state-migration-runbook.md` — the 28 changes
+  classified WEAKEN / TIGHTEN / NEUTRAL / UNRESOLVED per resource, read from
+  `terraform show`, with the operator's ordering (land adoption alone first, then
+  one behavioural change per PR). Includes the flagged oddity that `jolarca-vendor`
+  diffs three attributes that are not `github_repository` arguments and must be
+  inspected with `terraform state show` before anything is applied there.
+- **D-63's open half resolved itself:** the branch-protection endpoints that
+  returned 404 twice earlier in the day return **200** on the same token hours
+  later, with `.protected=true` and `rulesets=[]` throughout — a transient API
+  response, not a settings change and not a scope artefact. AGENTS.md §8 now says
+  what it means: one 404 proves nothing, re-read before writing a finding.
+
 ### Fixed — 2026-10-15 (second batch: D-02's backup, and D-62 made enforceable)
 
 Continued the "fix every material finding in-repo" pass after #69 merged.
