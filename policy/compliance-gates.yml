@@ -452,6 +452,20 @@ exceptions:
   # what has been accepted hides what is still broken. Each of these blocks the
   # first apply. Details and evidence: docs/drift-findings.md.
   open_blocking:
+    - id: "D-61"
+      issue: >-
+        The pre-apply plan_review gate (scripts/check_plan_safety.sh) exits 0 —
+        "safe to auto-apply" — on a refreshed plan containing 3 branch-protection
+        creations and 25 fleet-wide setting changes. Its refusal on the same
+        commit under -refresh=false came from 5 stale visibility diffs, not from
+        detecting danger. The only thing preventing an unattended apply today is
+        the CI plan step failing (D-56), which is a broken automation.
+      owner_decision_required: >-
+        Reconcile branch-protection declarations with the live rules
+        (docs/state-migration-runbook.md step 6), require a refreshed plan to read
+        0 to add / 0 to change, and stand up a deployment wait timer on the
+        production environment (D-58) BEFORE merging anything on an apply.yml
+        trigger path (repos/**, policy/**, *.tf, *.tfvars, apply.yml itself).
     - id: "D-01"
       issue: "RESOLVED — GitHub is migrating all repos to public. All declarations updated to visibility: public."
       owner_decision_required: "N/A — forced migration. See fleet-public-2026-10 exception."
