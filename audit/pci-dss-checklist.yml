@@ -106,17 +106,20 @@ requirements:
         evidence: "plan.yml posts the plan for review; check_plan_safety.sh refuses destroy/replace/visibility, and since 2026-10-15 also branch-protection changes and security-feature disables; lifecycle prevent_destroy"
         enforcement: "CI gates"
         status: "partial"
-        finding: "D-56, D-58, D-61"
+        finding: "D-56, D-58, D-61, D-70"
         note: >-
           Two halves, measured separately. TESTED: the plan gate could not run at
           all until 2026-10-15 (plan.yml initialised with -backend=false against a
           cloud {} root — reproduced) and the refusal gate passed a 28-change plan
           it should have caught (D-61); both are fixed in this changeset.
-          APPROVED: no approval exists. The production environment has
-          protection_rules: [] and `required_approving_review_count = 0`, and
-          STATE_MIGRATION_COMPLETE measures 'true' — so an apply-triggering merge
-          is an unattended `apply -auto-approve`, which PCI-DSS Req 6.5.1 does not
-          accept as change control. Recorded as gap D-58 (PR #41).
+          APPROVED: still no human approval — `required_approving_review_count = 0`
+          and no environment reviewer. Since 2026-10-16 the `production` environment
+          does carry a 30-minute deployment wait with `can_admins_bypass: false`
+          (measured by GET re-read: `protection_rules: [{type: wait_timer, wait_timer:
+          30}]`), so an apply-triggering merge is no longer literally unattended: there
+          is a window in which a person can cancel the job. Delay is not approval, so
+          Req 6.5.1 change control is still not satisfied and D-58 stays open (PR #41).
+          STATE_MIGRATION_COMPLETE measures 'true'.
       - id: "6.5.4-01"
         description: "Back-out procedures exist"
         evidence: "docs/change-management.md Rollback Procedure; docs/runbooks.md RB-07"

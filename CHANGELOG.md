@@ -233,6 +233,40 @@ lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `mak
 re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
 starts no apply.
 
+### Changed — 2026-10-16 (eighth batch: the production apply got a 30-minute wait; two checklists corrected)
+
+- **D-70 · a real, mechanical stop now exists.** `production` environment:
+  `wait_timer=30` and `can_admins_bypass=false`, applied by `gh api -X PUT` on the
+  owner's instruction and verified by an independent GET re-read
+  (`protection_rules: [{"type":"wait_timer","wait_timer":30}]`, `updated_at` moved).
+  Explicitly **not** an approval gate: reviews are still 0, no reviewer exists, so
+  PCI-DSS Req 6.5.1 change control and D-58 stay open and CC8.1-04 moved only
+  gap → `partial`. Two API traps recorded: `-f` sends strings where that endpoint wants
+  an integer/boolean (HTTP 422, nothing changed — verified, not assumed), and the
+  response's scalar `wait_timer` stays `null` while the live value sits in
+  `protection_rules[]`, which is how a "no wait configured" reading can be written into a
+  checklist as fact. Environment reviewers were deliberately left untested: the old claim
+  that a solo operator cannot self-approve is contradicted by the *Prevent self-review*
+  option, and an unsatisfiable reviewer would wedge every deploy.
+- Not out-of-band drift: this root declares no `github_environment`
+  (`terraform state list | grep -ic environment` → 0), so the write cannot diverge from
+  Terraform; recorded as a dated deviation like D-34…D-38.
+- **Status prose updated where the control is asserted**, not just here:
+  `audit/soc2-checklist.yml` CC8.1-04 (+ summary counts: gap 7→6, new `partial: 1`),
+  `audit/pci-dss-checklist.yml` 6.5.3-01, `policy/compliance-gates.yml#plan_review`,
+  and a new AGENTS.md §8 bullet telling an agent that an in-progress `Production — Apply`
+  run is now normal and that the cancel window is the point.
+- **D-71 · the change queue is unreconciled.** 9 open PRs, oldest 2026-09-26; #41, #51 and
+  #54 carry files `main` does not have, while #29 and #33 describe defects #75 already
+  landed — merging #29 today would revert identity's registry to a 2026-10-04 view.
+  Verified per PR with `git cat-file -e origin/main:<path>`, not by reading titles.
+
+Verification: PUT rc 0 + independent GET re-read as above - `yamllint` clean on the three
+edited YAML files - `compliance_check.py` `overall_status: pass` - evidence re-registered
+(`audit/**` and `policy/**` are hashed) and `--check` exit 0. This PR touches `policy/**`,
+so it triggers an apply attempt - which will now **wait ~30 minutes** before its first
+step, then fail at the state lock (D-56) with `Terraform Apply` skipped.
+
 ### Fixed — 2026-10-15 (seventh batch: walking the 19 found two declarations that remove capability)
 
 Reading D-61's plan line by line — the thing this changelog kept saying must happen — turned up

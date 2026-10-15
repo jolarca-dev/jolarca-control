@@ -225,6 +225,24 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   broken CI credential (D-56), not as a control; after the init fix in D-64 the
   plan gets further before dying, and once the token is repaired the refusal gate
   is what has to stop it.
+- **The production apply now has a 30-minute wait, and it is not an approval.**
+  Measured 2026-10-16 after `gh api -X PUT
+  repos/jolarca-dev/jolarca-control/environments/production -F wait_timer=30
+  -F can_admins_bypass=false`: an independent GET returns
+  `protection_rules: [{"type": "wait_timer", "wait_timer": 30}]` and
+  `can_admins_bypass: false`. Consequences an agent must act on: (1) the
+  `Production — Apply` job on a trigger-path merge now sits pending for ~30 minutes
+  before its first step runs, so `gh run list` showing an in-progress apply is
+  normal — use that window to cancel, not to wait idly; (2) delay is not approval —
+  `required_approving_review_count` is still 0 and no reviewer signs anything, so
+  treat the merge as the apply decision, as before; (3) assert on the **array**, not
+  the scalar: the top-level `wait_timer` field reads `null` even when the timer is
+  active (this is the trap that made an earlier probe report "no wait configured"
+  when the row was then written as fact); (4) `-F` not `-f` — that endpoint wants an
+  integer and a boolean, and `-f` answers HTTP 422 having changed nothing. Reviewers
+  were deliberately **not** added: the solo-operator self-approval constraint is
+  untested here, and an unsatisfiable reviewer would wedge every deploy. See D-70 and
+  D-58.
 - **There is no targeted-apply mechanism.** `apply.yml` runs a whole-state
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`
