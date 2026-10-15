@@ -125,8 +125,17 @@ refuse "a branch-protection resource being created" \
 # plan were `- restrict_pushes { blocks_creations, push_allowances }` — deleting
 # the "only these actors may push" rule. The first version of this rule matched
 # only `~`, so it stared straight through the plan's dominant weakening.
+#
+# `+` is now in the marker class as well, for the mirror-image miss: an ADDED nested
+# block renders `+ required_status_checks {`, and four of the 20 changes in the
+# post-#73 plan are exactly that (jolarca-data, -identity, -legal, -security acquire
+# required contexts they do not live with today). Matching only `[~-]` let the gate
+# wave through the single tightening most likely to deadlock a merge — `jolarca-identity`
+# declares contexts its workflows cannot report (D-44/D-47), so requiring them means no
+# PR on that repo can ever merge. The refusal text already argued "either direction";
+# the pattern did not implement it.
 refuse "a branch-protection attribute change" \
-  '^[[:space:]]*[~-][[:space:]]+(require_signed_commits|require_code_owner_reviews|requires_approving_reviews|required_status_checks|required_pull_request_reviews|dismiss_stale_reviews|dismissal_restrictions|require_last_push_approval|required_linear_history|require_conversation_resolution|block_force_pushes|block_deletions|allows_force_pushes|allows_deletions|enforce_admins|strict|lock_branch|restrict_pushes|push_allowances|blocks_creations)[[:space:]]*(\{|=|->)' \
+  '^[[:space:]]*[~+-][[:space:]]+(require_signed_commits|require_code_owner_reviews|requires_approving_reviews|required_status_checks|required_pull_request_reviews|dismiss_stale_reviews|dismissal_restrictions|require_last_push_approval|required_linear_history|require_conversation_resolution|block_force_pushes|block_deletions|allows_force_pushes|allows_deletions|enforce_admins|strict|lock_branch|restrict_pushes|push_allowances|blocks_creations)[[:space:]]*(\{|=|->)' \
   "D-26: protection attributes are the gate between an unreviewed change and main. Weakening is a fleet-wide exposure; tightening can deadlock merges (a required context that no workflow can report — see the Context Parity class). Either way a human reads it."
 
 # Security-feature switches. Terraform renders the change on the NESTED `status`

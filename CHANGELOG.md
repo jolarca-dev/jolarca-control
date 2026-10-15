@@ -205,6 +205,34 @@ Verification: `terraform fmt -check` and `terraform validate` clean ·
 `compliance_check.py` pass · evidence re-registered (`repos/jolarca.yml` is hashed)
 and `--check` exit 0.
 
+### Fixed — 2026-10-15 (sixth batch: the gate passed the one tightening that deadlocks a repo)
+
+Verifying the merged result on `main` found the plan-safety gate still blind to a class
+it was described as refusing. Four of the 20 remaining changes are **added** nested blocks,
+`+ required_status_checks { … }` on `jolarca-data`, `-identity`, `-legal`, `-security`; the
+refusal pattern matched `[~-]` only, so all four passed silently and the named-line list in
+the output proved it (`grep -c github_branch_protection` on the refusal → 0 protection
+headers, only `~` attribute lines). The dangerous one is `jolarca-identity`: its declared
+contexts are not producible by its workflows (D-44/D-47), so requiring them would have
+deadlocked every merge on that repository — exactly the outcome the rule's own comment says
+it exists to prevent, defeated by a missing `+`.
+
+- `scripts/check_plan_safety.sh`: marker class widened to `[~+-]` for protection attributes.
+- `tests/test_check_plan_safety.sh`: `protection-status-checks-added`, transcribed verbatim
+  from `terraform show -no-color` of the live plan. **22/22 cases pass.**
+- Re-asserted against the real artifact: the gate now names all four added blocks, identity
+  included (previously zero of them).
+- D-61 corrected a fifth time, including the sentence in this register that claimed "the gate
+  still refuses all of it" — written from the aggregate exit code instead of the named lines.
+- This is the third distinct rendering/input defect in one gate: `-` removed blocks, nested
+  `status = "enabled" -> "disabled"`, and now `+` added blocks. Every one was found by feeding
+  it real output, never by reading the regex.
+
+Verification: plan on `main` `0 to add, 20 to change, 0 to destroy` · gate exit **1** naming 12
+lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `make lint` · evidence
+re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
+starts no apply.
+
 ### Fixed — 2026-10-15 (fifth batch: D-46 interim, and the gate defeated by its own input format)
 
 - **D-46 interim.** The packet's last create-class item was the three
