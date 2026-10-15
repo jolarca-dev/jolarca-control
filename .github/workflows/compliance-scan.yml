@@ -43,6 +43,12 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python3 scripts/validate_repos.py
+      # D-62: this job's own name is a required status check, and the policy
+      # baseline in policy/repo-defaults.yml used to name a context no workflow
+      # reports while omitting SAST (semgrep). Nothing compared them, so the
+      # baseline rotted while reading as authoritative. Fixtures in
+      # tests/test_check_required_context_baseline.py.
+      - run: python3 scripts/check_required_context_baseline.py
 
   # ── Context 2: Policy Compliance Check ─────────────────────────────────────
   compliance:
@@ -88,6 +94,18 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: bash tests/test_check_plan_safety.sh
+      # D-02: the backup tool's fixtures are shell, not pytest, and this job is a
+      # required context — so a regression that leaves the fleet with no verified
+      # state export fails here rather than during a restore. Offline: the cases
+      # generate an ephemeral age keypair and point the backend at a closed port.
+      - name: Install age
+        # The fixtures below generate an ephemeral recipient/identity, so the tool
+        # has to be installed first and explicitly: a job that quietly skips when a
+        # dependency is missing reports green while checking nothing
+        # (test_ci_gates_are_real.py exists for exactly this class).
+        run: sudo apt-get update -q && sudo apt-get install -yq age
+      - name: State backup fixtures
+        run: bash tests/test_state_backup.sh
       # Named step, and no fallback: a runner has no .venv here (no workflow builds one and
       # .gitignore excludes it), so the previous `.venv/bin/python ... || python ...` always fell
       # through and the fallback owned the verdict. requirements-dev.txt pins pytest exactly and is

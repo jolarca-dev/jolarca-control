@@ -33,6 +33,9 @@ Setup and gates (all offline unless marked live):
 | `make lint` | fmt-check, tf-validate, validate, ruff, mypy, shellcheck, yamllint, tests. **Not** all of CI — see below |
 | `make test` | Plan-safety fixtures + `pytest` |
 | `make validate` | Validate `repos/*.yml` against policy |
+| `make context-parity` | Declared contexts must be checks each fleet repo can report (live, `gh`) |
+| `make context-baseline` | The `required_checks` policy baseline must equal the declaration AND be producible on a PR (D-62; offline) |
+| `make backup BACKUP_DEST=<dir>` | Off-host age-encrypted state export, **with the decrypt round trip proven before it says OK** (D-02) |
 | `make readiness REPO=<name>` | Pre-first-commit verdict: READY / READY-WITH-FIXES / BLOCKED |
 | `make first-commit REPO=<name> STEP=A..F` | Read-only pipeline gate; prints commands, never runs them |
 | `make evidence-check` | Verify evidence hashes against the **committed** registry |
@@ -182,22 +185,36 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   unreviewed apply is D-02's second half — the off-host state backup is inert
   (see the next bullet) — plus the unreconciled branch-protection declarations
   recorded in `docs/state-migration-runbook.md` step 6.
-- **The state backup gate does not work.** `scripts/state_backup.sh` is keyed to
-  `$REPO_ROOT/terraform.tfstate`, which is 0 bytes now that state lives in HCP
-  Terraform; running it exits 1 ("terraform.tfstate is not valid JSON"), no
-  `docs/backup-log.tsv` exists, and `/opt/jolarca/backups/` holds only
-  PostgreSQL/Redis dumps. The authoritative state (48 resources as of
-  2026-10-15) has exactly one
-  copy. Do not delete an account, org or workspace, and do not treat D-02 as
-  closed: only the remote-backend half landed.
+- **The state backup works when someone runs it — and that is all.**
+  `scripts/state_backup.sh` had been dead since state moved to HCP Terraform: it
+  read `$REPO_ROOT/terraform.tfstate` (0 bytes), so every run exited 1 and
+  `docs/backup-log.tsv` never existed while the register cited it as the D-02
+  interim control. Fixed 2026-10-15: it now pulls the current state version from
+  the backend, encrypts to `$BACKUP_DEST`, and **decrypts and compares the
+  SHA-256** before claiming anything (`make backup BACKUP_DEST=…`; 10 fixtures in
+  `tests/test_state_backup.sh`; skip the proof and it exits 2, never 0). Still
+  missing: **a schedule and a genuinely off-host destination.** The age identity
+  and `/opt/jolarca/backups/` both live on the machine holding the working copy,
+  so this is a verified export path, not a 3-2-1 copy, and it is only as current
+  as the last human who ran it. Do not delete an account, org or workspace, and
+  do not treat D-02 as closed.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
   apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
   `*.tfvars` and itself, then runs `terraform apply -input=false -auto-approve
-  tfplan`. The only brakes are the execution-mode gate, `check_plan_safety.sh`
-  (destroy / replace / visibility — it does **not** catch required-context,
-  `strict`, linear-history or code-owner changes) and `prevent_destroy`. Measured
-  2026-10-12: run 38248126765 (merge of #65) failed at `Terraform Plan`, so
-  nothing applied; that was luck about the outcome, not a control.
+  tfplan`. The brakes are the execution-mode gate, `prevent_destroy`, and
+  `check_plan_safety.sh`, which since 2026-10-15 refuses destroy, replace,
+  visibility, **branch-protection creates and attribute changes (either
+  direction)**, and security-feature **disables** (D-61) — so the older note
+  that it "does not catch required-context, `strict`, linear-history or
+  code-owner changes" is superseded for those attribute classes. What is still
+  NOT caught: an attribute change to `github_repository` settings that is not in
+  the refused list. Measured outcome of the merge of this repo's #69 (run
+  38781192964, 2026-10-15): `Terraform Plan` failed on
+  `Error acquiring the state lock / resource not found` and `Terraform Apply`
+  was **skipped** — so no apply happened. Read that as the current state of a
+  broken CI credential (D-56), not as a control; after the init fix in D-64 the
+  plan gets further before dying, and once the token is repaired the refusal gate
+  is what has to stop it.
 - **There is no targeted-apply mechanism.** `apply.yml` runs a whole-state
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`
@@ -228,8 +245,11 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
 - **`policy/repo-defaults.yml` used to name a required context that nothing
   reports** ("Fleet Separation Guard"; the job is "Fleet Separation (ADR-0004)"
   and it is path-filtered to `repos/**`) while omitting the fourth real one,
-  `SAST (semgrep)`. Corrected 2026-10-15 (D-62). No script reads that block, so
-  the correction is documentary — which is exactly why it survived this long.
+  `SAST (semgrep)`. Corrected 2026-10-15 and now enforced: `make
+  context-baseline` / `scripts/check_required_context_baseline.py` compares the
+  baseline against `repos/jolarca-control.yml` **and** against the job names a
+  `pull_request` event can report, and it runs inside `Validate Repo Allow-List`
+  — itself a required context (D-62).
 - **Contact-address routing is convention-only.**
   `policy/contact-addresses.yml` defines the role mailboxes (D-59), but no gate
   in `scripts/` compares live SECURITY.md content against it and no inbound
