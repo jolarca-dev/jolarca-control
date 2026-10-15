@@ -204,19 +204,49 @@ trust_service_criteria:
         description: "Terraform plan posted for review before merge"
         evidence: ".github/workflows/plan.yml, sticky PR comment"
         enforcement: "CI: plan workflow"
-        status: "declared"
-        note: "Gated on STATE_MIGRATION_COMPLETE; currently emits an explicit skip notice rather than a misleading empty diff."
+        status: "gap"
+        finding: "D-56"
+        note: >-
+          Could not have been satisfied until 2026-10-15: plan.yml ran
+          `terraform init -backend=false` against a `cloud {}` root, so the next
+          plan aborted with "HCP Terraform initialization required" — reproduced
+          locally on a clean tree, which is why every PR carried a red
+          "Validate & Plan" since 2026-10-12. The init is fixed in this
+          changeset, and the STATE_MIGRATION_COMPLETE gate that this note used to
+          cite as the reason is open (the variable measures 'true'), so it was
+          never what stopped the plan. Remaining gap: no PR has yet shown a
+          human-read plan end to end, and the plan-safety step now refuses the
+          unreconciled plan (D-61) instead of a no-op being posted.
       - id: "CC8.1-04"
         description: "Production apply requires manual approval"
-        evidence: "apply.yml uses environment: production"
-        enforcement: "GitHub environment required reviewers"
-        status: "declared"
-        note: "The 'production' environment does not exist yet — runbook step 2 creates it."
+        evidence: >-
+          NOT satisfied. `gh api
+          repos/jolarca-dev/jolarca-control/environments/production` returns
+          `protection_rules: []` and no `wait_timer` (measured 2026-10-12,
+          re-cited in AGENTS.md §8). The environment EXISTS — an earlier draft of
+          this row claimed it did not — it simply has no required reviewers and
+          no wait, so a merge to main on an apply path runs
+          `terraform apply -input=false -auto-approve tfplan` with nobody between.
+        enforcement: "none"
+        status: "gap"
+        finding: "D-58, D-53 (PR #41)"
+        note: >-
+          Required reviewers cannot be used by a solo operator — GitHub blocks
+          self-approval of one's own deployment — so the viable friction is a
+          deployment wait timer, and the durable answer is the pre-apply refusal
+          gate, which since D-61 also refuses protection-layer changes.
       - id: "CC8.1-05"
         description: "Destructive and visibility-changing plans are refused automatically"
         evidence: "apply.yml 'Refuse destructive or visibility-changing plans' step; lifecycle prevent_destroy on every github_repository"
         enforcement: "CI gate + Terraform lifecycle"
-        status: "declared"
+        status: "implemented"
+        note: >-
+          Upgraded from "declared" on 2026-10-15, and the scope of the refusal
+          widened: scripts/check_plan_safety.sh now also refuses
+          branch-protection creates/attribute changes and security-feature
+          disables (D-61, D-26). Proven against a real refreshed plan, not only
+          against fixtures — the same plan text that exited 0 before now exits 1,
+          and 16 test cases cover both the refusals and their non-vacuity.
       - id: "CC8.1-06"
         description: "Changes are recorded with an audit trail"
         evidence: "squash-only merges, linear history required, compliance snapshot uploaded as a 90-day artifact, docs/change-management.md requires a change record"

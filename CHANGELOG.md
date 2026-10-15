@@ -105,6 +105,91 @@ declared before the workflow that emits it is merged.
   deliberate `shell=True`/`eval` turned **only** `SAST (semgrep)` and
   `SAST (bandit)` red; all other checks stayed green).
 
+### Fixed — 2026-10-15 (D-61 → D-64: the apply path was measured, then made honest)
+
+Executing "merge only after reading what the apply will do" turned up four
+findings, all fixed in-repo rather than only registered:
+
+- **D-61 · the pre-apply refusal gate had a blind spot.** A *refreshed* plan from
+  this root renders `3 to add, 25 to change, 0 to destroy` and
+  `scripts/check_plan_safety.sh` exited **0** on it — the refusal seen earlier
+  came only from `-refresh=false` carrying stale `private` values, i.e. a gate
+  firing for the wrong reason. The script now also refuses branch-protection
+  **creates**, any change to 13 protection attributes (either direction — a
+  tightening can deadlock a merge as well as a weakening can expose the fleet,
+  and Terraform renders both identically), and secret-scanning / push-protection
+  / Dependabot / vulnerability-alerts **disables**. Enabling stays allowed.
+  Verified three ways: 16 fixtures (4 new refusals + 2 non-vacuity controls), the
+  real refreshed plan text which now exits **1** naming the three creates, and
+  `policy/compliance-gates.yml` `plan_review` updated with the new
+  `blocked_actions` plus an `operator_path` and no skip flag.
+- **D-64 · D-56's real cause was a workflow bug, not a credential.** `plan.yml`
+  ran `terraform init -backend=false` against a `cloud {}` root, so every
+  PR-time plan aborted with `HCP Terraform initialization required` — reproduced
+  byte-for-byte on a clean tree and fixed. Consequence stated, not buried: the
+  plan now renders, so "Validate & Plan" fails at the refusal step until runbook
+  step 6 is reconciled. That is the intended posture — a readable refusal
+  replaces a broken automation.
+- **D-62 · the policy baseline named a required context that nothing reports**
+  ("Fleet Separation Guard"; the job is "Fleet Separation (ADR-0004)" and it is
+  path-filtered) **and omitted a real one** (`SAST (semgrep)`). Corrected; no
+  script reads that block, so the fix is documentary and the follow-up (point
+  `check_declared_contexts.py` at it, or delete it) is an owner decision.
+- **D-63 · three documents described a closed apply gate and a thin state
+  inventory.** Measured: `STATE_MIGRATION_COMPLETE` = `"true"` (gate OPEN),
+  workspace `resource-count: 48` / `execution-mode: local`, and **14**
+  `github_branch_protection` addresses are in state — not "only
+  `jolarca-hermes-agents`" as AGENTS.md §8 claimed. Corrected across AGENTS.md
+  §2/§8, ADR-0006, the runbook status line, the repo-request template, the
+  `make apply` message, and the SOC 2 / PCI-DSS checklists (CC8.1-03 → gap/D-56,
+  CC8.1-04 → gap/D-58 with the environment's measured empty
+  `protection_rules`, CC8.1-05 → implemented, 6.5.3-01 → partial). Dated
+  historical readings (the 2026-10-12 `resource-count: 35`) were annotated, not
+  rewritten. One half stays open and is recorded as such: `…/branches/main/protection`
+  now returns **HTTP 404** while `.protected = true` and repo rulesets are `[]`;
+  the cause was not established in two probe attempts, so nobody should read
+  that 404 as "unprotected".
+- `files/SECURITY.md` was re-mirrored to the live `.github` copy (byte-identical,
+  verified by re-read) — the divergence was created by editing the reference copy
+  in the first half of this change, which is precisely the D-15 trap.
+- `prevent_destroy` was observed working, not assumed: a probe tree missing
+  `repos/*.yml` (so every instance plans for deletion) aborted with
+  `Error: Instance cannot be destroyed` instead of producing a destroy plan.
+
+### Changed — 2026-10-15 (D-59, D-60: published contacts and commit identity)
+
+- **New `policy/contact-addresses.yml`** — the single definition of the five
+  role mailboxes (dev / github / security / privacy / billing), which are
+  published, which are retired, and the exact cross-repo targets still naming
+  dead addresses. Convention-only: no gate reads it yet, and the file says so.
+- **Every published contact was undeliverable.** `jolarca.com` and
+  `jolarca.dev` have no MX and no DMARC (measured: `dig MX`, `dig TXT _dmarc`,
+  no listener on 25/587, no mail container), so `security@jolarca.com`,
+  `legal@jolarca.com`, `security@jolarca.dev` and `legal@jolarca.dev` could
+  never receive a report — 34 hits across 6 repositories, including the
+  `jolarca-security` audit's own open Critical finding F-05 (2026-09-28).
+  `files/SECURITY.md` now names the interim security and privacy aliases.
+- **GitHub organisation contact updated and re-read.** `orgs/jolarca-dev`
+  `billing_email` and profile `email` moved from the general dev alias to the
+  GitHub-operations alias. No Terraform drift is possible: no
+  `github_organization` resource exists in state.
+- **Commit identity no longer publishes a personal mailbox.** Global
+  `git config user.email` (inherited by all 16 fleet repos on this host) is now
+  the ID-prefixed GitHub noreply address. Existing history keeps the old
+  address; a fleet-wide rewrite was rejected as disproportionate and is an
+  operator-only action (AGENTS.md §5).
+- **ADR-0006 and ADR-0007 amended, not silently rewritten.** The HCP Terraform
+  org billing email is re-measured and still the base mailbox — recorded as an
+  outstanding owner-executed UI change rather than restated as an alias nobody
+  has confirmed at the provider. ADR-0007's assumption that SECURITY.md provides
+  a working disclosure route is corrected by a dated amendment.
+- **`policy/compliance-gates.yml`** gains `contact-alias-interim` (approved
+  2026-10-15, expires 2027-01-13) stating what the aliases do and do not buy:
+  routing and leak attribution, not segregation of duties or an independent DPO.
+- **AGENTS.md §6 and §8** record the convention and the trap: `files/SECURITY.md`
+  is a reference copy, because `github_repository_file.security_md` is
+  commented out and the served file lives in the `.github` repository (D-15).
+
 ### Changed
 
 - **Apply is a single gated production stage.** `jol-control`'s

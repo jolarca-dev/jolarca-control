@@ -74,8 +74,11 @@ consumption. The following constraints apply:
    public repository.
 
 5. **Vulnerability reporting is private.** SECURITY.md directs researchers to
-   GitHub's private vulnerability disclosure or `security@jolarca.com`. Public
-   issues are not used for security reports.
+   GitHub's private vulnerability disclosure or
+   `journey4oflife+jolarca.security@gmail.com`. Public issues are not used for
+   security reports. _(Amended 2026-10-15 — this assumption was false as
+   written: the `security@jolarca.com` address named here from 2026-09-28 has
+   no MX record and never received a message. See D-59.)_
 
 6. **Issues enabled for DSAR/intake trail.** As of 2026-09-28, `has_issues`
    is enabled to provide a durable, auditable intake trail for GDPR Art. 17
@@ -119,9 +122,29 @@ This ADR should be reviewed:
 
 ---
 
+## Amendment — 2026-10-15 (D-59): the published disclosure contact was undeliverable
+
+Assumption 5 above relied on a mailbox that does not exist. Measured on
+2026-10-15: `dig MX jolarca.com` and `dig MX jolarca.dev` return nothing, no
+`_dmarc` record is published for either, and the operating host listens on no
+SMTP port. The same defect is recorded in `jolarca-security` as finding **F-05
+(Critical)** and in `docs/drift-findings.md` as **D-59**; the org-level
+`SECURITY.md` in the `.github` repository carried the dead address too.
+
+The decision recorded here is **unchanged** — the repository stays public and
+disclosure stays private — only the contact channel is corrected, to the interim
+role aliases defined in `policy/contact-addresses.yml`. What this amendment
+adds is a boundary the original ADR did not draw: a public repository's
+SECURITY.md is a control, so its reachability must be *tested*, not asserted.
+Verifying it is now the exit condition of the `contact-alias-interim`
+exception in `policy/compliance-gates.yml`.
+
 **References:**
 - `repos/jolarca.yml` — visibility: public, data_classification: public
 - `policy/repo-defaults.yml` — max_classification_for_public: "internal"
-- `docs/drift-findings.md` D-01, D-31 — visibility drift and regulated records
+- `policy/compliance-gates.yml` — `contact-alias-interim` (interim public
+  contact, expires 2027-01-13)
+- `docs/drift-findings.md` D-01, D-31 — visibility drift and regulated records;
+  D-59 — the undeliverable contact this amendment corrects
 - Pre-deployment audit 2026-09-28, finding B6
 - ISO 27001 A.5.9 (inventory), A.5.14 (secure disposal — inverse: publication)

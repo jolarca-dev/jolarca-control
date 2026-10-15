@@ -101,14 +101,28 @@ required_checks:
     - context: "gitleaks"
       description: "No secrets in the diff"
   control_plane:
+    # Verified 2026-10-15 against the live required-context list and
+    # repos/jolarca-control.yml. These are JOB names, not workflow names — the
+    # two differ here, and citing a workflow name would deadlock every merge.
     - context: "Validate Repo Allow-List"
       description: "repos/*.yml passes scripts/validate_repos.py"
     - context: "Policy Compliance Check"
       description: "scripts/compliance_check.py returns overall_status=pass"
     - context: "Repository Secret Pattern Scan"
       description: "Secret-pattern sweep over the control plane itself"
-    - context: "Fleet Separation Guard"
-      description: "ADR-0004 R1/R2/R3 — org jolarca* set == allow-list"
+    - context: "SAST (semgrep)"
+      description: >-
+        Added by A-08 on 2026-10-08 and previously MISSING from this baseline,
+        which is why the list read as three. Semgrep OSS is the engine that runs
+        on the Free plan; `SAST (bandit)` and `Trivy Config Scan` also report but
+        are intentionally not required, so a Trivy outage cannot freeze delivery.
+    # NOT required, and deliberately not listed as one: the fleet-separation
+    # guard is path-filtered to repos/** (plus its own script/workflow) and runs
+    # weekly on a schedule. Its job name is "Fleet Separation (ADR-0004)". This
+    # file used to declare a required context called "Fleet Separation Guard",
+    # which no workflow can ever report — requiring it would have deadlocked
+    # every PR that does not touch repos/**, the exact Context-Parity failure
+    # class recorded for jolarca-identity (D-44/D-47).
 
 # ── Team access ──────────────────────────────────────────────────────────────
 # VERIFIED 2026-09-25: jolarca-dev has NO teams. All access is via org

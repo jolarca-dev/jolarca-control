@@ -14,7 +14,9 @@
 #
 # Usage: scripts/check_plan_safety.sh <plan.txt>
 # Exit:  0 plan is safe to auto-apply
-#        1 plan contains a refused action (destroy / replace / visibility)
+#        1 plan contains a refused action (destroy / replace / visibility /
+#          branch-protection create or attribute change / security-feature
+#          disable)
 #        2 the plan could not be read — cannot-check is NEVER treated as safe
 set -uo pipefail
 
@@ -41,6 +43,7 @@ fi
 status=0
 
 # Rendered plan lines are indented and prefixed with a change marker:
+#   # <address> will be created
 #   # <address> will be destroyed
 #   # <address> must be replaced
 #   ~ visibility = "public" -> "private"
@@ -73,13 +76,44 @@ refuse "a repository visibility change" \
   '^[[:space:]]*~[[:space:]]+visibility[[:space:]]*=' \
   "Visibility flips are D-01: they change what is publicly readable inside a PCI-DSS/GDPR scope. Never auto-approved."
 
-# Defense in depth: catch a visibility change rendered without a marker, e.g.
+# Defense in depth: catch a visibility transition rendered without a marker, e.g.
 # by a future Terraform version or a `terraform show -json` conversion.
 refuse "an unmarked visibility transition" \
   '^[[:space:]]*visibility[[:space:]]*=[[:space:]]*".*"[[:space:]]*->' \
   "Same as above, matched on the transition arrow rather than the change marker."
 
+# ── Protection-layer refusals (D-61, D-26) ───────────────────────────────────
+# Added 2026-10-15 because the three rules above did NOT cover the only plan
+# this root can actually produce today. A refreshed `terraform plan` rendered
+# "3 to add, 25 to change" and this gate reported it safe to auto-apply: the
+# creates and attribute changes were invisible to it. Unrefreshed state made the
+# gate refuse, but only because stale `private` values produced visibility lines
+# — a refusal that comes from staleness rather than from detection is not a
+# control (AGENTS.md §7).
+
+# github_branch_protection is live on the fleet but absent from state (created
+# out-of-band, D-08), so Terraform renders it as a CREATE while the rule already
+# exists. Applying that overwrites live protection with declared values nobody
+# compared. Bootstrap of a genuinely new repo is refused too, on purpose: a
+# human runs it, per AGENTS.md §4 (protection is high blast radius).
+refuse "a branch-protection resource being created" \
+  '^[[:space:]]*#[[:space:]].*github_branch_protection.*will be created' \
+  "D-61/D-08: the fleet's protection rules were created out-of-band and are not in state, so a create means Terraform writes over rules it never adopted. Reconcile docs/state-migration-runbook.md step 6 (import or declare) first; the operator then applies by hand."
+
+# Any change to a protection attribute, in either direction. Direction is not
+# parsed because tightening looks identical to weakening in a plan diff
+# (`~ strict = true -> false` and `false -> true`), and both need a human eye.
+refuse "a branch-protection attribute change" \
+  '^[[:space:]]*~[[:space:]]+(require_signed_commits|require_code_owner_reviews|requires_approving_reviews|required_status_checks|required_pull_request_reviews|dismiss_stale_reviews|require_last_push_approval|required_linear_history|require_conversation_resolution|block_force_pushes|block_deletions|enforce_admins|strict)[[:space:]]*(\{|=|->)' \
+  "D-26: protection attributes are the gate between an unreviewed change and main. Weakening is a fleet-wide exposure; tightening can deadlock merges (a required context that no workflow can report — see the Context Parity class). Either way a human reads it."
+
+# Security-feature switches, weakening direction only. These are the settings
+# compliance-gates.yml claims are mandatory for the fleet.
+refuse "a security feature being disabled" \
+  '^[[:space:]]*~[[:space:]]+(secret_scanning|secret_scanning_push_protection|dependabot_security_updates|vulnerability_alerts|has_security_policies)[[:space:]]*=.*(->[[:space:]]*(false|"disabled"))' \
+  "compliance-gates.yml declares secret scanning, push protection and Dependabot alerts mandatory; a plan that turns one off is a compliance regression, not a cleanup."
+
 if [ "$status" -eq 0 ]; then
-  echo "Plan contains no destroy, replace or visibility change."
+  echo "Plan contains no destroy, replace, visibility change, protection-layer change or security-feature disable."
 fi
 exit "$status"

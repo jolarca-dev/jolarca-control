@@ -210,7 +210,7 @@ gates:
       # show` emits `visibility = `, so the gate never fired and nothing exercised
       # it. Extraction is what made it testable — record the script, not the caller.
       tool: "scripts/check_plan_safety.sh"
-      tested_by: "tests/test_check_plan_safety.sh — 10 fixtures, run by `make test` and compliance-scan.yml"
+      tested_by: "tests/test_check_plan_safety.sh — 16 fixtures (4 refusal classes added 2026-10-15 for D-61/D-26, plus two non-vacuity controls proving a no-op refresh and a security-feature ENABLEMENT are still allowed), run by `make test` and compliance-scan.yml"
       invoked_by:
         - ".github/workflows/plan.yml — step 'Plan safety check'"
         - ".github/workflows/apply.yml — step 'Refuse destructive or visibility-changing plans' (pre-apply)"
@@ -223,7 +223,17 @@ gates:
         - "# <address> must be replaced"
         - "~ visibility = \"public\" -> \"private\" (in-place change, either direction)"
         - "visibility = \"x\" -> \"y\" (defence in depth: transition without a change marker)"
-      compensating_control: "lifecycle { prevent_destroy = true } on every github_repository"
+        # Added 2026-10-15 after D-61 proved the four rules above passed a real
+        # refreshed plan (`3 to add, 25 to change`) as safe to auto-apply.
+        - "# github_branch_protection.<...> will be created (live rules were created out-of-band and are not in state; a create overwrites them)"
+        - "~ require_signed_commits | require_code_owner_reviews | requires_approving_reviews | required_status_checks | required_pull_request_reviews | dismiss_stale_reviews | require_last_push_approval | required_linear_history | require_conversation_resolution | block_force_pushes | block_deletions | enforce_admins | strict  (any change, either direction — tightening can deadlock a merge as badly as weakening exposes the fleet)"
+        - "~ secret_scanning | secret_scanning_push_protection | dependabot_security_updates | vulnerability_alerts -> false|\"disabled\"  (disable direction only; enabling is deliberately allowed)"
+      operator_path: >-
+        A refusal is not an override. The human reading it chooses one of: import
+        the live objects into state (runbook step 6), narrow the declaration, or
+        run the apply manually. The gate has no flag to skip it, by design — a
+        bypass switch is the thing that made the D-22 inline grep useless.
+      compensating_control: "lifecycle { prevent_destroy = true } on every github_repository — verified firing: a plan built from a tree missing repos/*.yml (so every instance plans for deletion) aborted with 'Instance cannot be destroyed' rather than destroying."
       run_on: ["pull_request (path-filtered)", "push to main", "workflow_dispatch"]
 
 enforcement_matrix:
@@ -392,12 +402,80 @@ exceptions:
       exit_trigger: >-
         Repos flipped back to private, or risk acceptance re-authorised
         with fresh 90-day expiry.
+    - id: "contact-alias-interim"
+      gate: >-
+        Published security, privacy and organisation contacts are Gmail
+        plus-aliases on one personal mailbox instead of role mailboxes on a
+        domain the organisation controls. Accepted because the alternative on
+        2026-10-15 was worse: every address previously published
+        (security@jolarca.com, legal@jolarca.com, security@jolarca.dev,
+        legal@jolarca.dev) is undeliverable, so the disclosure channel named in
+        SECURITY.md across the fleet reached nobody.
+      risk: >-
+        GDPR Art. 12/38, SOC 2 CC2.2/CC7.x, ISO 27001 A.5.1. Data-subject
+        requests, vulnerability reports and billing notices all terminate in a
+        single mailbox behind one credential: intake cannot be shown to be
+        handled independently, retention cannot differ per role, and loss or
+        compromise of that one account takes every role contact at once. A
+        plus-alias also discloses the base mailbox name to anyone reading it.
+        This register entry therefore authorises ROUTING ONLY. It must not be
+        cited as segregation of duties or as an independent DPO function.
+      compensating_control: >-
+        VERIFIED IN PLACE: policy/contact-addresses.yml is the single definition
+        of which address serves which role, and names the dead addresses that
+        must not be republished; the GitHub organisation `billing_email` and
+        profile `email` are set to the github-operations alias and re-read live
+        (gh api orgs/jolarca-dev, 2026-10-15); commit authorship on this host
+        uses 227570927+JourneyOfLife@users.noreply.github.com, so no new commit
+        in any public fleet repo carries the base address; the base mailbox is
+        deliberately not re-spelled in the new policy file (public repository).
+        NOT IN PLACE: no automated gate compares live SECURITY.md content
+        against policy/contact-addresses.yml (convention-only), no inbound test
+        message has proven delivery to any alias yet, the org `.github` copy of
+        SECURITY.md and four sibling repos still name the dead addresses, and
+        the GitHub account itself has only the base address on file (primary,
+        verified, public). REGRESSION INTRODUCED BY THIS ACCEPTANCE (measured on
+        the first commit under the new identity, `.commit.verification`):
+        commits authored by the noreply address report `verified: false, reason:
+        "bad_email"` because GitHub verifies a signature only against emails
+        registered on the account — so signed-commit attribution (D-05, PCI-DSS
+        Req 8.2) is weaker until the noreply address is added in Settings →
+        Emails. One UI action, no key rotation.
+      related_finding: "docs/drift-findings.md D-59 and D-60; commit_identity.verification_gap in policy/contact-addresses.yml"
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-10-15"
+      # Recorded under the owner's standing delegation of 2026-10-15 ("consider
+      # it in your professional opinion, change and fix"). AGENTS.md §1 says an
+      # approval exists only in a dated record, so the delegation is written
+      # here rather than left in a chat transcript.
+      expires: "2027-01-13"
+      exit_trigger: >-
+        MX, DMARC and SPF/DKIM published for jolarca.com with deliverable
+        security@ / privacy@ / billing@ role mailboxes; one inbound test message
+        per role proven and its headers retained as hashed evidence; SECURITY.md
+        in `.github` plus the sibling repos repointed to policy/contact-addresses.yml;
+        the Gmail aliases reduced to forwarding and the base mailbox removed from
+        GitHub account public visibility.
 
   # Findings that are NOT accepted exceptions. Listed here so this file cannot
   # be read as a clean bill of health: an exception register that only records
   # what has been accepted hides what is still broken. Each of these blocks the
   # first apply. Details and evidence: docs/drift-findings.md.
   open_blocking:
+    - id: "D-61"
+      issue: >-
+        The pre-apply plan_review gate (scripts/check_plan_safety.sh) exits 0 —
+        "safe to auto-apply" — on a refreshed plan containing 3 branch-protection
+        creations and 25 fleet-wide setting changes. Its refusal on the same
+        commit under -refresh=false came from 5 stale visibility diffs, not from
+        detecting danger. The only thing preventing an unattended apply today is
+        the CI plan step failing (D-56), which is a broken automation.
+      owner_decision_required: >-
+        Reconcile branch-protection declarations with the live rules
+        (docs/state-migration-runbook.md step 6), require a refreshed plan to read
+        0 to add / 0 to change, and stand up a deployment wait timer on the
+        production environment (D-58) BEFORE merging anything on an apply.yml
+        trigger path (repos/**, policy/**, *.tf, *.tfvars, apply.yml itself).
     - id: "D-01"
       issue: "RESOLVED — GitHub is migrating all repos to public. All declarations updated to visibility: public."
       owner_decision_required: "N/A — forced migration. See fleet-public-2026-10 exception."

@@ -74,6 +74,51 @@ assert 1 unmarked-visibility-transition <<'PLAN'
         visibility = "private" -> "public"
 PLAN
 
+# ── Protection-layer refusals (D-61 / D-26), added 2026-10-15 ────────────────
+# These four negative controls exist because the gate passed a REAL plan it
+# should have refused: a refreshed `terraform plan` on 2026-10-15 rendered
+# "3 to add, 25 to change" — including branch-protection creates for repos
+# whose live rules were never imported, and `~ required_status_checks {` on the
+# rest — and exited 0. Shapes below are transcribed from `terraform show`.
+assert 1 protection-create-unimported <<'PLAN'
+  # github_branch_protection.main["jolarca-consent"] will be created
+  + resource "github_branch_protection" "main" {
+      + enforce_admins = true
+      + pattern        = "main"
+      + repository     = "jolarca-consent"
+    }
+PLAN
+
+assert 1 protection-weaken-code-owner <<'PLAN'
+  # github_branch_protection.main["jolarca-docs"] will be updated in-place
+  ~ resource "github_branch_protection" "main" {
+        id                          = "MDP:1234"
+      ~ require_code_owner_reviews  = true -> false
+      ~ required_pull_request_reviews {
+        }
+    }
+PLAN
+
+assert 1 protection-status-checks-change <<'PLAN'
+  # github_branch_protection.main["jolarca"] will be updated in-place
+  ~ resource "github_branch_protection" "main" {
+      ~ required_status_checks {
+          ~ contexts = [
+              - "ci",
+            ]
+          ~ strict   = true -> false
+        }
+    }
+PLAN
+
+assert 1 security-feature-disabled <<'PLAN'
+  # github_repository.repo["jolarca-vendor"] will be updated in-place
+  ~ resource "github_repository" "repo" {
+      ~ secret_scanning              = true -> false
+      ~ secret_scanning_push_protection = true -> false
+    }
+PLAN
+
 # ── Must be ALLOWED (exit 0) ─────────────────────────────────────────────────
 # Real shape of the bootstrap plan: every repo created, visibility SET (not
 # changed). Refusing this would block the legitimate first apply.
@@ -100,6 +145,25 @@ assert 0 unrelated-attribute-change <<'PLAN'
         id          = "jolarca"
       ~ description = "old" -> "new"
         visibility  = "public"
+    }
+PLAN
+
+# Non-vacuity in the other direction: a refresh that reads a protection rule and
+# finds nothing to change must NOT be refused, or the new rules would be a
+# blanket block and someone would delete them under pressure (AGENTS.md §5).
+assert 0 protection-refresh-no-change <<'PLAN'
+github_branch_protection.main["jolarca"]: Refreshing state... [id=MDP:1234]
+
+No changes. Your infrastructure matches the configuration.
+PLAN
+
+# Strengthening a security feature is allowed by design: only the disable
+# direction is refused, so the gate does not fight the fix it is meant to permit.
+assert 0 security-feature-enabled <<'PLAN'
+  # github_repository.repo["jolarca-security"] will be updated in-place
+  ~ resource "github_repository" "repo" {
+      ~ secret_scanning                 = false -> true
+      ~ secret_scanning_push_protection = false -> true
     }
 PLAN
 
