@@ -233,7 +233,12 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   `can_admins_bypass: false`. Consequences an agent must act on: (1) the
   `Production — Apply` job on a trigger-path merge now sits pending for ~30 minutes
   before its first step runs, so `gh run list` showing an in-progress apply is
-  normal — use that window to cancel, not to wait idly; (2) delay is not approval —
+  normal — use that window to cancel, not to wait idly. Cancelling is
+  `gh run cancel <run-id> --force` (there is no `--yes`; without `--force` the CLI
+  prompts and a non-interactive shell looks like it failed). Proven 2026-10-16 on
+  run 38813823199: cancelled mid-wait with `steps_started: 0` and the workspace
+  unchanged at 48 resources, i.e. nothing executed before the stop.
+  (2) Delay is not approval —
   `required_approving_review_count` is still 0 and no reviewer signs anything, so
   treat the merge as the apply decision, as before; (3) assert on the **array**, not
   the scalar: the top-level `wait_timer` field reads `null` even when the timer is
