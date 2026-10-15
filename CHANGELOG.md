@@ -156,6 +156,55 @@ findings, all fixed in-repo rather than only registered:
   `repos/*.yml` (so every instance plans for deletion) aborted with
   `Error: Instance cannot be destroyed` instead of producing a destroy plan.
 
+### Fixed — 2026-10-15 (fourth batch: the step-6 packet turned into two declaration repairs, D-65/D-66)
+
+Working the packet's WEAKEN rows rather than just listing them found two
+declarations that had drifted far enough that an apply would have enacted the
+drift as a control removal (D-65):
+
+- **`restrict_pushes` was declared nowhere but lived everywhere.** Policy says
+  `true`, eleven live rules have the block, `branch-protection.tf` contained the
+  string zero times — so the plan deleted the push restriction from all eleven
+  rules (11 of 25 changes). Now declared via a `dynamic` block over
+  `local.restrict_pushes_rules`, keyed **per repository** from
+  `terraform state show`: `jolarca-payments` allows `/JourneyOfLife`, the other ten
+  allow nobody. The first draft used a blanket `push_allowances = []`, which would
+  have removed the operator's own allowance — i.e. fixing one regression by
+  introducing another; re-planning caught it, reading did not.
+- **`repos/jolarca.yml` declared 9 of the 12 required contexts** the flagship live
+  rule enforces, and all twelve are still produced (verified from
+  `jolarca/commits/main/check-runs`) — an apply would have dropped three required
+  checks from the application repository in silence.
+
+Measured result: plan went `3 to add, 25 to change` → `3 to add, 20 to change`,
+with **zero** `restrict_pushes` lines and zero `frontend-*` removals, while
+`check_plan_safety.sh` still exits **1** on the residue (three creates + remaining
+attribute drift) — the fix removes weakenings, it does not rubber-stamp the apply.
+
+Two honesty items, both written up rather than buried:
+
+- **D-61's own correction was wrong and is corrected a third time.** The three
+  creates do not "add protection": `jolarca-consent`, `-dr` and `-vendor` run an
+  **active undeclared `protect-main` ruleset** (D-46), so a create layers a second
+  mechanism beside the one in force. One un-run command (`…/rulesets`) was the
+  difference — the register's recurring error, asserting absence from a partial
+  probe.
+- **D-66, opened deliberately instead of closed silently.** Policy demands a push
+  restriction that six rules do not have (`jolarca-docs`, `jolarca-hermes-agents`,
+  `.github`, and the three ruleset-only repos). Extending the new declaration to
+  them would have *added* a control as a side effect of removing a weakening — and
+  would start failing `codeowners.tf`'s own `github_repository_file` commits to
+  `main`. That belongs in its own reviewed change, so it is recorded as open.
+- The packet's "UNRESOLVED" row was also my own parsing artifact: `branch_protection`,
+  `compliance_summary` and `protected_repos` are the plan's **Outputs** section, not
+  `github_repository` attributes (`state show` confirms), and the row now says so.
+
+Verification: `terraform fmt -check` and `terraform validate` clean ·
+`validate_repos.py` 16/16 · refreshed plan 3/20 with the two classes gone ·
+`check_plan_safety.sh` exit 1 on the residue · `make lint` ·
+`compliance_check.py` pass · evidence re-registered (`repos/jolarca.yml` is hashed)
+and `--check` exit 0.
+
 ### Fixed — 2026-10-15 (third batch: two holes in the D-61 gate, and the 404 that wasn't)
 
 Preparing the step-6 packet and testing the plan-safety refusal **against real
