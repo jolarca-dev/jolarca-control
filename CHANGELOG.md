@@ -248,6 +248,7 @@ starts no apply.
   checklist as fact. Environment reviewers were deliberately left untested: the old claim
   that a solo operator cannot self-approve is contradicted by the *Prevent self-review*
   option, and an unsatisfiable reviewer would wedge every deploy.
+- **Brake proven, not asserted.** The first trigger-path merge after D-70 (run 38813823199, merge of #76) shows `Production — Apply` in `status: waiting` with **zero started steps** — the wait blocks ahead of "Set up job" — plus a `production` deployment object and an untouched workspace (`resource-count: 48`, unlocked). Recorded in D-70; `main` CI is otherwise all green except `Validate & Plan` (D-56).
 - Not out-of-band drift: this root declares no `github_environment`
   (`terraform state list | grep -ic environment` → 0), so the write cannot diverge from
   Terraform; recorded as a dated deviation like D-34…D-38.
