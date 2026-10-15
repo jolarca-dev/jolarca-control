@@ -187,7 +187,7 @@ account. Resolved empirically, not by inference:
 | Orgs visible to the local credential | `jolarca-dev` only | `GET /api/v2/organizations` with the `~/.terraformrc` token |
 | Org billing email | `journey4oflife@gmail.com` (measured 2026-10-15) → **changed the same day** to `journey4oflife+jolarca.billing@gmail.com` via `PATCH /api/v2/organizations/jolarca-dev` (HTTP 200) and confirmed by a follow-up GET | `GET /api/v2/organizations/jolarca-dev` |
 | Org id / plan | `org-3zNQFys8XA3HNPCF`, free tier (`audit-logging: false`) | `GET /api/v2/organizations/jolarca-dev/entitlement-set` |
-| Workspace id | `ws-w6NSnTXXmYgh78Su`, TF 1.16.5, **35 resources** | `GET .../workspaces/jolarca-control` |
+| Workspace id | `ws-w6NSnTXXmYgh78Su`, TF 1.16.5, **35 resources** at this reading; **48** when re-measured 2026-10-15 (`resource-count: 48`, `terraform state list` → 48 addresses, `execution-mode: local`) | `GET .../workspaces/jolarca-control` |
 | Runs | 3, all `source: terraform+cloud` ("Triggered via CLI") | `GET /api/v2/workspaces/ws-.../runs` |
 
 `developer.hashicorp.com` is the documentation, Learn and download portal. It
@@ -195,8 +195,9 @@ carries **no organization, no workspace and no state**, so it is not a competing
 state store even when it is a separate login. The confusion risk is therefore
 *not* the number of accounts, and the decision is to **keep both identities and
 document the sole owner here** rather than delete anything — deleting the
-state-bearing account would orphan all 35 tracked `github_*` resources while
-leaving the repositories themselves alive on GitHub. Whether the docs-portal login
+state-bearing account would orphan every tracked `github_*` resource (35 at the
+2026-10-12 reading, 48 as of 2026-10-15) while leaving the repositories
+themselves alive on GitHub. Whether the docs-portal login
 is a *separate* identity or the same one cannot be settled from here — no API
 exposes it — but it is immaterial: no state lives on either reading of it, so the
 only record needed is the owner table above. Deletion was refused outright because
@@ -217,8 +218,8 @@ does not work against the cloud backend: the script is keyed to
 `ERROR: terraform.tfstate is not valid JSON` — the file is 0 bytes. There is no
 `docs/backup-log.tsv`, and no `*.age` or state copy exists under
 `/opt/jolarca/backups/` (that tree holds PostgreSQL and Redis dumps only). The
-authoritative 35-resource state therefore has **exactly one copy, in HashiCorp's
-cloud** — which is the concrete reason no account, org or workspace may be deleted
+authoritative state (48 resources as of 2026-10-15; 35 when this paragraph was
+first measured) therefore has **exactly one copy, in HashiCorp's cloud** — which is the concrete reason no account, org or workspace may be deleted
 before an HCP state export is taken and verified. Not fixed in this change:
 closing it needs a `terraform pull`-equivalent path for a `cloud {}` workspace
 plus a `BACKUP_DEST`, and the script's own fixture set has no negative control
@@ -298,7 +299,8 @@ be application/vnd.api+json`), measured on the cancel and again on the retry.
   `app.terraform.io` holds state, and the table in *Account custody* is the record.
   Deleting an identity is refused as an irreversible action, not a cleanup.
 - Account deletion is **not** a cleanup option: it removes the org and its state
-  while the GitHub resources keep running, leaving 35 resources unowned.
+  while the GitHub resources keep running, leaving the tracked resources unowned
+  (35 at the 2026-10-12 reading, 48 as of 2026-10-15).
 - HCP Terraform outage could block applies. **The stated mitigation does not
   currently hold** — "local state backup" assumes a readable `terraform.tfstate`,
   and `scripts/state_backup.sh` exits 1 against the 0-byte placeholder, so there is

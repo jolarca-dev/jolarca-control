@@ -202,6 +202,9 @@ body:
            rather than described as a two-person rule (docs/change-management.md).
         2. A PR adds `repos/<name>.yml`. `make lint` must pass.
         3. The plan is posted to the PR and read before merge.
-        4. Merge triggers apply — gated on `STATE_MIGRATION_COMPLETE` and on the
-           plan containing no destroy, replace or visibility change.
+        4. Merge triggers apply. `STATE_MIGRATION_COMPLETE` currently measures
+           'true', so that gate is OPEN — the refusal that protects you is
+           `scripts/check_plan_safety.sh`, which rejects destroy, replace,
+           visibility changes, branch-protection creates/attribute changes and
+           security-feature disables (D-61). Read the plan before merging.
         5. `scripts/drift_detect.py` confirms the live repo matches the allow-list.

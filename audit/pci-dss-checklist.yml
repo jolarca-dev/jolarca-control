@@ -103,10 +103,20 @@ requirements:
         status: "pending-adoption"
       - id: "6.5.3-01"
         description: "Pre-production changes are tested and approved before going live"
-        evidence: "plan.yml posts the plan for review; apply.yml refuses destroy/replace/visibility changes"
+        evidence: "plan.yml posts the plan for review; check_plan_safety.sh refuses destroy/replace/visibility, and since 2026-10-15 also branch-protection changes and security-feature disables; lifecycle prevent_destroy"
         enforcement: "CI gates"
-        status: "declared"
-        note: "Gated on STATE_MIGRATION_COMPLETE — not yet live."
+        status: "partial"
+        finding: "D-56, D-58, D-61"
+        note: >-
+          Two halves, measured separately. TESTED: the plan gate could not run at
+          all until 2026-10-15 (plan.yml initialised with -backend=false against a
+          cloud {} root — reproduced) and the refusal gate passed a 28-change plan
+          it should have caught (D-61); both are fixed in this changeset.
+          APPROVED: no approval exists. The production environment has
+          protection_rules: [] and `required_approving_review_count = 0`, and
+          STATE_MIGRATION_COMPLETE measures 'true' — so an apply-triggering merge
+          is an unattended `apply -auto-approve`, which PCI-DSS Req 6.5.1 does not
+          accept as change control. Recorded as gap D-58 (PR #41).
       - id: "6.5.4-01"
         description: "Back-out procedures exist"
         evidence: "docs/change-management.md Rollback Procedure; docs/runbooks.md RB-07"

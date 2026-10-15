@@ -69,8 +69,28 @@ jobs:
       - name: Terraform fmt -check
         run: terraform fmt -check -recursive
 
+      # ── D-56 root cause, reproduced 2026-10-15 ─────────────────────────────
+      # This step used to read `terraform init -input=false -backend=false`.
+      # On a clean runner checkout that leaves the `cloud {}` block
+      # uninitialised, and the next `terraform plan` then aborts with
+      #   Error: HCP Terraform or Terraform Enterprise initialization required:
+      #   please run "terraform init" — Changes to the HCP Terraform
+      #   configuration block require reinitialization
+      # which is exactly the red "Validate & Plan" every PR has carried since
+      # 2026-10-12. Reproduced and retired locally: with `-backend=false` on a
+      # tree containing only the .tf files + repos/, plan fails with that error;
+      # with a normal init (matching apply.yml line ~125), the same tree plans
+      # successfully. `terraform validate` does not need the backend skipped.
+      #
+      # Consequence, stated rather than hidden: the plan is now readable, so the
+      # refusal a human was supposed to see comes from "Plan safety check"
+      # below, which since D-61 also refuses protection-layer creates/changes
+      # and security-feature disables. Until docs/state-migration-runbook.md
+      # step 6 is reconciled, that step will fail on every PR whose plan is not
+      # a no-op. That is the intended signal, not a malfunction — do not weaken
+      # the gate to make it green (AGENTS.md §5).
       - name: Terraform Init
-        run: terraform init -input=false -backend=false
+        run: terraform init -input=false
 
       - name: Terraform Validate
         run: terraform validate
@@ -96,14 +116,18 @@ jobs:
           cat > plan-output.txt <<'MSG'
           terraform plan SKIPPED — STATE_MIGRATION_COMPLETE is not 'true'.
 
-          This control plane is not yet authoritative. The github_* resources it
-          declares are still owned by the live Terraform state in
-          jolarca-infrastructure (module.github_org.*). Running a live plan or
-          apply from here before the state migration completes risks dual
-          ownership of PCI-DSS-scoped repositories.
+          The variable is the operator's switch on this workflow, nothing more.
+          State itself already lives in the HCP Terraform workspace
+          jolarca-dev/jolarca-control (see docs/state-migration-runbook.md,
+          status COMPLETE 2026-10-10) and the legacy jolarca-infrastructure root
+          was drained of github_* resources by `terraform state rm` (D-13), so
+          this control plane IS the sole declarative owner. Reading an earlier
+          draft of this message as "the resources still belong to
+          jolarca-infrastructure" would be wrong: that claim predates the
+          migration and was corrected here on 2026-10-15.
 
-          See docs/state-migration-runbook.md.
-          Validate + fmt + init + validate-only checks above DID run and passed.
+          No plan was produced, so no apply may proceed from this run.
+          Validate + fmt + init-only checks above DID run and passed.
           MSG
 
       - name: Plan safety check

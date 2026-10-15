@@ -141,7 +141,10 @@ plan: validate ## Run terraform plan — REFUSED until the state migration compl
 
 apply: ## Apply terraform changes — BLOCKED until the state migration completes
 	@echo "REFUSED. See docs/state-migration-runbook.md."
-	@echo "apply.yml enforces the same gate via STATE_MIGRATION_COMPLETE."
+	@echo "apply.yml checks STATE_MIGRATION_COMPLETE, which measures 'true' — so that"
+	@echo "gate is OPEN and this local refusal is the only one that stops YOU. In CI the"
+	@echo "refusal is scripts/check_plan_safety.sh (destroy/replace/visibility/"
+	@echo "branch-protection/security-feature disables). See D-61 and D-58."
 	@exit 1
 
 # ── Utilities ────────────────────────────────────────────────────────────────

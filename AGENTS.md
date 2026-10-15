@@ -50,8 +50,12 @@ As of 2026-10-06 both required contexts pass on `main` (verified on PRs #42/#43)
 §8 records the current control status.
 
 `make apply` is **REFUSED by design** (exit 1) and `make plan` prompts before an
-offline `-refresh=false` plan. Do not "fix" either. Both are gated on
-`STATE_MIGRATION_COMPLETE`; see `docs/state-migration-runbook.md`.
+offline `-refresh=false` plan. Do not "fix" either. Both read
+`STATE_MIGRATION_COMPLETE` — and **that variable measures `'true'` today**
+(`gh api repos/jolarca-dev/jolarca-control/actions/variables`, measured 2026-10-15),
+so it is an OPEN gate, not a closed one: the refusal in the Makefile is local
+only, and the CI apply path is live. What actually stands between a merge and an
+apply is `scripts/check_plan_safety.sh` (see §8 and D-61).
 
 ## 3. Exit-code convention
 
@@ -145,7 +149,7 @@ Recorded so no agent assumes protection that does not exist. Verify live before
 relying on any of these; details and expiries in `policy/compliance-gates.yml`.
 
 - **Branch protection IS active on this repo's `main`** (verified 2026-10-06,
-  legacy endpoint HTTP 200; re-proven 2026-10-12 when a direct `git push origin
+  legacy endpoint HTTP 200 at the time; re-proven 2026-10-12 when a direct `git push origin
   main` was refused with `GH006: Protected branch update failed` — "Changes must
   be made through a pull request" and "4 of 4 required status checks are
   expected"): `strict = true`, `enforce_admins = true`, **four** required
@@ -154,10 +158,14 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   A-08 on 2026-10-08; this file said three until 2026-10-12),
   `required_approving_review_count = 0`. It is
   legacy branch protection created out-of-band, not a ruleset (this repo has none).
-  Terraform holds the state now (D-02 backend migrated) but **does not own these
-  rules**: 13 fleet protection rules are live and only `jolarca-hermes-agents` is
-  in state, so an apply creates the rest (see
-  `docs/state-migration-runbook.md` step 6). The old D-33 Free-plan
+  Terraform holds the state now (D-02 backend migrated), and **most** protection
+  rules are in state: `terraform state list` returns **14**
+  `github_branch_protection` addresses on 2026-10-15 (`health[0]` plus
+  `main["…"]` for 13 repos). Only `jolarca-consent`, `jolarca-dr` and
+  `jolarca-vendor` are absent, and those three are what an apply would create —
+  which `scripts/check_plan_safety.sh` now refuses until runbook step 6 is closed
+  (D-61). This bullet previously claimed only `jolarca-hermes-agents` was in
+  state; that was corrected by measurement, not by re-reading the runbook. The old D-33 Free-plan
   "cannot protect" rationale no longer applies here because this repo is public
   (corrects D-42).
 - **`required_approving_review_count = 0`** — the sole operator can merge their
@@ -178,7 +186,8 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   `$REPO_ROOT/terraform.tfstate`, which is 0 bytes now that state lives in HCP
   Terraform; running it exits 1 ("terraform.tfstate is not valid JSON"), no
   `docs/backup-log.tsv` exists, and `/opt/jolarca/backups/` holds only
-  PostgreSQL/Redis dumps. The authoritative 35-resource state has exactly one
+  PostgreSQL/Redis dumps. The authoritative state (48 resources as of
+  2026-10-15) has exactly one
   copy. Do not delete an account, org or workspace, and do not treat D-02 as
   closed: only the remote-backend half landed.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
@@ -199,8 +208,28 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   Scan` is green. Because protection is live with `strict = true` on this public
   repo, a red required context genuinely blocks the merge — treat these as real
   gates, not decoration, and never "fix" one by editing the gate (D-42; §5).
-  `make apply` remains refused and the `terraform apply` path stays gated on
-  `STATE_MIGRATION_COMPLETE`.
+  `make apply` remains refused locally, but the CI apply path is **not** blocked:
+  `STATE_MIGRATION_COMPLETE` measures `'true'`. The refusal there is
+  `scripts/check_plan_safety.sh`, which since 2026-10-15 also covers
+  protection-layer changes and security-feature disables (D-61).
+- **The branch-protection verification method in this file no longer works.**
+  Measured 2026-10-15: `gh api repos/jolarca-dev/jolarca-control/branches/main`
+  → `.protected = true`, `…/rulesets` → `[]`, but BOTH
+  `…/branches/main/protection` and
+  `…/protection/required_status_checks` return **HTTP 404**. So the sentence
+  above ("legacy endpoint HTTP 200") can no longer be re-proved the way it was
+  written, and an agent that probes it will read 404 as "unprotected" — the
+  opposite of the truth. Use the signals that still answer: `.protected` on the
+  branch, `gh pr view <n> --json mergeStateStatus` (was `UNSTABLE`/`BLOCKED`
+  across pushes today, `BLOCKED` transiently), the push rejection itself
+  (`GH006`), and the declared list in `repos/jolarca-control.yml`. WHY the
+  endpoint changed is not established here — the cause was not determined within
+  two probes, so it is recorded as an open question rather than guessed at.
+- **`policy/repo-defaults.yml` used to name a required context that nothing
+  reports** ("Fleet Separation Guard"; the job is "Fleet Separation (ADR-0004)"
+  and it is path-filtered to `repos/**`) while omitting the fourth real one,
+  `SAST (semgrep)`. Corrected 2026-10-15 (D-62). No script reads that block, so
+  the correction is documentary — which is exactly why it survived this long.
 - **Contact-address routing is convention-only.**
   `policy/contact-addresses.yml` defines the role mailboxes (D-59), but no gate
   in `scripts/` compares live SECURITY.md content against it and no inbound

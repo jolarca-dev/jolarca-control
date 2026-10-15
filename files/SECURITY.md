@@ -11,32 +11,31 @@ applied immediately upon discovery.
 
 ### Private Vulnerability Disclosure
 
-GitHub's private vulnerability disclosure is enabled for this organization.
-To report a security issue:
+If the affected repository shows **Security** → **Report a vulnerability**,
+use it — that channel keeps the report private. GitHub does not expose this
+setting through the API, so it cannot be asserted as enabled for every
+repository here: if the option is not visible, use the email below rather than
+assuming a report arrived.
 
 1. Go to the affected repository
 2. Click **Security** → **Report a vulnerability**
 3. Provide details of the vulnerability
 
-Alternatively, email: **journey4oflife+jolarca.security@gmail.com**
+Email: **journey4oflife+jolarca.security@gmail.com**
 
-Privacy enquiries and data-subject requests (GDPR Art. 12–22): **journey4oflife+jolarca.privacy@gmail.com**
+Privacy enquiries and data-subject requests (GDPR Art. 12–22):
+**journey4oflife+jolarca.privacy@gmail.com**
 
-> **Why a Gmail alias and not `security@jolarca.com`** (D-59, 2026-10-15): the
-> address formerly published here cannot receive mail. Verified the same day:
-> `dig MX jolarca.com` and `dig MX jolarca.dev` both return nothing, no DMARC
-> record exists, and nothing listens on port 25 or 587 on the host that
-> operates this fleet. Publishing an undeliverable disclosure channel is worse
-> than publishing none — researchers believe they reported.
->
-> This is an **interim** contact. All five role addresses are plus-aliases on
-> one personal mailbox, so they give routing and leak attribution, not
-> independent handling or separate retention, and the alias discloses the base
-> mailbox name. The exit condition is a real role mailbox on `jolarca.com`
-> (MX + DMARC + SPF/DKIM), tracked in `policy/contact-addresses.yml` and
-> `policy/compliance-gates.yml` (`contact-alias-interim`, expires 2027-01-13).
-> Delivery of the alias itself has not yet been proven by a test message —
-> that evidence is outstanding, not assumed.
+> `security@jolarca.com` was published here as the primary contact and is
+> **undeliverable** — `jolarca.com` has no MX and no DMARC record, and
+> `jolarca.dev` has neither (measured 2026-10-15: `dig MX`, `dig TXT _dmarc`).
+> Do not add it back. The Gmail plus-aliases above are an interim measure
+> tracked as D-59 in
+> [`jolarca-control`](https://github.com/jolarca-dev/jolarca-control/blob/main/docs/drift-findings.md):
+> they reach a real inbox, but all five share one mailbox and each discloses its
+> base name, so they are message routing, not a separate security function or an
+> independent DPO. Domain role mailboxes (MX + DMARC + SPF/DKIM) are the exit
+> condition.
 
 ### What to Include
 

@@ -1,7 +1,9 @@
 # State Migration Runbook — `jolarca-infrastructure` → `jolarca-control`
 
 **Status:** COMPLETE (2026-10-10) — HCP Terraform workspace `jolarca-dev/jolarca-control`
-is live with 35 resources; `STATE_MIGRATION_COMPLETE=true` is set; `TFC_TOKEN`
+is live (35 resources at completion; **48** when re-measured 2026-10-15, execution
+mode `local`); `STATE_MIGRATION_COMPLETE=true` is set — which means the CI apply
+gate is **open**, not closed; `TFC_TOKEN`
 secret is configured. `jolarca-control` is authoritative.
 **Scope:** move ownership of the six `jolarca-dev` GitHub repositories, their
 branch-protection rules and the org health repo from
