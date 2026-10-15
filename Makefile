@@ -2,7 +2,7 @@
 # Jolarca Control Plane — Makefile
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: help setup validate compliance drift fleet-audit org-audit readiness \
+.PHONY: help setup validate compliance context-parity context-baseline backup drift fleet-audit org-audit readiness \
         first-commit evidence-check evidence-register \
         init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
@@ -30,7 +30,7 @@ validate: ## Validate all repo YAML definitions against policy
 compliance: ## Run the full compliance report (JSON)
 	python3 scripts/compliance_check.py
 
-lint: fmt-check tf-validate validate py-lint py-type sh-lint yaml-lint test ## Everything CI runs before a plan
+lint: fmt-check tf-validate validate context-baseline py-lint py-type sh-lint yaml-lint test ## Everything CI runs before a plan
 
 fmt: ## Format Terraform files in place
 	terraform fmt -recursive
@@ -58,9 +58,10 @@ sh-lint: ## shellcheck over every shell script
 yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 	yamllint -c .yamllint .
 
-test: ## Regression tests: plan-safety (D-22) + execution mode + readiness + first-commit
+test: ## Regression tests: plan-safety (D-22) + execution mode + backup (D-02) + readiness + first-commit
 	bash tests/test_check_plan_safety.sh
 	bash tests/test_check_workspace_execution_mode.sh
+	bash tests/test_state_backup.sh
 	.venv/bin/python -m pytest tests/ -q
 
 # ── Live checks (read-only, need gh / GITHUB_TOKEN) ──────────────────────────
@@ -98,6 +99,17 @@ readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
 	  $(if $(REPORT),--markdown $(REPORT)) >/dev/null
 context-parity: ## Declared required status checks must be checks the repo can report
 	python3 scripts/check_declared_contexts.py
+
+context-baseline: ## policy/repo-defaults.yml required_checks must match the declaration AND be producible (D-62)
+	python3 scripts/check_required_context_baseline.py
+
+# Off-host encrypted backup of Terraform state, with the decrypt round trip
+# PROVEN before it reports success (D-02). BACKUP_DEST is required because a
+# backup written next to the thing it backs up is not a 3-2-1 backup.
+#   BACKUP_DEST=/opt/jolarca/backups make backup
+backup: ## Encrypted, decrypt-verified off-host backup of Terraform state
+	@test -n "$(BACKUP_DEST)" || { echo "usage: BACKUP_DEST=<off-host-dir> make backup"; exit 1; }
+	BACKUP_DEST=$(BACKUP_DEST) bash scripts/state_backup.sh
 
 # Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
 # STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target

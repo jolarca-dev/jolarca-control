@@ -236,9 +236,38 @@ gates:
       compensating_control: "lifecycle { prevent_destroy = true } on every github_repository — verified firing: a plan built from a tree missing repos/*.yml (so every instance plans for deletion) aborted with 'Instance cannot be destroyed' rather than destroying."
       run_on: ["pull_request (path-filtered)", "push to main", "workflow_dispatch"]
 
+  required_context_baseline:
+    id: "required-context-baseline"
+    description: >-
+      The required-status-check baseline in this file's companion policy must
+      equal what repos/jolarca-control.yml declares AND what a pull_request can
+      actually report.
+    enforcement: "mandatory"
+    frameworks: ["soc2", "iso27001", "pci-dss"]
+    soc2_controls: ["CC8.1"]
+    iso_controls: ["A.8.32"]
+    pci_controls: ["6.5.1"]
+    implementation:
+      # Added 2026-10-15 as the enforcement half of D-62. Before this, the
+      # baseline named a context no job reports ("Fleet Separation Guard") and
+      # omitted a real one ("SAST (semgrep)") for ten days, because nothing
+      # compared the three sources. A list that no code reads is a wish.
+      tool: "scripts/check_required_context_baseline.py"
+      tested_by: "tests/test_check_required_context_baseline.py — 9 cases, run by `make test` and pytest in CI, including the real-repo pass, the literal D-62 defect, empty baseline, a path-filtered workflow, missing/unparseable input exiting 2, and an assertion that the script is wired into a required job"
+      invoked_by:
+        - ".github/workflows/compliance-scan.yml — job 'Validate Repo Allow-List' (a required context)"
+        - "Makefile: `make context-baseline`, in `make lint`"
+      exit_codes:
+        "0": "baseline, declaration and producible job names agree"
+        "1": "mismatch, empty baseline, or a context no pull_request can report"
+        "2": "could not verify — an input is missing or unparseable, never a pass"
+    remediation:
+      - "Fix the baseline or the declaration so they agree; never add a name no workflow reports"
+      - "If a check should be required, its workflow must trigger on pull_request with no paths filter"
+
 enforcement_matrix:
   governance:
-    required: ["fleet_separation", "dependency_scan", "secret_scan", "license_check", "code_quality", "sast", "iac_scan", "iac_policy", "plan_review"]
+    required: ["fleet_separation", "dependency_scan", "secret_scan", "license_check", "code_quality", "sast", "iac_scan", "iac_policy", "plan_review", "required_context_baseline"]
     optional: ["container_scan"]
   platform:
     required: ["fleet_separation", "dependency_scan", "secret_scan", "license_check", "code_quality", "sast", "container_scan", "plan_review"]

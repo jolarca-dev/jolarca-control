@@ -156,6 +156,45 @@ findings, all fixed in-repo rather than only registered:
   `repos/*.yml` (so every instance plans for deletion) aborted with
   `Error: Instance cannot be destroyed` instead of producing a destroy plan.
 
+### Fixed — 2026-10-15 (second batch: D-02's backup, and D-62 made enforceable)
+
+Continued the "fix every material finding in-repo" pass after #69 merged.
+
+- **`scripts/state_backup.sh` rewritten and proven (D-02 second half).** It was
+  dead since state moved to HCP Terraform — keyed to a 0-byte
+  `terraform.tfstate`, exiting 1 every run, while the register cited it as the
+  interim control. It now pulls the workspace's current state version (org and
+  workspace parsed from `main.tf`'s `cloud {}`), rejects HCP's *sanitized*
+  `hosted-json-state-download-url` in favour of the real
+  `hosted-state-download-url`, encrypts to `$BACKUP_DEST`, and **decrypts and
+  compares SHA-256** before reporting. Live run: 7 resource blocks / 6 outputs /
+  87,803 bytes, serial 14, digest match, artifact + manifest written. Exit codes
+  follow §3 — skipping the proof exits 2, never 0. `make backup` wraps it;
+  `tests/test_state_backup.sh` adds 10 fixtures including wrong-identity and
+  unreachable-backend. **Still open, and recorded as open:** no schedule, and
+  the destination plus age key are on the same host — a verified export path, not
+  yet a 3-2-1 copy.
+- **New gate for D-62: `scripts/check_required_context_baseline.py`.** Compares
+  `policy/repo-defaults.yml` `required_checks.control_plane`, the
+  `repos/jolarca-control.yml` declaration, and the job names a `pull_request`
+  event can report; wired into `Validate Repo Allow-List` (a required context)
+  and `make lint`. Writing it surfaced two bugs in the gate itself before it went
+  green — notably `pull_request:` with no value parses to `None` and was read as
+  "absent", which made it call all four real contexts unproducible; both are now
+  regression-locked by fixtures, and the register corrects the earlier claim that
+  this file would stay "convention-only".
+- **AGENTS.md §2/§8 updated to match measurement**, not the other way round: the
+  plan-safety refusal list now includes protection-layer and security-feature
+  classes, the merge of #69 is recorded with its real outcome (plan failed on the
+  state lock, apply **skipped**, so nothing applied), and §8's backup bullet now
+  says what works and what does not.
+
+Verification: `make lint` (including the new `context-baseline` step) ·
+`bash tests/test_state_backup.sh` 10/10 · `bash tests/test_check_plan_safety.sh`
+16/16 · pytest with the two new suites · live `BACKUP_DEST=/opt/jolarca/backups`
+run with the round trip matched · evidence registry re-hashed and `--check`
+green.
+
 ### Changed — 2026-10-15 (D-59, D-60: published contacts and commit identity)
 
 - **New `policy/contact-addresses.yml`** — the single definition of the five
