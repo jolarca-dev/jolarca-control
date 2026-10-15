@@ -56,14 +56,17 @@ jobs:
       - name: Check declared status-check contexts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Known drift, time-boxed rather than silenced. jolarca-identity: #3 renames
-          # its contexts and jolarca-control#29 aligns the declaration. jolarca-security:
-          # declared [lint, security] but publishes 'Markdown lint', 'YAML syntax
-          # validation' and 'gitleaks' -- same class, discovered by this check's first
-          # live run, recorded as D-47; no fix PR exists yet. Delete each entry once its
-          # declaration is satisfiable. If the date passes with an entry still listed,
-          # the job goes red on purpose: an exception without an expiry is how a known
-          # gap becomes a permanent one.
-          ALLOW_MISSING_REPOS: "jolarca-identity jolarca-security"
-          ALLOW_MISSING_UNTIL: "2026-11-15"
+          # EXEMPTIONS RETIRED 2026-10-15 — this list was emptying itself backwards.
+          # It carried "jolarca-identity jolarca-security" until 2026-11-15 while the
+          # pending Terraform plan contained `+ required_status_checks` for identity with
+          # contexts (ci/security/lint) that its only workflow has never reported
+          # ("gitleaks (full history)", "shellcheck"). Exempting the repo from the check
+          # that detects an unsatisfiable declaration does not defer the defect: the plan
+          # still carried it, and an apply would still have frozen every merge there.
+          # identity's declaration is now the two real job names (repos/jolarca-identity.yml);
+          # security was measured satisfiable (markdown-lint, policy-tests, secret-scan,
+          # yaml-lint are all reported) so its entry was already stale. A new entry here
+          # needs a dated record in policy/compliance-gates.yml, not just a string here.
+          ALLOW_MISSING_REPOS: ""
+          ALLOW_MISSING_UNTIL: ""
         run: python3 scripts/check_declared_contexts.py

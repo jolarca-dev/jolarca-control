@@ -49,6 +49,23 @@ jobs:
       # baseline rotted while reading as authoritative. Fixtures in
       # tests/test_check_required_context_baseline.py.
       - run: python3 scripts/check_required_context_baseline.py
+      # D-67: the check that catches "a required status check no workflow can report" used
+      # to live only in context-parity.yml, which is path-filtered and NOT one of the four
+      # required contexts — so it could describe a merge-killing declaration and still let
+      # the PR merge (it did: repos/jolarca-identity.yml declares ci/security/lint while the
+      # repo reports 'gitleaks (full history)'/shellcheck, and the plan carried
+      # `+ required_status_checks` for it). Running it here puts the same verdict on the
+      # merge path. Every allow-listed repo is public, so the job's own GITHUB_TOKEN can
+      # read their workflow files. Trade-off, stated rather than hidden: this step reads the
+      # live API, so a GitHub outage makes a required context red and blocks merges until a
+      # re-run — deliberate, because the script exits 2 ("could not verify") rather than
+      # passing on an unread repo (§3, D-23), and a silently-skipped gate is the failure this
+      # repo keeps recording. context-parity.yml is kept as the early, path-filtered signal.
+      - name: Declared required checks must be reportable (fleet)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_MISSING_REPOS: ""
+        run: python3 scripts/check_declared_contexts.py
 
   # ── Context 2: Policy Compliance Check ─────────────────────────────────────
   compliance:

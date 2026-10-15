@@ -33,7 +33,15 @@ topics:
 - synthetic-data
 - warehouse
 settings:
-  has_issues: false
+  # Per-repo override of the fleet default (`policy/repo-defaults.yml`
+  # repository_defaults.has_issues: false), which is legal and already used by
+  # jolarca-identity/-security. Flipped to true 2026-10-15 because live is true and
+  # carries real tracked work: open issue #4 "i.SAF FR0600 export: monthly
+  # invoice-register XML from finance marts". Declaring false made the pending plan
+  # render `~ has_issues = true -> false`, i.e. an apply would have removed the Issues
+  # tab and frozen that requirement in a PCI-DSS-scoped repo with nobody looking at it
+  # (D-68). Requirements for finance marts belong in the repo they describe.
+  has_issues: true
   has_wiki: false
   has_projects: false
   delete_branch_on_merge: true

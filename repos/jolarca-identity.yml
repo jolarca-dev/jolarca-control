@@ -9,9 +9,20 @@
 
 name: jolarca-identity
 description: "Identity management, access control, RBAC policy, and joiner/mover/leaver automation for the jolarca-dev marketplace"
-# Private: this repo defines RBAC policy and IAM procedures for a PCI-DSS-scoped
-# marketplace. Public readability of access-control rules widens the attack
-# surface. Evidence stays in jolarca-compliance (also private).
+# Public, and it must stay public. Historical rationale (2026-09-25, private era) said:
+# "Private: this repo defines RBAC policy and IAM procedures for a PCI-DSS-scoped
+# marketplace. Public readability of access-control rules widens the attack surface.
+# Evidence stays in jolarca-compliance (also private)." Both premises are now false —
+# GitHub force-migrated the fleet (D-01) and all 16 `repos/*.yml` declare
+# `visibility: public` (`grep -h '^visibility:' repos/*.yml | sort | uniq -c`).
+# Do NOT flip this back to private on the strength of the prose above: D-52 measured
+# that privating a governed repo blinds this control plane — `Context Parity` reads
+# sibling workflow files with a token that cannot see private repos, so the check lands
+# in `unverifiable[]`, exits 2 and reddens a required context. Both 2026-10-06 flips
+# were reverted the same day.
+# The exposure the old comment worried about is managed differently: this repo holds the
+# machinery, not the records (lines 7-8), and D-31/D-52 track the regulated-record
+# removal that actually reduces public readability.
 visibility: public
 tier: platform
 # tier-1: RBAC policy defines who can access PCI-scoped systems; compromise of
@@ -28,10 +39,20 @@ criticality: tier-1
 # jolarca-dev still has ZERO teams and one member (D-10). Nothing has relied on
 # the procedures yet: jolarca-compliance/audits/access-reviews/ holds only the
 # convention README, no executed review.
-# Rubric caveat, recorded rather than papered over: `in-development` assumes "CI
-# runs", and it does not — the repo has no CI workflow (only Dependabot's
-# dynamic/dependabot/update-graph), main HEAD has zero check runs, so the
-# `ci` / `security` / `lint` contexts declared below cannot report.
+# Rubric caveat, corrected 2026-10-16 by measurement. As written on 2026-09-26 it read:
+# "`in-development` assumes 'CI runs', and it does not — the repo has no CI workflow
+# (only Dependabot's dynamic/dependabot/update-graph), main HEAD has zero check runs, so
+# the `ci` / `security` / `lint` contexts declared below cannot report." That is now
+# obsolete in its CI half: `.github/workflows/ci.yml` exists, triggers on `push` and
+# `pull_request` to main, and both jobs — `gitleaks (full history)` and `shellcheck` —
+# report `completed`/`success` on main HEAD (`gh api
+# repos/jolarca-dev/jolarca-identity/commits/main/check-runs`). The contexts below are
+# those two real names precisely because of this (D-68): the old `ci`/`security`/`lint`
+# trio was never reportable, and under `strict: true` requiring it would have frozen
+# every merge on the repository.
+# The rest of the caveat is deliberately not re-verified here and is unchanged by this
+# correction: promotion to `operational` still needs teams to exist and the first
+# executed access review to land in jolarca-compliance.
 # Promote to `operational` when teams exist AND the first signed access review
 # lands in jolarca-compliance.
 launch_status: in-development
@@ -64,10 +85,20 @@ branch_protection:
     pattern: main
     required_status_checks:
       strict: true
+      # Context names are GitHub check-run names, so they must be names the repo can
+      # actually report. Measured 2026-10-15 against jolarca-dev/jolarca-identity's only
+      # workflow (`ci.yml`), which publishes exactly these two job names:
+      #   "gitleaks (full history)" and "shellcheck".
+      # The previous value — ci / security / lint — had never been produced by that repo
+      # (scripts/check_declared_contexts.py reports them as unproducible). With
+      # strict: true that declaration is not cosmetic: requiring a check no workflow can
+      # report means every PR on the repository is blocked forever. It also sat inside a
+      # pending Terraform plan (`+ required_status_checks`, absent live), so an unattended
+      # apply would have frozen jolarca-identity's merges silently — see D-67/D-68.
+      # Do not "simplify" these names to `ci`/`lint`: they are runtime check-run names.
       contexts:
-      - ci
-      - security
-      - lint
+      - "gitleaks (full history)"
+      - shellcheck
     required_pull_request_reviews:
       required_approving_review_count: 0
       dismiss_stale_reviews: true
