@@ -156,6 +156,33 @@ commit_identity:
     ~/.gitconfig; all 16 local fleet repositories inherit it (none carried a
     local `user.email` override). Commit signing is unchanged: GPG key
     609F7926A8254CDB with `commit.gpgsign = true`.
+  wiring: >-
+    SUPERSEDED THE SAME DAY by a per-estate include, which is how this host is
+    actually organised: ~/.gitconfig.d/jolarca holds the noreply address and
+    ~/.gitconfig includes it with `includeIf "gitdir:/opt/jolarca/"`, mirroring
+    the existing `/opt/viavitae/` include. Verified effective with
+    `git var GIT_AUTHOR_IDENT`. The global value stays the base mailbox for
+    anything outside /opt/jolarca, and ~/.gitconfig was backed up before the
+    edit (~/.gitconfig.pre-noreply-*). Do NOT rely on the global setting for
+    fleet commits — the effective value depends on the directory you are in.
+  squash_merge_mechanism: >-
+    THE PART THAT MATTERS MOST: a squash merge does not keep the local author.
+    GitHub sets the squashed commit's author from the ACCOUNT email setting, so
+    the four merges landed on main today (`.github` #5, jolarca-security #7,
+    jolarca-consent #6, jolarca-observability #3) are all authored by the base
+    mailbox even though the branch commits were authored as noreply. Measured
+    with `gh api repos/<r>/commits --jq '.[:3][] | .commit.author.email'`.
+    Changing local git config therefore cannot fix what main publishes: only
+    Settings -> Emails (add the noreply address, enable "make my email address
+    private") does. Treat that UI step as part of this control, not as a
+    follow-up nicety.
+  legacy_form_warning: >-
+    The ID-prefixed form is the one that links. Evidence from live history: a
+    commit authored `journeyoflife@users.noreply.github.com` (legacy form,
+    jolarca-observability e7a1c81) reports `verification.reason = bad_email`
+    and does not resolve the way the ID-prefixed form does — measured
+    `author.login = JourneyOfLife` for 227570927+JourneyOfLife@... on this
+    repository.
   caveat: >-
     GitHub account Settings → Emails has exactly one address — the base
     mailbox — marked primary/verified/public. Until the noreply form is
