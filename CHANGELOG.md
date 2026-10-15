@@ -273,6 +273,19 @@ have caught them:
   `jolarca-legal`, a cross-estate reference `check_fleet_separation.sh` cannot see, which the
   apply removes (ADR-0004, D-57).
 
+- **D-69 · the last privacy-arguing comment in the fleet contradicted its own field.** Found by
+  reading `repos/jolarca-identity.yml` after editing it, not by trusting my own summary: its header
+  said "Private: this repo defines RBAC policy… Evidence stays in jolarca-compliance (also
+  private)" four lines above `visibility: public`. Measured `grep -h '^visibility:' repos/*.yml`
+  → 16 public, and `grep -rn '^# Private\|(also private)' repos/*.yml` → only these two lines in
+  the whole fleet. That is an instruction to reverse a field AGENTS.md §4 classes as D-01-grade,
+  aimed at whoever is told to "fix the drift" — and D-52 measured the cost (privating a governed
+  repo makes `Context Parity` exit 2, because the token cannot read private siblings; the
+  2026-10-06 flips were reverted the same day). The comment now states the measured fact and the
+  hazard, keeps the 2026-09-25 rationale as a dated quotation, and names the actual compensating
+  control. The file's CI caveat got the same treatment; the access-review half of its promotion
+  rubric was deliberately left unverified rather than asserted.
+
 Verification: `check_declared_contexts.py` **exit 0, "OK: 16 checked; 16 clean"** (was exit 1) ·
 `validate_repos.py` 16/16 · yamllint clean on both workflows · refreshed plan
 `0 to add, 19 to change, 0 to destroy` · `check_plan_safety.sh` still **exit 1** on all eight
