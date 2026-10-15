@@ -348,6 +348,48 @@ largest weakening in it disappeared entirely:
 | TIGHTEN | `~ allow_merge_commit`/`~ allow_rebase_merge` → false, `~ delete_branch_on_merge` → true, `~ has_projects` → false, topics, description | `jolarca-docs`, `-observability`, `-runbooks`, `-security`, `-vendor`, `-identity`, `-dr`, `-legal`, `-payments`, `-control`, `-data`, `-compliance` | Enforces the squash-only linear-history baseline from `policy/repo-defaults.yml`. |
 | NOT A DEFECT | `branch_protection`, `compliance_summary`, `protected_repos` | — | An earlier draft of this table listed these as "attributes that are not `github_repository` arguments" on `jolarca-vendor`. Wrong: they are the plan's **Outputs** section (`protected_repos = 13 -> 16`), which the attribute parser had swept into the last resource block. `terraform state show 'github_repository.repo["jolarca-vendor"]'` confirms no such attributes exist. Nothing to investigate. |
 
+### Step 6 packet, walked line by line (re-measured 2026-10-15 on `main` 690dcff, after #72/#73/#74)
+
+`terraform plan -input=false -no-color -out=tfplan` → **`0 to add, 19 to change, 0 to destroy`**.
+Every line below was read from `terraform show -no-color`, not inferred. Sign off by ticking a
+row; do not skip the gate to land them (`scripts/check_plan_safety.sh` exits 1 on all eight
+protection lines, so no CI apply can run them).
+
+**Two rows in this table are fixes rather than decisions**, because walking the plan exposed them
+as declaration bugs (D-67, D-68): `jolarca-identity`'s required contexts were rewritten to the two
+names its workflow actually reports, and `jolarca-data`'s `has_issues` was corrected to the live
+`true`. Both are in the PR that carries this packet.
+
+| # | Change | Object | Class | Basis | Sign-off |
+|---|---|---|---|---|---|
+| 1 | `~ require_conversation_resolution = false -> true`, `~ required_linear_history = false -> true` | `.github` (`health[0]`) | TIGHTEN | `policy/repo-defaults.yml` baseline; live is behind policy | [ ] |
+| 2 | same two attributes | `github_branch_protection.main["jolarca"]` | TIGHTEN | same | [ ] |
+| 3 | `~ require_conversation_resolution = false -> true` | `main["jolarca-payments"]` | TIGHTEN | same | [ ] |
+| 4 | `+ required_status_checks { contexts = ["ci","compliance","security"], strict = true }` | `main["jolarca-data"]` | TIGHTEN | declared; **producible** — `check_declared_contexts.py` reports 16/16 clean | [ ] |
+| 5 | `+ required_status_checks { contexts = ["gitleaks (full history)","shellcheck"], strict = true }` | `main["jolarca-identity"]` | TIGHTEN, **was a deadlock** | previously declared `ci/security/lint`, which that repo has never reported; applying it would have blocked every merge (D-68). Now the two real job names | [ ] |
+| 6 | `+ required_status_checks { contexts = ["ci","security"], strict = true }` | `main["jolarca-legal"]` | TIGHTEN | declared, producible | [ ] |
+| 7 | `+ required_status_checks { contexts = ["markdown-lint","policy-tests","secret-scan","yaml-lint"], strict = true }` | `main["jolarca-security"]` | TIGHTEN | declared, producible | [ ] |
+| 8 | `~ require_signed_commits = true -> false` and `~ required_pull_request_reviews { require_code_owner_reviews = true -> false }` | `main["jolarca-docs"]` | **WEAKEN — policy-directed** | D-05 (`github_repository_file` automation cannot sign) and D-20 (no teams exist, so code-owner review is inert and unsatisfiable). Both deviations are dated in `policy/compliance-gates.yml` | [ ] |
+| 9 | `~ has_issues = false -> true` | `repo["jolarca"]` | TIGHTEN (capability) | declares `has_issues: true`; flagship has 0 open issues today, so nothing is disturbed. Fleet default is false; per-repo override is legal | [ ] |
+| 10 | `~ description` | `repo["jolarca-control"]` | METADATA | declared | [ ] |
+| 11 | `~ allow_merge_commit true->false`, `~ allow_rebase_merge true->false`, `~ delete_branch_on_merge false->true`, `~ has_projects true->false`, `~ security_and_analysis { secret_scanning, secret_scanning_push_protection: "disabled" -> "enabled" }`, `+ description`, `+ ignore_vulnerability_alerts_during_read = false`, `~ topics` | `repo["jolarca-docs"]` | TIGHTEN + squash-only baseline | `repo-defaults.yml`; scanning enablement is mandatory per `compliance-gates.yml`. Consequences to notice before ticking: merge/rebase buttons stop working, and head branches are deleted on merge | [ ] |
+| 12 | `+ description`, `+ ignore_vulnerability_alerts_during_read = false`, `~ topics` | `repo["jolarca-dr"]` | METADATA | declared | [ ] |
+| 13 | squash-only + `delete_branch_on_merge`, `has_projects false`, description, topics, `ignore_vulnerability_alerts_during_read` | `repo["jolarca-identity"]` | TIGHTEN | as row 11, without the scanning block (already enabled live) | [ ] |
+| 14 | **`- template { owner = "journeyoflife-org", repository = "jol-repo-template", include_all_branches = false }`** | `repo["jolarca-legal"]` | **REMOVE — ADR-0004 alignment** | Nothing in this repo declares a template source, so Terraform removes the live one. `journeyoflife-org` is the mission platform, not the marketplace: this is a cross-estate reference inside a PCI-scoped repo that `check_fleet_separation.sh` cannot see (file-based; D-57). Removing it is the ADR-aligned outcome; the residual is that new-repo-from-template sync stops, which `include_all_branches = false` meant it was barely doing | [ ] |
+| 15 | squash-only block + `security_and_analysis` enable | `repo["jolarca-observability"]` | TIGHTEN | as row 11 | [ ] |
+| 16 | `+ description`, `+ ignore_vulnerability_alerts_during_read = false`, `~ topics` | `repo["jolarca-payments"]` | METADATA | declared; payments' push allowance is unchanged (`/JourneyOfLife` kept, #72) | [ ] |
+| 17 | squash-only block + `security_and_analysis` enable | `repo["jolarca-runbooks"]` | TIGHTEN | as row 11 | [ ] |
+| 18 | squash-only block + `security_and_analysis` enable | `repo["jolarca-security"]` | TIGHTEN | as row 11 | [ ] |
+| 19 | squash-only block, `has_projects false`, description, topics | `repo["jolarca-vendor"]` | TIGHTEN | as row 11, scanning already enabled live | [ ] |
+
+`ignore_vulnerability_alerts_during_read = false` is a provider read-time flag meaning *do not*
+ignore Dependabot alerts; it is not an alert suppression and changes nothing live.
+
+**After all 19 are decided, the apply is still not safe by itself.** Remaining gates: D-46's
+endgame (three repos whose declared checks are enforced by nothing), D-66 (six rules without a
+push restriction while policy demands one), D-02's cadence/off-host destination, and D-56's CI
+token — which must be last, because repairing it converts this table from "refused" into "applied".
+
 Remaining before any apply: the D-46 decision itself (the three creates are suppressed
 meanwhile by `local.ruleset_protected_repos`, which is an interim and NOT a resolution —
 those repos' declared required contexts are enforced by nothing today), and the six repos

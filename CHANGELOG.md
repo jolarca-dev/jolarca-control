@@ -233,6 +233,52 @@ lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `mak
 re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
 starts no apply.
 
+### Fixed — 2026-10-15 (seventh batch: walking the 19 found two declarations that remove capability)
+
+Reading D-61's plan line by line — the thing this changelog kept saying must happen — turned up
+two declarations that were wrong in the destructive direction, and one control that could not
+have caught them:
+
+- **D-68 · `jolarca-identity` would have been frozen.** Its `required_status_checks` declared
+  `ci`, `security`, `lint`; the repository's only workflow (`ci.yml`) reports
+  `gitleaks (full history)` and `shellcheck`. Live protection has no required checks, so the plan
+  carried `+ required_status_checks` — *adding* an unsatisfiable requirement under `strict: true`,
+  which makes every future PR on that repo unmergeable. Declaration rewritten to the two real
+  check-run names.
+- **D-68 · `jolarca-data` would have hidden live work.** It declared `has_issues: false` (the fleet
+  default) while live is `true` with **open issue #4, "i.SAF FR0600 export: monthly
+  invoice-register XML from finance marts"**. The plan rendered `~ has_issues = true -> false`:
+  the apply removes the Issues tab and freezes a tracked PCI-scoped finance requirement, with a
+  policy default reading as the justification. Now `has_issues: true` as a documented per-repo
+  override (identity and security already do this and validate clean). Measured: plan
+  `0 to add, 20 to change` → **`0 to add, 19 to change`**.
+- **D-67 · the detecting gate was advisory and exempted its own offenders.**
+  `check_declared_contexts.py` exited **1** on `main` (`unproducible: ci/security/lint`, note
+  "every PR there would block forever") but ran only in path-filtered `context-parity.yml`, which
+  is not a required context — and that job passed
+  `ALLOW_MISSING_REPOS: "jolarca-identity jolarca-security"`, naming exactly the repos whose
+  declarations were broken. Exempting a repo from the check that detects an unsatisfiable
+  declaration hides the report, not the defect. The script now also runs inside the required
+  **`Validate Repo Allow-List`** job, and `ALLOW_MISSING_REPOS` is empty (both entries measured
+  satisfiable). Trade-off recorded rather than buried: the step reads the live API, so a GitHub
+  outage can redden a required context; the script exits 2 on an unreadable repo instead of
+  passing, which is the point (§3, D-23).
+- **Step 6 packet rewritten as a 19-row sign-off table** in `docs/state-migration-runbook.md`,
+  each line read from `terraform show -no-color`: 3 tightenings of
+  `required_linear_history`/`require_conversation_resolution`, 4 added `required_status_checks`
+  blocks (with the check names, so the reviewer can verify producibility without rerunning
+  anything), the one genuine weakening (row 8: `jolarca-docs` signed commits and code-owner
+  review true→false, both D-05/D-20 dated deviations), 1 capability change (`jolarca` issues
+  false→true), and row 14 — the live `template { owner = "journeyoflife-org" }` on
+  `jolarca-legal`, a cross-estate reference `check_fleet_separation.sh` cannot see, which the
+  apply removes (ADR-0004, D-57).
+
+Verification: `check_declared_contexts.py` **exit 0, "OK: 16 checked; 16 clean"** (was exit 1) ·
+`validate_repos.py` 16/16 · yamllint clean on both workflows · refreshed plan
+`0 to add, 19 to change, 0 to destroy` · `check_plan_safety.sh` still **exit 1** on all eight
+protection lines · `make lint` exit 0 · evidence re-registered (`repos/*.yml` are hashed) and
+`--check` exit 0.
+
 ### Fixed — 2026-10-15 (fifth batch: D-46 interim, and the gate defeated by its own input format)
 
 - **D-46 interim.** The packet's last create-class item was the three
