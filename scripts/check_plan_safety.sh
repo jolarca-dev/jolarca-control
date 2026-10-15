@@ -61,6 +61,22 @@ refuse() { # <label> <egrep-pattern> <why>
   fi
 }
 
+# ── Input format guard (found 2026-10-15) ────────────────────────────────────
+# Measured on ONE plan file (tfplan7, 370 lines, 8 branch-protection resources changing):
+#   terraform show tfplan        > coloured.txt   # 840 ESC bytes  -> this gate EXITED 0
+#   terraform show -no-color     > plain.txt      #   0 ESC bytes  -> this gate EXITED 1
+# Every pattern below anchors at line start, so ANSI colour bytes in front of `~`/`-`
+# defeat all of them and a plan that changes branch protection reads as clean. CI was safe
+# only by accident (apply.yml renders via `terraform show -json | jq -r`, which is plain).
+# A verdict that depends on whether the author remembered a flag is not a control, so
+# colourised input is refused as UNVERIFIABLE (exit 2) rather than passed: §3.
+if LC_ALL=C grep -q "$(printf '\033')" "$PLAN" 2>/dev/null; then
+  echo "::error::Plan text contains ANSI colour escapes — patterns cannot match across them." >&2
+  echo "  why: measured 2026-10-15, the same plan exits 0 colourised and 1 plain. This is" >&2
+  echo "       'cannot verify', not 'safe'. Re-render with 'terraform show -no-color tfplan'." >&2
+  exit 2
+fi
+
 refuse "a destroy action" \
   '^[[:space:]]*#[[:space:]].*will be destroyed' \
   "prevent_destroy is set on every github_repository; a destroy means the fleet allow-list and the live org have diverged (possible deletion — open an incident)."

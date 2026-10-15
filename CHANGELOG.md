@@ -205,6 +205,55 @@ Verification: `terraform fmt -check` and `terraform validate` clean ·
 `compliance_check.py` pass · evidence re-registered (`repos/jolarca.yml` is hashed)
 and `--check` exit 0.
 
+### Fixed — 2026-10-15 (fifth batch: D-46 interim, and the gate defeated by its own input format)
+
+- **D-46 interim.** The packet's last create-class item was the three
+  `github_branch_protection` rules for `jolarca-consent`, `-dr` and `-vendor`. Those repos are
+  enforced by **active undeclared `protect-main` rulesets**, whose content is now measured
+  rather than assumed: consent `24087580` = deletion + non-fast-forward + required linear
+  history, **no PR rule and no status-checks rule at all**; dr `24136490` = those plus a PR rule
+  (0 approvals) and required `[lint, gitleaks]`, strict false; vendor `24138288` = those plus a
+  PR rule allowing merge/squash/rebase and a status-checks rule with an **empty context list**.
+  GitHub enforces the union of both layers, so creating the legacy resource would have made the
+  Terraform object look like the control while the ruleset is what actually bites. The three are
+  excluded via `local.ruleset_protected_repos`. Measured: `3 to add, 20 to change` →
+  **`0 to add, 20 to change`**, with nothing destroyed (they were never in state). **D-46 stays
+  OPEN** — this is an interim, and its cost is stated plainly: those repos' declared required
+  contexts (consent 7, dr 1, vendor 1) are enforced by nothing, before and after. Reusable API
+  detail: `/rulesets/{numeric-id}` returns the rule bodies; `/rulesets/protect-main` is HTTP 404.
+- **The gate's verdict depended on its input format.** One plan file (`tfplan7`, 370 lines,
+  8 `github_branch_protection` resources updating in-place), rendered two ways and handed to the
+  same script: `terraform show tfplan7` → **840 ANSI escape bytes → exit 0**, "no
+  protection-layer change"; `terraform show -no-color tfplan7` → **0 escape bytes → exit 1**,
+  naming those 8 changes. Every pattern anchors at line start, so colour bytes sitting in front
+  of `~`/`-` defeat the entire protection rule set. CI was safe only by accident, because
+  `apply.yml` renders through `terraform show -json | jq -r`, which is plain text. Fixed inside
+  the gate instead of being pushed onto operator habit: ANSI input now exits **2** ("cannot
+  verify", never a silent pass — §3). 21 fixtures pass, including the pair that pins this:
+  `coloured-plan` → 2 and `stripped-still-refused` → 1, the second proving the guard keys on
+  FORMAT and is not a way to smother the detection underneath it. Writing that fixture also
+  showed GNU sed does not expand `\033` inside a BRE, so the escape byte comes from `printf`.
+- **Register and runbook honesty.** D-61 gains a fourth correction plus the measured state of the
+  plan: the residual 20 changes are tightenings toward the declarations (four add
+  `required_status_checks`, three set linear history / conversation resolution true, two land
+  D-20's deliberate deviations), and the gate still refuses them. D-46 gains the ruleset content
+  and the interim. The runbook's step-6 acceptance list no longer permits "three creates as
+  exceptions" and now states the `-no-color` requirement for reading a plan.
+- **Two claims retracted in place, both mine.** (1) Mid-stream I asserted "the plan touches no
+  protection at all" before reading the captured output — wrong, and the numbers above are the
+  re-measured ones. (2) I then reported a *committed CHANGELOG regression* ("released sections
+  lost"); `git log --all -S '## [0.2.0]'` shows **no commit ever added or removed** those
+  headings, the file was created by `a62234d` with a single `## [Unreleased]` section, and the
+  alarm came from a stale snapshot served by the file-read tool. This is the fourth time this work
+  stream has asserted from an unread or stale source (`commits/HEAD`, `STATE_MIGRATION_COMPLETE`,
+  the "no protection" line, this one), and the register's rule — verify the verifier, and re-read
+  through an independent channel before declaring loss — is what caught it.
+
+Verification: `terraform fmt -check` · `terraform validate` · refreshed plan
+`0 to add, 20 to change, 0 to destroy` · gate exits **2** on colourised text and **1** on plain
+text of that same plan · plan-gate fixtures 21/21 · `make lint` · `compliance_check.py` pass ·
+evidence re-registered (`branch-protection.tf` is hashed) and `--check` exit 0.
+
 ### Fixed — 2026-10-15 (third batch: two holes in the D-61 gate, and the 404 that wasn't)
 
 Preparing the step-6 packet and testing the plan-safety refusal **against real

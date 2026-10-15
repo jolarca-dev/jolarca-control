@@ -348,11 +348,30 @@ largest weakening in it disappeared entirely:
 | TIGHTEN | `~ allow_merge_commit`/`~ allow_rebase_merge` → false, `~ delete_branch_on_merge` → true, `~ has_projects` → false, topics, description | `jolarca-docs`, `-observability`, `-runbooks`, `-security`, `-vendor`, `-identity`, `-dr`, `-legal`, `-payments`, `-control`, `-data`, `-compliance` | Enforces the squash-only linear-history baseline from `policy/repo-defaults.yml`. |
 | NOT A DEFECT | `branch_protection`, `compliance_summary`, `protected_repos` | — | An earlier draft of this table listed these as "attributes that are not `github_repository` arguments" on `jolarca-vendor`. Wrong: they are the plan's **Outputs** section (`protected_repos = 13 -> 16`), which the attribute parser had swept into the last resource block. `terraform state show 'github_repository.repo["jolarca-vendor"]'` confirms no such attributes exist. Nothing to investigate. |
 
-Remaining before any apply: the three creates (D-46 decision above), and the six
-repos whose live rules lack a push restriction while policy demands one
-(`jolarca-docs`, `jolarca-hermes-agents`, plus the three unadopted repos and
-`.github`) — recorded as **D-66**, deliberately not tightened as a side effect of
-fixing the deletions.
+Remaining before any apply: the D-46 decision itself (the three creates are suppressed
+meanwhile by `local.ruleset_protected_repos`, which is an interim and NOT a resolution —
+those repos' declared required contexts are enforced by nothing today), and the six repos
+whose live rules lack a push restriction while policy demands one (`jolarca-docs`,
+`jolarca-hermes-agents`, plus the three ruleset-only repos and `.github`) — recorded as
+**D-66**, deliberately not tightened as a side effect of fixing the deletions.
+
+Re-measured after #72 and that exclusion: `Plan: 0 to add, 20 to change, 0 to destroy`.
+`check_plan_safety.sh` on the `-no-color` text exits **1**, naming 8 in-place
+`github_branch_protection` updates — four adding `required_status_checks` (`jolarca-data`,
+`-identity`, `-legal`, `-security`), three setting `required_linear_history` /
+`require_conversation_resolution` false→true (`jolarca`, `.health`, `jolarca-payments`), and
+two landing D-20's deliberate deviations (`jolarca-docs`, `jolarca-payments`:
+`require_signed_commits`, `require_code_owner_reviews` true→false). So the remaining diff is
+tightening toward the declarations, not a weakening — reaching `0 to change` is now a
+per-line human decision. The 11 `restrict_pushes` removals and the three creates described
+above are gone (fixed in #72; suppressed per D-46).
+
+Render the plan with **`-no-color`** for this gate, or it cannot see anything: measured on
+one plan file, `terraform show tfplan` (840 ANSI escape bytes) made `check_plan_safety.sh`
+report the plan clean while `terraform show -no-color tfplan` made it refuse the same 8
+changes. The script now exits **2** on ANSI input rather than passing it (D-61, fourth
+correction); the command earlier in this step already carries the flag, which is the habit
+to keep.
 
 The operator's path, in order, is the same one step 7's doctrine states: **land the
 adoption alone first.** Narrow `repos/*.yml` / `terraform.tfvars` to the live
@@ -425,8 +444,12 @@ GitHub moved the fleet public and every `repos/*.yml` now declares
 `visibility: public`. Applying against the old list would have read a plan
 containing real regressions as "as expected".
 
-- [ ] `0 to add` other than the three protection rules that genuinely do not
-      exist live yet (`jolarca-consent`, `jolarca-dr`, `jolarca-vendor`)
+- [ ] `0 to add`. Historical note: for a while this line allowed three exceptions
+      (`jolarca-consent`, `jolarca-dr`, `jolarca-vendor`), on the belief that applying
+      would add protection there. Wrong twice over — those repos are enforced by ACTIVE
+      undeclared rulesets (D-46), so a create layered a second mechanism, and their
+      declared contexts were not being enforced by anything. They are now excluded from
+      the resource until D-46 is decided, so `0 to add` is the real criterion.
 - [ ] `0 to destroy`, no `must be replaced`
 - [ ] **no `~ contexts` line on any repository** — a context list changing means
       `repos/<repo>.yml` disagrees with the live rule. The measured conflicts on

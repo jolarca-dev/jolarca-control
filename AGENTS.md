@@ -136,6 +136,16 @@ Specific high-consequence edits:
   inline `visibility\s*:` pattern that never matched `terraform show` output, so
   the only control between an unattended apply and a fleet-wide visibility flip
   was inert.
+- **A gate's verdict must not depend on how its input was rendered.** Measured
+  2026-10-15: the same Terraform plan file made `scripts/check_plan_safety.sh` exit
+  0 when produced by `terraform show tfplan` (840 ANSI escape bytes) and exit 1 when
+  produced by `terraform show -no-color tfplan` (0 escape bytes), because every
+  pattern in that script anchors at line start and colour bytes sit in front of the
+  `~`/`-` markers. Read plans with `-no-color`, and when you write a pattern-matched
+  gate, make it refuse input shapes it cannot parse (exit 2) instead of reporting
+  them as clean. CI passed only by accident there: `apply.yml` renders through
+  `terraform show -json | jq -r`, which is plain text.
+
 - **Evidence must be retained to count.** Verification output that justified a
   merge is a deliverable, not a transient. Evidence files under `docs/adr/`,
   `audit/`, `policy/`, `repos/`, `docs/runbooks/`, `docs/security/` are hashed
