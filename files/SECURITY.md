@@ -18,7 +18,25 @@ To report a security issue:
 2. Click **Security** → **Report a vulnerability**
 3. Provide details of the vulnerability
 
-Alternatively, email: **security@jolarca.com**
+Alternatively, email: **journey4oflife+jolarca.security@gmail.com**
+
+Privacy enquiries and data-subject requests (GDPR Art. 12–22): **journey4oflife+jolarca.privacy@gmail.com**
+
+> **Why a Gmail alias and not `security@jolarca.com`** (D-59, 2026-10-15): the
+> address formerly published here cannot receive mail. Verified the same day:
+> `dig MX jolarca.com` and `dig MX jolarca.dev` both return nothing, no DMARC
+> record exists, and nothing listens on port 25 or 587 on the host that
+> operates this fleet. Publishing an undeliverable disclosure channel is worse
+> than publishing none — researchers believe they reported.
+>
+> This is an **interim** contact. All five role addresses are plus-aliases on
+> one personal mailbox, so they give routing and leak attribution, not
+> independent handling or separate retention, and the alias discloses the base
+> mailbox name. The exit condition is a real role mailbox on `jolarca.com`
+> (MX + DMARC + SPF/DKIM), tracked in `policy/contact-addresses.yml` and
+> `policy/compliance-gates.yml` (`contact-alias-interim`, expires 2027-01-13).
+> Delivery of the alias itself has not yet been proven by a test message —
+> that evidence is outstanding, not assumed.
 
 ### What to Include
 

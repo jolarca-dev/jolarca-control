@@ -112,6 +112,13 @@ Specific high-consequence edits:
   is expected to warn. Do not reflow it to silence warnings.
 - Documentation must state actual implementation status. Never describe a control
   as enforced when it is configured-but-inert or convention-only.
+- Published contact addresses come from `policy/contact-addresses.yml` — define
+  the role there, then point documents at it. Do not publish the base mailbox
+  (D-60) and do not list any address whose delivery has not been tested: the
+  fleet shipped `security@jolarca.com` as its disclosure channel in five repos
+  while the domain had no MX record (D-59). Commit authorship uses the GitHub
+  noreply form, not a mailbox, because commit metadata on a public repo is
+  permanent publication.
 
 ## 7. Verification standards
 
@@ -194,6 +201,21 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   gates, not decoration, and never "fix" one by editing the gate (D-42; §5).
   `make apply` remains refused and the `terraform apply` path stays gated on
   `STATE_MIGRATION_COMPLETE`.
+- **Contact-address routing is convention-only.**
+  `policy/contact-addresses.yml` defines the role mailboxes (D-59), but no gate
+  in `scripts/` compares live SECURITY.md content against it and no inbound
+  delivery test has been retained as evidence. Worse, the SECURITY.md GitHub
+  actually serves org-wide lives in the `.github` repository and is edited by
+  hand — `github_repository_file.security_md` is commented out in
+  `health-repo.tf` (D-15), so `files/SECURITY.md` here is a reference copy: an
+  edit that looks like a fix propagates nothing. Re-read
+  `gh api repos/jolarca-dev/.github/contents/SECURITY.md` before asserting a
+  security contact is in force. Side effect of the same change (D-60): commits
+  authored by the new noreply identity report `verified: false, reason:
+  "bad_email"` on GitHub, because a signature is only verified against emails
+  registered on the account. Signed commits are still cryptographically valid
+  (`git verify-commit` passes) but are no longer shown as verified until the
+  noreply address is added in Settings → Emails.
 
 ## 9. Session discipline
 

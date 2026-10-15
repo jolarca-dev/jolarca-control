@@ -105,6 +105,40 @@ declared before the workflow that emits it is merged.
   deliberate `shell=True`/`eval` turned **only** `SAST (semgrep)` and
   `SAST (bandit)` red; all other checks stayed green).
 
+### Changed — 2026-10-15 (D-59, D-60: published contacts and commit identity)
+
+- **New `policy/contact-addresses.yml`** — the single definition of the five
+  role mailboxes (dev / github / security / privacy / billing), which are
+  published, which are retired, and the exact cross-repo targets still naming
+  dead addresses. Convention-only: no gate reads it yet, and the file says so.
+- **Every published contact was undeliverable.** `jolarca.com` and
+  `jolarca.dev` have no MX and no DMARC (measured: `dig MX`, `dig TXT _dmarc`,
+  no listener on 25/587, no mail container), so `security@jolarca.com`,
+  `legal@jolarca.com`, `security@jolarca.dev` and `legal@jolarca.dev` could
+  never receive a report — 34 hits across 6 repositories, including the
+  `jolarca-security` audit's own open Critical finding F-05 (2026-09-28).
+  `files/SECURITY.md` now names the interim security and privacy aliases.
+- **GitHub organisation contact updated and re-read.** `orgs/jolarca-dev`
+  `billing_email` and profile `email` moved from the general dev alias to the
+  GitHub-operations alias. No Terraform drift is possible: no
+  `github_organization` resource exists in state.
+- **Commit identity no longer publishes a personal mailbox.** Global
+  `git config user.email` (inherited by all 16 fleet repos on this host) is now
+  the ID-prefixed GitHub noreply address. Existing history keeps the old
+  address; a fleet-wide rewrite was rejected as disproportionate and is an
+  operator-only action (AGENTS.md §5).
+- **ADR-0006 and ADR-0007 amended, not silently rewritten.** The HCP Terraform
+  org billing email is re-measured and still the base mailbox — recorded as an
+  outstanding owner-executed UI change rather than restated as an alias nobody
+  has confirmed at the provider. ADR-0007's assumption that SECURITY.md provides
+  a working disclosure route is corrected by a dated amendment.
+- **`policy/compliance-gates.yml`** gains `contact-alias-interim` (approved
+  2026-10-15, expires 2027-01-13) stating what the aliases do and do not buy:
+  routing and leak attribution, not segregation of duties or an independent DPO.
+- **AGENTS.md §6 and §8** record the convention and the trap: `files/SECURITY.md`
+  is a reference copy, because `github_repository_file.security_md` is
+  commented out and the served file lives in the `.github` repository (D-15).
+
 ### Changed
 
 - **Apply is a single gated production stage.** `jol-control`'s

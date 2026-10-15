@@ -1,0 +1,221 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Contact Addresses — the one place a published mailbox is defined
+# ──────────────────────────────────────────────────────────────────────────────
+# Org:        jolarca-dev (marketplace tree — ADR-0004)
+# Compliance: GDPR Art. 12/13/38 · SOC 2 CC2.2/CC7.x · ISO 27001 A.5.1 · PCI-DSS 12.10
+# Review:     Quarterly or on material change
+#
+# WHY THIS FILE EXISTS
+#   Role contacts were previously spelled out per document: SECURITY.md, the
+#   org `.github` profile, incident-response plans, licence texts and ADRs each
+#   named an address of their own. That is how an UNDELIVERABLE address
+#   (`security@jolarca.com`) ended up published as the primary disclosure
+#   channel in five places at once while nothing checked that mail could reach
+#   it — measured 2026-10-15 (D-59). A contact is a control, so it gets a
+#   versioned definition like every other control here.
+#
+# STATUS OF ENFORCEMENT — read this before citing the file in an audit
+#   Convention-only. NO gate in scripts/ reads this file and no required status
+#   check compares live SECURITY.md content against it. The only control is the
+#   exception register entry `contact-alias-interim` in
+#   policy/compliance-gates.yml, which is a dated human acceptance, not an
+#   automated comparison. Do not describe this file as "enforced".
+#
+# WHAT THESE ADDRESSES ARE NOT
+#   All five are Gmail plus-aliases on ONE personal mailbox. They give message
+#   routing and leak attribution (a message addressed to the privacy alias is
+#   identifiable by its recipient header). They do NOT give independent
+#   handling, separate retention, or a second approver — so they must not be
+#   cited as evidence of segregation of duties (ISO 27001 A.5.3) or of a
+#   genuinely independent DPO function (GDPR Art. 38). A `+alias` also discloses
+#   the base mailbox name to everyone who reads it.
+# ──────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  version: "1.0.0"
+  last_reviewed: "2026-10-15"
+  next_review: "2027-01-13"
+  owner: "jolarca-dev organization owner"
+  approved_by: "Gintaras Kazlauskas"
+  # Owner delegated the address-selection decision verbally on 2026-10-15
+  # ("consider it in your professional opinion, change and fix"). Recorded here
+  # because AGENTS.md §1 treats an approval as existing only in a dated record.
+  decision_record: "docs/drift-findings.md D-59 and D-60; policy/compliance-gates.yml contact-alias-interim"
+
+scheme:
+  type: "gmail-plus-alias"
+  # The base mailbox is deliberately NOT spelled out in this file. It is a
+  # PUBLIC repository, and writing the address here would be a fresh
+  # publication of exactly the string this change is trying to stop
+  # republishing (D-60). It is recorded where it must be recorded — the
+  # measured HCP custody fact in docs/adr/0006-remote-state-backend.md — and
+  # every role alias is derived from it by construction: <base>+jolarca.<role>@gmail.com.
+  base_mailbox: "see docs/adr/0006-remote-state-backend.md §Account custody"
+  alias_pattern: "<base-mailbox>+jolarca.<role>@gmail.com"
+  isolation: none            # one inbox, one set of credentials, one recovery path
+  delivery_test: outstanding # no test message proven into each alias yet (D-59 exit criterion)
+
+# ── Role definitions ─────────────────────────────────────────────────────────
+roles:
+  dev:
+    address: "journey4oflife+jolarca.dev@gmail.com"
+    purpose: "Day-to-day project communication"
+    published: false         # not a contact for external parties
+    live_usage: >-
+      Was the GitHub org `billing_email` and profile `email` until 2026-10-15;
+      superseded for org contact by the `github` role below.
+  github:
+    address: "journey4oflife+jolarca.github@gmail.com"
+    purpose: "GitHub organization owner contact, billing_email, PAT and account notifications"
+    published: true          # visible on the org settings surface
+    live_usage: >-
+      APPLIED and re-read live 2026-10-15: `gh api orgs/jolarca-dev` returns
+      this address for both `billing_email` and `email`. Change path is
+      `gh api -X PATCH orgs/jolarca-dev`, NOT Terraform — no github_organization
+      resource exists in state (`terraform state list | grep -c organization` → 0),
+      so an out-of-band PATCH creates no plan drift.
+  security:
+    address: "journey4oflife+jolarca.security@gmail.com"
+    purpose: "Vulnerability reports and incident response (primary contact in SECURITY.md)"
+    published: true
+    live_usage: >-
+      APPLIED to `files/SECURITY.md` in this repository on 2026-10-15. That file
+      is a reference copy only: the live org-wide SECURITY.md is served from the
+      public `.github` repository and is managed manually (D-15, because
+      `github_repository_file` cannot push to a PR-protected branch), so the
+      `.github` copy still needs the same edit — tracked in outstanding_work below.
+  privacy:
+    address: "journey4oflife+jolarca.privacy@gmail.com"
+    purpose: "GDPR data-subject requests, DPIA and RoPA contact (Art. 12-22, Art. 38)"
+    published: true
+    live_usage: >-
+      APPLIED to `files/SECURITY.md`. NOT yet repointed in the DPIA / RoPA
+      records, which live in `jolarca-compliance` and `jolarca-consent` — see
+      outstanding_work. A DPIA that names an unreachable supervisory contact is
+      an Art. 36 problem, not a typo.
+  billing:
+    address: "journey4oflife+jolarca.billing@gmail.com"
+    purpose: "Invoice notifications, payment-method alerts (GitHub, HashiCorp, cloud vendors)"
+    published: false
+    live_usage: >-
+      INTENDED for the HCP Terraform organization billing email. NOT APPLIED:
+      `GET /api/v2/organizations/jolarca-dev` still reports the base mailbox as
+      of 2026-10-15, and the field is changed only in the app.terraform.io UI.
+      See docs/adr/0006-remote-state-backend.md "Account custody".
+
+# ── Addresses that must NOT be used or published ─────────────────────────────
+retired:
+  - address: "<base mailbox — not republished here, see scheme.base_mailbox>"
+    status: "do not publish"
+    reason: >-
+      The base mailbox. Publishing it in any new file defeats the point of the
+      role aliases. It is already world-readable in the commit history of every
+      public jolarca-dev repository, which D-60 records; that exposure is not
+      undone by a documentation change and cannot be undone without a history
+      rewrite (forbidden for an agent — AGENTS.md §5 — and of doubtful value
+      once the name is public anyway).
+    replacements: [dev, github, security, privacy, billing]
+  - address: "security@jolarca.com"
+    status: "undeliverable — remove on sight"
+    reason: "No MX and no DMARC for jolarca.com (measured 2026-10-15); nothing on the host listens on 25/587."
+    replacement: security
+  - address: "legal@jolarca.com"
+    status: "undeliverable — remove on sight"
+    reason: "Same domain, same absence of MX."
+    replacement: privacy
+  - address: "security@jolarca.dev"
+    status: "undeliverable — remove on sight"
+    reason: "No MX for jolarca.dev either (measured 2026-10-15)."
+    replacement: security
+  - address: "legal@jolarca.dev"
+    status: "undeliverable — remove on sight"
+    reason: "Same domain, same absence of MX."
+    replacement: privacy
+
+# ── Commit author identity (not a mailbox role, but the same leak surface) ───
+commit_identity:
+  git_author_email: "227570927+JourneyOfLife@users.noreply.github.com"
+  rationale: >-
+    Commit metadata on a public repository is published, permanent and indexed.
+    GitHub's ID-prefixed noreply address attributes commits to the account
+    without exposing any mailbox, so it replaces the base address for every
+    repository on the operating host.
+  applied: >-
+    `git config --global user.email` set on 2026-10-15 and re-read from
+    ~/.gitconfig; all 16 local fleet repositories inherit it (none carried a
+    local `user.email` override). Commit signing is unchanged: GPG key
+    609F7926A8254CDB with `commit.gpgsign = true`.
+  caveat: >-
+    GitHub account Settings → Emails has exactly one address — the base
+    mailbox — marked primary/verified/public. Until the noreply form is
+    registered and "make my email address private" is set in the UI, the base
+    address stays published on the profile and GitHub-side notifications keep
+    going there. API-side changes to a signing account's primary email are
+    deliberately NOT attempted by an agent — a failed change there can lock the
+    owner out.
+  residual: >-
+    THE SIGNING KEY STILL PUBLISHES THE ADDRESS. `git log -1 --format="%GK %GS"`
+    shows the key UID inside every signature packet, and the same UID is
+    readable at `gh api users/JourneyOfLife/gpg_keys`. So a signed commit under
+    the noreply identity still carries the base mailbox in its GPG payload —
+    `user.email` fixes the author field only. Closing this is a key decision
+    (add a noreply UID to the existing key, or issue a fresh signing key and
+    re-sign forward), owned by the operator and recorded as D-60; it is not a
+    documentation claim.
+  attribution_proven: >-
+    Measured on this PR's head commit, read by SHA from
+    `gh pr view 69 --json headRefOid` then `gh api
+    repos/jolarca-dev/jolarca-control/commits/<sha>` (2026-10-15). NOT via
+    `commits/HEAD`, which resolves to the default branch and measures the wrong
+    object. No SHA is pinned in this file: the branch is amended during review
+    and squash-merge rewrites it. `author.login` = `JourneyOfLife`, so
+    attribution works.
+    `committer.login` = `JourneyOfLife` as well, confirming the commit was made
+    locally rather than through GitHub's web flow.
+  verification_gap: >-
+    THE SAME MEASUREMENT SHOWS `.commit.verification = {verified: false, reason:
+    "bad_email"}`. GitHub marks a signature valid only when the commit email is
+    an email registered on the account, and the account holds only the base
+    mailbox. So publishing stops at the author field while signed-commit
+    verification regresses — D-05's compensating control (PCI-DSS Req 8.2, SOC 2
+    CC6.2, ISO 27001 A.8.16) is weaker until the operator adds
+    `227570927+JourneyOfLife@users.noreply.github.com` under Settings → Emails.
+    No key rotation is needed for that. Mail DELIVERY of the role aliases is a
+    separate question and remains unproven — see scheme.delivery_test.
+
+# ── Outstanding cross-repo work (exact targets, measured 2026-10-15) ─────────
+# `git grep` per repository over tracked files only. Each repo is PR-gated and
+# outside this control plane's apply path, so these are separate PRs.
+outstanding_work:
+  - repo: ".github"
+    note: "org-wide community health files — this is the copy GitHub actually serves to every repo"
+    targets:
+      - ".github/SECURITY.md:21 — security@jolarca.com → security role"
+      - ".github/profile/README.md:53 — 'Security contacts: security@jolarca.com' → security role"
+  - repo: "jolarca-security"
+    targets:
+      - "SECURITY.md:73,169 — describe the dead address; repoint and keep the 'not deliverable' history"
+      - "README.md:94,154,156 — Security Team and Incident Hotline contacts → security role"
+      - "incident-response/plan.md:43-45 — all three role rows name the dead mailbox"
+      - ".github/ISSUE_TEMPLATE/vulnerability-report.yml:11 — external report address"
+      - "policies/control-matrix.yml:145,151 — the control describes a mailbox that cannot receive"
+      - "policies/legal-counsel-engagement.md:123,127 — counsel contact via the dead address"
+      - "REVIEW.md:65,225,263,315 and audits/2026-09-28-repository-readiness-audit.md:53,164,322 — historical findings; annotate, do not rewrite"
+  - repo: "jolarca-consent"
+    targets:
+      - "SECURITY.md:24 — disclosure address → security role"
+      - "LICENSE:38,41 — security@ and legal@ jolarca.com → security / privacy roles"
+      - "CHANGELOG.md:24 — historical entry naming the fix that introduced the dead address; leave as written"
+  - repo: "jolarca-observability"
+    targets:
+      - "SECURITY.md:14,15 — security@jolarca.dev (also undeliverable) → security role"
+      - "LICENSE:41 — legal@jolarca.dev → privacy role"
+  - repo: "jolarca-control"
+    targets:
+      - "docs/drift-findings.md:330-331 — historical D-fix record naming the dead address; annotate in D-59, do not rewrite"
+
+exit_criteria:
+  - "MX + DMARC + SPF/DKIM published for jolarca.com with deliverable role mailboxes"
+  - "one proven inbound test message per role address, headers retained and hashed as evidence"
+  - "this file repointed to the domain mailboxes and the Gmail aliases reduced to forwarding"
+  - "the base mailbox removed from GitHub account public visibility (Settings → Emails)"
