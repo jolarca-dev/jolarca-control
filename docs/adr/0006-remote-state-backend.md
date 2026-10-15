@@ -64,13 +64,16 @@ This is a **blocking** prerequisite for any `terraform apply` and must be resolv
    Do not delete either HashiCorp identity to "clean this up": the state-bearing
    identity is singular and deleting it removes the org and its state.
    **Address policy (2026-10-15, D-59/D-60):** the bare mailbox above is no longer
-   the address to publish anywhere. The HashiCorp billing contact should become
-   `journey4oflife+jolarca.billing@gmail.com` per `policy/contact-addresses.yml`,
-   but that change is **outstanding and owner-executed**: the org email on
-   `app.terraform.io` is set in the account UI, and this ADR keeps recording the
-   *measured* value rather than the intended one — a custody record that states an
-   address nobody has confirmed at the provider is worse than an ugly true one.
-   Nothing here may be read as "the HCP account is already on a role alias".
+   the address to publish anywhere. The HashiCorp billing contact is now
+   `journey4oflife+jolarca.billing@gmail.com` per `policy/contact-addresses.yml`.
+   An earlier draft of this section asserted that field was UI-only and could not
+   be set programmatically; that was **wrong** and is corrected here — `PATCH
+   /api/v2/organizations/jolarca-dev` with `{"data":{"type":"organizations",
+   "id":"org-…","attributes":{"email":"…"}}}` returned HTTP 200 and a follow-up GET
+   read the new value back. The record above keeps the *measured* value, not the
+   intended one: verify the org email again with a GET before citing this step,
+   because this account is the sole owner of the 35+ resource state and nothing
+   here authorises deleting or transferring it.
 2. **Create an organization** named `jolarca-dev` (matches the GitHub org name for consistency).
 3. **Create a workspace** named `jolarca-control` with:
    - **Execution mode:** Remote (default)
@@ -182,7 +185,7 @@ account. Resolved empirically, not by inference:
 | Fact | Value | How shown |
 |---|---|---|
 | Orgs visible to the local credential | `jolarca-dev` only | `GET /api/v2/organizations` with the `~/.terraformrc` token |
-| Org billing email | `journey4oflife@gmail.com` (re-read 2026-10-15; unchanged. Policy target `journey4oflife+jolarca.billing@gmail.com` — **not yet applied**, UI-only) | `GET /api/v2/organizations/jolarca-dev` |
+| Org billing email | `journey4oflife@gmail.com` (measured 2026-10-15) → **changed the same day** to `journey4oflife+jolarca.billing@gmail.com` via `PATCH /api/v2/organizations/jolarca-dev` (HTTP 200) and confirmed by a follow-up GET | `GET /api/v2/organizations/jolarca-dev` |
 | Org id / plan | `org-3zNQFys8XA3HNPCF`, free tier (`audit-logging: false`) | `GET /api/v2/organizations/jolarca-dev/entitlement-set` |
 | Workspace id | `ws-w6NSnTXXmYgh78Su`, TF 1.16.5, **35 resources** | `GET .../workspaces/jolarca-control` |
 | Runs | 3, all `source: terraform+cloud` ("Triggered via CLI") | `GET /api/v2/workspaces/ws-.../runs` |

@@ -98,10 +98,17 @@ roles:
     purpose: "Invoice notifications, payment-method alerts (GitHub, HashiCorp, cloud vendors)"
     published: false
     live_usage: >-
-      INTENDED for the HCP Terraform organization billing email. NOT APPLIED:
-      `GET /api/v2/organizations/jolarca-dev` still reports the base mailbox as
-      of 2026-10-15, and the field is changed only in the app.terraform.io UI.
-      See docs/adr/0006-remote-state-backend.md "Account custody".
+      APPLIED 2026-10-15 to the HCP Terraform organization billing contact:
+      `PATCH /api/v2/organizations/jolarca-dev` with
+      `{"data":{"type":"organizations","id":"org-…","attributes":{"email":…}}}`
+      returned HTTP 200 and a follow-up `GET` read
+      `journey4oflife+jolarca.billing@gmail.com` back. A claim made in an earlier
+      draft of docs/adr/0006 that this field is UI-only was wrong and is corrected
+      there. NOT changed and NOT readable from here: the HashiCorp *account*
+      login email behind that organisation is a different object and the
+      credential that owns the state — `GET /api/v2/account` with the local
+      workspace token returns **HTTP 404**, so nothing in this fleet may claim to
+      know or have moved it.
 
 # ── Addresses that must NOT be used or published ─────────────────────────────
 retired:
@@ -125,7 +132,11 @@ retired:
     replacement: privacy
   - address: "security@jolarca.dev"
     status: "undeliverable — remove on sight"
-    reason: "No MX for jolarca.dev either (measured 2026-10-15)."
+    reason: >-
+      No MX for jolarca.dev either (measured 2026-10-15); the resolver also
+      returns no NS, SOA or A record for it, so nothing about the domain is
+      reachable from here. Confirm registration with the registrar before ever
+      using a .dev address — a contact on an unheld domain is dead on arrival.
     replacement: security
   - address: "legal@jolarca.dev"
     status: "undeliverable — remove on sight"
@@ -183,16 +194,25 @@ commit_identity:
     No key rotation is needed for that. Mail DELIVERY of the role aliases is a
     separate question and remains unproven — see scheme.delivery_test.
 
-# ── Outstanding cross-repo work (exact targets, measured 2026-10-15) ─────────
+# ── Cross-repo work list (targets measured 2026-10-15; status re-stated the same day) ─
 # `git grep` per repository over tracked files only. Each repo is PR-gated and
 # outside this control plane's apply path, so these are separate PRs.
 outstanding_work:
   - repo: ".github"
+    status: >-
+      DONE 2026-10-15 — PR #5 squash-merged; the live file was re-read with
+      `gh api repos/jolarca-dev/.github/contents/SECURITY.md` and shows the
+      aliases. This is the copy GitHub serves to every repo without its own.
     note: "org-wide community health files — this is the copy GitHub actually serves to every repo"
     targets:
       - ".github/SECURITY.md:21 — security@jolarca.com → security role"
       - ".github/profile/README.md:53 — 'Security contacts: security@jolarca.com' → security role"
   - repo: "jolarca-security"
+    status: >-
+      DONE 2026-10-15 — PR #7 merged after all four of its checks passed. The
+      disclosure-email control was deliberately left at `status: gap` because
+      delivery is unproven, and that repo's policy-as-code tests enforce that
+      documents and the control matrix agree.
     targets:
       - "SECURITY.md:73,169 — describe the dead address; repoint and keep the 'not deliverable' history"
       - "README.md:94,154,156 — Security Team and Incident Hotline contacts → security role"
@@ -202,15 +222,25 @@ outstanding_work:
       - "policies/legal-counsel-engagement.md:123,127 — counsel contact via the dead address"
       - "REVIEW.md:65,225,263,315 and audits/2026-09-28-repository-readiness-audit.md:53,164,322 — historical findings; annotate, do not rewrite"
   - repo: "jolarca-consent"
+    status: >-
+      DONE 2026-10-15 — PR #6 merged. Two checks are red and pre-date the change
+      (gitleaks-action needs an organisation licence key; dependency review is
+      not enabled for that repo) — recorded on the PR itself.
     targets:
       - "SECURITY.md:24 — disclosure address → security role"
       - "LICENSE:38,41 — security@ and legal@ jolarca.com → security / privacy roles"
       - "CHANGELOG.md:24 — historical entry naming the fix that introduced the dead address; leave as written"
   - repo: "jolarca-observability"
+    status: >-
+      DONE 2026-10-15 — PR #3 merged; required contexts `Lint & Type Check` and
+      `Tests` both passed.
     targets:
       - "SECURITY.md:14,15 — security@jolarca.dev (also undeliverable) → security role"
       - "LICENSE:41 — legal@jolarca.dev → privacy role"
   - repo: "jolarca-control"
+    status: >-
+      DONE 2026-10-15 — historical register rows annotated by D-59 rather than
+      rewritten, which is what they should stay as.
     targets:
       - "docs/drift-findings.md:330-331 — historical D-fix record naming the dead address; annotate in D-59, do not rewrite"
 
