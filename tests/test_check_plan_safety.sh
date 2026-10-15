@@ -145,6 +145,29 @@ assert 1 secret-scanning-nested-disable <<'PLAN'
     }
 PLAN
 
+# Transcribed verbatim from `terraform show -no-color` of the live post-#73 plan. An ADDED
+# nested block carries `+`, not `~` or `-`, and four of the 20 changes are `+ required_status_checks`
+# — including jolarca-identity, whose declared contexts its workflows cannot report (D-44/D-47),
+# which would deadlock every merge on that repo. The `[~-]`-only pattern missed all four.
+assert 1 protection-status-checks-added <<'PLAN'
+  # github_branch_protection.main["jolarca-data"] will be updated in-place
+  ~ resource "github_branch_protection" "main" {
+        id                              = "BPR_kwDOT5dta84FAePQ"
+        # (10 unchanged attributes hidden)
+
+      + required_status_checks {
+          + contexts = [
+              + "ci",
+              + "compliance",
+              + "security",
+            ]
+          + strict   = true
+        }
+
+        # (2 unchanged blocks hidden)
+    }
+PLAN
+
 # Colourised input is the fourth way this gate was fooled, and it was found by running the
 # same plan twice: `terraform show tfplan` (colour on) exited 0 while `terraform show
 # -no-color tfplan` exited 1 on the identical 370-line plan, because every pattern here
