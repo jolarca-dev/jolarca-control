@@ -30,7 +30,7 @@ repos/jolarca.yml,2eb19ebbf27d057ad94504a755071d39fb559b867796548ead5f24ddfaadb6
 docs/runbooks/d31-regulated-records-removal.md,356e0897b62754d31c47f96a02585c87ef84116e63f7b3ee129153a554ba1a49,2026-10-15
 docs/runbooks/deployment-rehearsal.md,ce07bd6ef407b9a5850150f61fd35cf018f89d3d119765ec2b2269e1f05e790b,2026-10-15
 docs/runbooks/first-commit-pipeline.md,eb9461e3c61f38f13f3faa27dd7231cb273d44d15629c7b83eb31cb5470439ec,2026-10-15
-docs/runbooks/github-token-rotation.md,8ae25edeba271a2e67c2ee64f600d341dec3150a6f4414233083d2ee99b7e77f,2026-10-15
+docs/runbooks/github-token-rotation.md,302fe484a8be691e6ca15e4991498a755062aa50792c8f805030c66be04df314,2026-10-17
 docs/runbooks/workload-identity-federation.md,2953cc6ce183d28a7bfed099e1e515e45fd7de603b9d0e18ad0927225579510e,2026-10-15
 docs/security/dpia-marketplace-launch.md,125af31733cedd11b75752d91befff024bd8e828d6233f03e1c85533626f4470,2026-10-15
 docs/security/f01-l16-synthetic-fixture-acceptance.md,bd4647063bce9a09829ace0b833bf6abc09967505a7b3696733ed4c55034823f,2026-10-15

@@ -125,8 +125,14 @@ Set the repository variables and secrets (Settings → Secrets and variables →
 | Name | Kind | Value |
 |---|---|---|
 | `STATE_MIGRATION_COMPLETE` | Variable | leave **unset** until step 9 |
-| `TF_GITHUB_TOKEN` | Secret (env `production`) | fine-grained PAT: `jolarca-dev`, Administration **read/write**, Contents read, Metadata read |
-| `TF_GITHUB_TOKEN_READONLY` | Secret | fine-grained PAT: `jolarca-dev`, Administration **read**, Contents read, Metadata read |
+| `TF_GITHUB_TOKEN` | Secret (env `production`) | fine-grained PAT: `jolarca-dev`, Administration **read/write**, Contents read, Metadata read, **Vulnerability alerts read/write** |
+| `TF_GITHUB_TOKEN_READONLY` | Secret | fine-grained PAT: `jolarca-dev`, Administration **read**, Contents read, Metadata read, **Vulnerability alerts read** |
+
+Scope note measured 2026-10-17 (D-76): `Vulnerability alerts` is a **separate** repository
+permission on a fine-grained PAT and is NOT implied by `Administration`. Without it every
+`github_repository_vulnerability_alerts` read fails `403 Resource not accessible by personal
+access token`, in refresh, i.e. in `terraform plan` itself. Both resources at
+`repositories.tf:93` and `health-repo.tf:69` depend on it.
 
 Create the `production` **environment** with required reviewers = the operator.
 That reviewer prompt is the manual gate `apply.yml` relies on.

@@ -36,6 +36,12 @@ reason.
 ## Preconditions
 
 - You are a named custodian in `../security/key-custody.md`.
+SCOPE CHECKLIST (verify before pasting into `gh secret set`, D-76): a fine-grained PAT for
+this root needs Administration read/write, Contents read, Metadata read **and**
+`Vulnerability alerts` (read/write for the write token, read for the read-only token).
+The last one is not implied by Administration and its absence fails the plan step with
+`403 Resource not accessible by personal access token` on every repository.
+
 - A replacement token already generated (fine-grained PAT where the plan
   supports it, otherwise classic) with the minimum scope for its role — see
   the least-privilege note above `provider "github"` in `../../main.tf`:
