@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: help setup validate compliance context-parity context-baseline backup drift fleet-audit org-audit readiness \
-        first-commit evidence-check evidence-register \
+        first-commit evidence-check evidence-register findings-check \
         init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
 
@@ -92,6 +92,17 @@ evidence-register: ## Regenerate docs/evidence-registry.csv (commit the diff)
 #   make readiness                      # whole allow-list, JSON + table
 #   make readiness REPO=jolarca-payments REPORT=/tmp/payments.md OUT=/tmp/payments.json
 # Exit 0 all READY · 1 findings · 2 could not verify (never a silent pass).
+# A-07 register-integrity guard. Detects a `### D-nn` heading duplicated on the working copy, or
+# claimed with a different title by main and an open PR branch -- the collision that PR #41 and main
+# both hit on D-52 (2026-10-05), and that PR #67 and this branch reproduced on D-58 (2026-10-16).
+# Before the guard existed, allocating D-69 required a hand-run grep for the highest id.
+# 0/1/2 like every other gate here: an unparseable register is 2, never a pass (D-23).
+# The CI step in the required `Validate Repo Allow-List` job runs the same script WITHOUT
+# --cross-pr, because a cross-PR failure would block every merge on an unrelated open branch;
+# use this target before opening a PR, where that trade-off is worth paying.
+findings-check: ## Every `### D-nn` heading must be unique on main and across open PRs
+	python3 scripts/check_findings_register.py --cross-pr
+
 readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
 	python3 scripts/repo_readiness_audit.py \
 	  $(if $(REPO),--repo $(REPO)) \
