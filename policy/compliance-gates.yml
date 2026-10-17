@@ -286,6 +286,31 @@ exceptions:
     - "Approval from the organization owner"
     - "Link to the relevant ADR in docs/adr/"
   active:
+    - id: "D-58"
+      gate: "production apply requires a human approval (deploy-gates / CC8.1-04)"
+      risk: >-
+        SOC 2 CC8.1 / PCI-DSS Req 6.5.1 — a merge touching repos/**, policy/**, *.tf, *.tfvars or
+        apply.yml itself runs `terraform apply -input=false -auto-approve` with no person signing it.
+        The environment used to be entirely empty; since D-70 (2026-10-16) it has a 30-minute wait with
+        admin bypass off. That is delay plus a cancel window, not approval.
+      compensating_control: >-
+        wait_timer=30 with can_admins_bypass=false (verified by GET re-read; window proven usable on run
+        38813823199, cancelled with steps_started=0) + scripts/check_deploy_gates.py running inside the
+        REQUIRED Validate Repo Allow-List job, so an environment that reverts to unprotected fails the
+        merge path + check_plan_safety.sh refusals (destroy/replace/visibility/protection-layer/security
+        disables, exit 2 on ANSI input) + prevent_destroy on every repository + four required status
+        checks with strict=true. The gate deliberately still reports the gap; the allowance below is a
+        dated acceptance, not a silencing.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-10-16"
+      expires: "2026-11-16"
+      exit_trigger: >-
+        Add a required reviewer to the `production` environment (Settings -> Environments ->
+        production) and remove the ALLOW_UNPROTECTED_* strings from both deploy-gates.yml and
+        compliance-scan.yml in the same PR. Do NOT enable "prevent self-review": this organisation has
+        one member and that option would wedge every deploy. Whether solo self-approval is otherwise
+        permitted is unmeasured and named as the open question in D-58/D-70. On 2026-11-16 the gate goes
+        red by itself (D-25) — a lapse is closed by a PR that restates the controls, not by silence.
     - id: "D-04"
       gate: "required_approving_review_count = 0"
       risk: "SOC 2 CC8.1 / ISO 27001 A.8.32 — a single operator can merge their own change without review, bypassing the four-eyes principle."

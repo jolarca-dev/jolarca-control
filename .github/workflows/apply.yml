@@ -1,7 +1,12 @@
 name: "Terraform Apply"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Single-stage production apply with a manual approval gate.
+# Single-stage production apply. NOT an approval gate: as of 2026-10-16 the `production`
+# environment carries a 30-minute deployment wait with admin bypass disabled (D-70), which is
+# mechanical delay plus a cancel window, not a person signing anything. The header of this file
+# used to claim "a manual approval gate" while the environment had no rules at all (D-58); the
+# wording now matches the measured API object, and scripts/check_deploy_gates.py -- run inside the
+# required Validate Repo Allow-List job -- fails if the environment ever goes back to empty.
 #
 # This deliberately does NOT replicate jol-control's dev → staging → prod
 # promotion. A GitHub-organization control plane has exactly ONE target: the

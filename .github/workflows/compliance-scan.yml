@@ -36,6 +36,13 @@ jobs:
   validate:
     name: Validate Repo Allow-List
     runs-on: ubuntu-latest
+    # `actions: read` is added at job level because the step below reads the live
+    # `environment:` protection rules through the environments API; contents stays read-only.
+    # Measured in #41's own CI history: the script can only print the live exemption once the
+    # token reaches the environment object.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -66,6 +73,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALLOW_MISSING_REPOS: ""
         run: python3 scripts/check_declared_contexts.py
+      # D-58 / D-67: a job that names `environment: production` claims a gate. This asserts the gate
+      # exists instead of trusting a header comment -- the header said "manual approval gate" while the
+      # environment had protection_rules: [] and can_admins_bypass: true (measured 2026-10-05).
+      # Since D-70 (2026-10-16) there IS a rule: wait_timer=30 with admin bypass off, which the script
+      # still reports as a finding because delay is not approval. The dated allowance below mirrors
+      # deploy-gates.yml and is recorded in policy/compliance-gates.yml exceptions.active; it is not a
+      # way to make the check quiet -- an expired allowance fails again by itself (D-25). Advisory
+      # alone was not enough: this same class of check was exempting the very repos it was failing for.
+      - name: Deployment environment gates are real (D-58)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_UNPROTECTED_ENVS: "jolarca-dev/jolarca-control:production"
+          ALLOW_UNPROTECTED_UNTIL: "2026-11-16"
+        run: python3 scripts/check_deploy_gates.py
 
   # ── Context 2: Policy Compliance Check ─────────────────────────────────────
   compliance:

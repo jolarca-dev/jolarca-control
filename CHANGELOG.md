@@ -233,6 +233,36 @@ lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `mak
 re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
 starts no apply.
 
+### Fixed — 2026-10-16 (ninth batch: D-71 reconciliation, part 1 — PR #41 landed, and D-58 finally has a row)
+
+- **PR #41 rebased onto `main` and landed.** `scripts/check_deploy_gates.py` + `deploy-gates.yml` +
+  17 fixtures. Its second commit was kept, not skipped: it fixes an output bug where one environment
+  failing two rules printed two identical exemption notes next to a summary claiming "1 allowed" —
+  the log and the total disagreed about how many objects existed.
+- **A finding-ID collision, resolved rather than merged blind.** PR #41 wrote its finding up as
+  `D-52` on 2026-10-05; `main` had already allocated D-52 to "Privating a governed fleet repo blinds
+  the control plane". The rebase conflict surfaced it, and the row was renumbered to **D-58** — the id
+  that `audit/soc2-checklist.yml`, `audit/pci-dss-checklist.yml`, `policy/compliance-gates.yml`,
+  `Makefile` and `CHANGELOG.md` had all been citing **for a row that did not exist**. D-58 now has one.
+  This is the failure mode PR #51's `check_findings_register.py` guards, met while reconciling the queue
+  it belongs to.
+- **The gate is on the merge path, not advisory.** It runs as a step inside the required
+  `Validate Repo Allow-List` job (D-67's pattern: no fifth required context, therefore no
+  branch-protection change). Against live state it exits **1** —
+  `rules are ['wait_timer'], with no required_reviewers, so no human approves the deploy` — which is
+  correct, because D-70 is delay and not approval. So the fix was a dated allowance, not a weaker rule:
+  `ALLOW_UNPROTECTED_UNTIL: 2026-11-16` in both workflows, plus a real entry in
+  `policy/compliance-gates.yml` `exceptions.active` with `approved_by`, `approved_on`, `expires` and an
+  `exit_trigger`. An expired allowance fails again by itself (D-25).
+- **Two stale claims about the apply path corrected at the source:** `apply.yml`'s header no longer says
+  "manual approval gate" (it now states what the environment actually holds and names the gate that fails
+  if it regresses), and `check_deploy_gates.py`'s docstring no longer describes `production` as having no
+  rules or `STATE_MIGRATION_COMPLETE` as unset.
+- **A trap recorded for the next reader:** the workflow told the operator to "enable prevent
+  self-review". In a one-member organisation that option would wedge every deploy, so it is now explicitly
+  forbidden in the exemption comment and in the exception's `exit_trigger`; whether solo self-approval is
+  otherwise permitted remains measured-as-unknown, not asserted.
+
 ### Changed — 2026-10-16 (eighth batch: the production apply got a 30-minute wait; two checklists corrected)
 
 - **D-70 · a real, mechanical stop now exists.** `production` environment:
