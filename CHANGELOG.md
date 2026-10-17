@@ -10,6 +10,30 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-10-17 (deployment gate)
+
+- `production` now requires a **deploy reviewer** (`prevent_self_review: false`, the single
+  org member), alongside the existing 30-minute wait. Recorded as **D-75**. This is an intent
+  checkpoint with a recorded approval, not separation of duties — D-58 remains open.
+- `scripts/check_deploy_gates.py` reached its fully-green path for the first time:
+  `OK: 1 environment(s) examined; 1 gated`.
+
+### Removed — 2026-10-17
+
+- The dated allowance `ALLOW_UNPROTECTED_ENVS` / `ALLOW_UNPROTECTED_UNTIL` (expiry 2026-11-16)
+  in `.github/workflows/deploy-gates.yml`, per that file's own instruction to delete it once
+  reviewers exist.
+
+### Changed — 2026-10-17 (credential placement)
+
+- `TF_GITHUB_TOKEN` moved from a repository Actions secret to an **environment** secret on
+  `production`, matching `docs/security/key-custody.md` and
+  `docs/runbooks/github-token-rotation.md`. The inert org-level duplicate on `jolarca-dev`
+  was deleted after proving it unreachable (`visibility: private`, no private repositories).
+- Recorded as **D-74**: the 19 residual plan changes were applied out-of-band from the host,
+  which consumes the sequencing brake D-56 relied on. `policy/repo-defaults.yml` `Req_8_2`
+  no longer claims signed commits as a control — enforcement is off (`D-05`).
+
 ### Added — 2026-09-25
 
 Initial control plane, extracted from
