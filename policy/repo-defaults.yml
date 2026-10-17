@@ -273,6 +273,6 @@ compliance_mapping:
     Req_1_2: "Scope definition — data classification ↔ visibility coherence"
     Req_6_3: "Change control — PR + protected branch + plan review gate"
     Req_6_5: "Secure development — SAST and dependency gates"
-    Req_8_2: "Unique identification — signed commits attribute every change"
+    Req_8_2: "Unique identification — signed commits are NOT enforced (terraform.tfvars:21 enforce_signed_commits = false, D-05); attribution rests on verified author email only; recorded as accepted risk, not as a control"
     Req_10_2: "Audit logs — org audit-log streaming webhook (org-settings.tf)"
     Req_12_10: "Incident response — see jolarca-compliance"

@@ -10,6 +10,30 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-10-17 (deployment gate)
+
+- `production` now requires a **deploy reviewer** (`prevent_self_review: false`, the single
+  org member), alongside the existing 30-minute wait. Recorded as **D-75**. This is an intent
+  checkpoint with a recorded approval, not separation of duties — D-58 remains open.
+- `scripts/check_deploy_gates.py` reached its fully-green path for the first time:
+  `OK: 1 environment(s) examined; 1 gated`.
+
+### Removed — 2026-10-17
+
+- The dated allowance `ALLOW_UNPROTECTED_ENVS` / `ALLOW_UNPROTECTED_UNTIL` (expiry 2026-11-16)
+  in `.github/workflows/deploy-gates.yml`, per that file's own instruction to delete it once
+  reviewers exist.
+
+### Changed — 2026-10-17 (credential placement)
+
+- `TF_GITHUB_TOKEN` moved from a repository Actions secret to an **environment** secret on
+  `production`, matching `docs/security/key-custody.md` and
+  `docs/runbooks/github-token-rotation.md`. The inert org-level duplicate on `jolarca-dev`
+  was deleted after proving it unreachable (`visibility: private`, no private repositories).
+- Recorded as **D-74**: the 19 residual plan changes were applied out-of-band from the host,
+  which consumes the sequencing brake D-56 relied on. `policy/repo-defaults.yml` `Req_8_2`
+  no longer claims signed commits as a control — enforcement is off (`D-05`).
+
 ### Added — 2026-09-25
 
 Initial control plane, extracted from
@@ -232,6 +256,36 @@ Verification: plan on `main` `0 to add, 20 to change, 0 to destroy` · gate exit
 lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `make lint` · evidence
 re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
 starts no apply.
+
+### Fixed — 2026-10-17 (eleventh batch: D-73 — ids cited across the repo with no row defining them)
+
+- **`D-56` was cited 17 times and had no row.** Neither did `D-57` (3 citations) or `D-53` (8).
+  `D-64`'s own title reads "D-56's actual root cause found and fixed". The definitions existed only on
+  unmerged PR #67. `check_findings_register.py` (#51, landed 2026-10-17) answers "is this id used
+  twice?" and was silent on "is this id used but never written?" — the class survived the guard built
+  for its neighbour. Measured with `git grep -c D-56` per file against a heading scan of the register.
+- **The 2026-10-12 section salvaged from #67 into the register** (`D-54`, `D-55`, `D-56`, `D-57`),
+  each row carrying a dated *status at salvage* block corrected against measurements since: D-55's
+  headline is fixed by the `state_backup.sh` rewrite (schedule and off-host destination are not);
+  D-56 is scoped to the CI credential only (the `-backend=false` half landed as D-64); D-57 is split
+  three ways (fixed / accepted-deviation / pending step-6 row 14). A `D-53` row was added to close its
+  8 dangling references. #67's own `D-58` was deliberately **not** imported — `main`'s row is
+  authoritative, and importing a second one would recreate the duplicate the guard detects.
+- **New check `find_dangling_references()`**: every `D-nn` cited in tracked text needs a heading;
+  `tests/` and `staging/` excluded because fixtures cite synthetic ids; register headings count as
+  definitions not citations; an unusable file list lands on exit **2**, never a pass (§3). Runs in
+  every mode including the required CI step, and `ROOT` is read at call time so a fixture can point it
+  at a throwaway repo instead of silently scanning the real tree.
+- **It flagged this changeset's own forward references**: a citation to the dead-pointer finding that
+  exists only on unmerged PR #79, a synthetic fixture id named literally in the guard's comment, and
+  its own id before its row was written. All three were rewritten to name a file or PR rather than
+  padding the register to satisfy a tool.
+- **One of my test assertions was wrong, not the gate**: the fixture must expect `D-56` to be reported
+  dangling (it is undefined in that throwaway register) and a defined id never to be. Caught by
+  running the suite rather than reasoning about it.
+- Register parses clean: `OK: 72 ### D-nn headings parsed, no collisions, no dangling citations`.
+  Consequence for #67: it can now be closed, because the only part of it `main` lacked was findings
+  text, and that is here.
 
 ### Fixed — 2026-10-16 (ninth batch: D-71 reconciliation, part 1 — PR #41 landed, and D-58 finally has a row)
 

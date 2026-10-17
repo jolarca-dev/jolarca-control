@@ -61,21 +61,25 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -q -r requirements.txt
-      # Time-boxed rather than silenced, and the date is a DATE (D-25: an event-only expiry has no
-      # deadline). What is being accepted is specifically "a 30-minute non-bypassable wait exists but
-      # no human approves the deploy". The remaining fix is operator-side and partly unmeasured:
-      # Settings -> Environments -> production -> required reviewers. DO NOT enable "prevent
-      # self-review" here -- this organisation has one member, and GitHub documents that option as the
-      # thing that blocks an author approving their own deployment, so enabling it would wedge every
-      # apply with no second person available. Whether self-approval is otherwise permitted is the open
-      # question named in D-58/D-70; it was left untested because an unsatisfiable reviewer blocks
-      # every deploy. Delete this exemption when reviewers exist; if the date passes with it still
-      # listed, the job goes red on purpose.
+      # The setting that matters lives in repository configuration, not in this tree, so this
+      # job re-reads it weekly. Status 2026-10-17: `production` now carries BOTH rules —
+      # `wait_timer: 30` (D-70) and `required_reviewers` with `prevent_self_review: false` —
+      # confirmed by cache-busted GET re-read, not by the write's status code. The exemption
+      # that accepted 'wait but no approver' is deleted; restoring one needs a dated reason.
+      # Stated honestly: with one org member self-approval is permitted, so this is an intent
+      # checkpoint that leaves a record, NOT separation of duties — PCI-DSS 6.5.1 and SOC 2
+      # CC8.1 dual control remain unsatisfied (D-58 open).
+      # API traps measured while adding it: the PUT body wants a FLAT reviewer object
+      # `{"type":"User","id":n}` while the GET returns a NESTED `reviewer:{login,id}`; the
+      # nested write shape fails 422 `Required reviewers must have at least one reviewer`,
+      # which reads like 'no reviewers exist' but means 'your array was dropped'. The GET's
+      # top-level `reviewers` stays `null` even when live — the truth is
+      # `protection_rules[].reviewers`. `updated_at` did not move after a successful write, so
+      # it is not evidence of change. Each of the five rejected bodies was confirmed harmless
+      # by re-read before the next was tried.
       - name: Check deployment environment gates
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ALLOW_UNPROTECTED_ENVS: "jolarca-dev/jolarca-control:production"
-          ALLOW_UNPROTECTED_UNTIL: "2026-11-16"
           # Widening to the other two repos that deploy via environments (jolarca,
           # jolarca-infrastructure) is a separate decision, recorded in D-58: three of their four
           # environments are equally unprotected and belong to the mission-side workstream, so gating this
