@@ -175,7 +175,10 @@ jobs:
       # .gitignore excludes it), so the previous `.venv/bin/python ... || python ...` always fell
       # through and the fallback owned the verdict. requirements-dev.txt pins pytest exactly and is
       # installed into this interpreter by the step above, so `python` IS the pinned environment.
-      # Guarded by tests/test_ci_steps_are_real.py.
+      # Guarded by tests/test_ci_gates_are_real.py (the module was renamed from
+      # test_ci_steps_are_real.py before the commit that cited it, leaving this pointer dead from
+      # 2026-10-05 until D-72; tests/test_ci_gates_are_real.py now also fails on any workflow that
+      # cites a nonexistent tests/ or scripts/ path, comments included, so the class cannot recur).
       - name: Regression tests
         run: python -m pytest tests/ -q
 
