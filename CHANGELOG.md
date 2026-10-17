@@ -233,6 +233,23 @@ lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `mak
 re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
 starts no apply.
 
+### Fixed — 2026-10-17 (tenth batch: D-72 — a dead guard pointer, and a rule the register thought had landed)
+
+- `compliance-scan.yml:178` cited `tests/test_ci_steps_are_real.py`, which **does not exist**
+  (only `test_ci_gates_are_real.py` does). Dead since 2026-10-05, when the module was renamed
+  before the commit that referenced it. Nothing in CI reads comments, so nothing could fail.
+- The bigger finding: the register row for that fix claims PR #40 "also adds the rule that catches
+  it". Measured on `main`, the landed module has five tests — exit-status swallow, `continue-on-error`,
+  phantom interpreter, suite wiring, parse non-vacuity — and **no path-existence test**. `gh pr diff 40`
+  shows the rule lives only on that unmerged branch. So a control was documented as in place while the
+  defect it guards survived twelve days: claim-vs-mechanism again (D-22/D-62/D-67/D-58).
+- Fixed by implementing the rule (`test_cited_repo_paths_in_workflows_exist`), scanning raw workflow
+  text including comments, requiring ≥10 parsed citations so it cannot pass vacuously. **Observed red
+  first** (`1 failed, 5 passed`, naming the file and line), green after. The pointer is corrected with
+  its own history in the comment.
+- Consequence: PR #40 is now superseded for this rule and should be closed rather than merged, or the
+  suite grows two tests asserting one property.
+
 ### Fixed — 2026-10-16 (ninth batch: D-71 reconciliation, part 1 — PR #41 landed, and D-58 finally has a row)
 
 - **PR #41 rebased onto `main` and landed.** `scripts/check_deploy_gates.py` + `deploy-gates.yml` +

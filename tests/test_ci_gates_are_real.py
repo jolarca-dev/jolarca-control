@@ -116,6 +116,40 @@ def test_regression_job_actually_runs_the_suite() -> None:
     )
 
 
+def test_cited_repo_paths_in_workflows_exist() -> None:
+    """Every `tests/….py` or `scripts/…` path cited in a workflow -- including in a comment -- must exist.
+
+    Why this rule exists, measured rather than invented: `compliance-scan.yml` carried the comment
+    "Guarded by tests/test_ci_steps_are_real.py" while the module had already been renamed to
+    `test_ci_gates_are_real.py` before the commit was made, so the pointer was dead on arrival
+    (D-40 / PR #40's subject). Nothing in CI reads comments, so no test could fail on it -- and the
+    register row describing that fix claimed "the rule that catches it" had landed, when the landed
+    module checked exit-swallowing, `continue-on-error` and phantom interpreters only. A guard whose
+    own documentation is wrong is the same failure class it is meant to detect: the reader trusts the
+    pointer and goes to a file that is not there.
+
+    Comments are in scope deliberately. A `run:` line naming a missing script fails loudly in CI; a
+    comment pointing at a missing test fails silently forever, which is exactly why it needs a gate.
+    """
+    cited = re.compile(r"(?:tests|scripts)/[A-Za-z0-9_.-]+\.(?:py|sh)")
+    offenders: list[str] = []
+    total = 0
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for match in cited.finditer(line):
+                total += 1
+                target = REPO_ROOT / match.group(0)
+                if not target.exists():
+                    offenders.append(
+                        f"{path.name}:{lineno} cites {match.group(0)} which does not exist"
+                    )
+    assert total >= 10, (
+        f"only {total} path citations parsed -- the pattern or the layout changed, so this rule "
+        "would be passing by inspecting nothing"
+    )
+    assert not offenders, "workflows point at files that are not there: " + str(offenders)
+
+
 def test_workflows_are_parsed_and_non_vacuous() -> None:
     """If the loader saw nothing, every rule above would pass for free."""
     names = [workflow for workflow, _doc in _workflows()]
