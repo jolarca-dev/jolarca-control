@@ -108,7 +108,17 @@ jobs:
             2>&1 | tee plan-output.txt
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Measured 2026-10-17, run 39061106590: with the runner default token this step
+          # failed on all fifteen sibling repositories --
+          #   GET /repos/jolarca-dev/<repo>/vulnerability-alerts: 403 Resource not
+          #   accessible by integration
+          # because `secrets.GITHUB_TOKEN` is scoped to jolarca-control alone. The same
+          # defect was fixed in apply.yml for the sibling reason (see D-56). A plan is a
+          # read, so the credential is the read-only PAT, not the write token: this job
+          # must never be able to mutate the organisation. Proven org-wide the same day by
+          # the `Fleet separation guard (ADR-0004)` step, which runs gh against the fleet
+          # with this very secret and passed.
+          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY }}
 
       - name: Record skipped plan
         if: vars.STATE_MIGRATION_COMPLETE != 'true'

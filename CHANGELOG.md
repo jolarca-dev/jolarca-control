@@ -10,6 +10,13 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-17 (D-76)
+
+- `plan.yml` handed Terraform the runner-scoped `secrets.GITHUB_TOKEN`, which cannot read the
+  fifteen sibling repositories: every PR-mode plan failed with `403 Resource not accessible by
+  integration` on `github_repository_vulnerability_alerts`. It now uses
+  `secrets.TF_GITHUB_TOKEN_READONLY` — read scope for a read-only job.
+
 ### Added — 2026-10-17 (deployment gate)
 
 - `production` now requires a **deploy reviewer** (`prevent_self_review: false`, the single
