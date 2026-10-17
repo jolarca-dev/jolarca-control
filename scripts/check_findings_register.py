@@ -127,6 +127,83 @@ def check_cross_source(
     return findings
 
 
+# A citation is any `D-<digits>` token. Bounded to 1-3 digits so hex digests or long
+# numbers inside evidence tables are not mistaken for finding ids.
+REFERENCE_RE = re.compile(r"\bD-(\d{1,3})\b")
+
+# tests/** cites SYNTHETIC ids on purpose (fixture finding ids that exist only inside a
+# temporary register copy), and this script must not cite one literally: a citation here
+# would itself be a dangling reference.
+# and the register's own heading lines are definitions rather than references. Excluding
+# the fixture directory keeps this check about prose a reader would act on; the exclusion
+# is stated here rather than left as an unexplained `continue`.
+NON_EVIDENCE_PREFIXES = ("tests/", "staging/")
+
+
+def find_dangling_references(
+    headings: list[tuple[str, str]], root: Path = ROOT
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Every `D-nn` cited in tracked text must have a heading in the register.
+
+    Why the collision check is not enough: measured on 2026-10-17, `D-56` was cited 17 times
+    across `AGENTS.md`, `Makefile`, `audit/`, `policy/` and this register -- including inside the
+    title of `D-64` ("D-56's actual root cause found and fixed") -- while **no `### D-56` heading
+    existed anywhere on `main`**. The only definition lived on unmerged PR #67. Same story for
+    `D-57` and `D-53`. A citation without a definition is worse than no citation: the reader
+    believes a documented decision and compensating control exist, and goes looking for a row that
+    is not there. Duplicates were gated; undefined references were not, which is how the class
+    survived several "the register claims X" corrections; see the D-73 row for this class.
+
+    Returns `(dangling, gaps)`. `gaps` is non-empty when the file list or a read failed, and the
+    caller must treat that as could-not-verify, never as clean (§3, D-23).
+    """
+    defined = {f"{id_}" for id_, _ in headings}
+    listing = subprocess.run(["git", "ls-files"], cwd=str(root), capture_output=True, text=True)
+    if listing.returncode != 0:
+        return [], [f"cannot list tracked files: {(listing.stderr or '').strip()[:160]}"]
+    files = [f for f in listing.stdout.split() if f and (root / f).is_file()]
+    if not files:
+        return [], ["git ls-files returned no readable tracked files (non-vacuity guard)"]
+
+    seen: dict[str, dict[str, Any]] = {}
+    gaps: list[str] = []
+    for rel in files:
+        if rel.startswith(NON_EVIDENCE_PREFIXES):
+            continue
+        try:
+            text = (root / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            gaps.append(f"cannot read {rel}: {exc}")
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if HEADING_RE.match(line):
+                continue  # a definition, not a reference
+            for match in REFERENCE_RE.finditer(line):
+                fid = f"D-{match.group(1)}"
+                if fid in defined:
+                    continue
+                entry = seen.setdefault(
+                    fid, {"id": fid, "count": 0, "first": f"{rel}:{lineno}", "scope": "dangling"}
+                )
+                entry["count"] += 1
+    dangling = sorted(
+        (
+            {
+                **item,
+                "note": (
+                    "cited "
+                    f"{item['count']} time(s), first at {item['first']}, but no "
+                    "`### <id> · <title>` heading exists in docs/drift-findings.md; add the row "
+                    "(or re-point the citation at the finding that actually carries it)"
+                ),
+            }
+            for item in seen.values()
+        ),
+        key=lambda d: int(d["id"].split("-")[1]),
+    )
+    return dangling, gaps
+
+
 def gh_api(path: str) -> tuple[int, Any]:
     """GET via `gh api`. Non-2xx or unparseable returns status 0 -> caller files unverifiable."""
     proc = subprocess.run(["gh", "api", path], capture_output=True, text=True)
@@ -202,6 +279,15 @@ def main(argv: list[str] | None = None) -> int:
     # Intra-file collisions on the working copy.
     findings.extend(find_intra_duplicates(working_headings))
 
+    # Citations with no definition (D-73). Runs in every mode, including inside the
+    # required CI step, because it needs nothing but the working tree. `ROOT` is read here
+    # rather than as a default argument so a fixture can point the whole check at a
+    # throwaway repo -- a default evaluated at import time would keep scanning the real
+    # tree and make every tmp_path test meaningless.
+    dangling, ref_gaps = find_dangling_references(working_headings, ROOT)
+    findings.extend(dangling)
+    unverifiable.extend(ref_gaps)
+
     if cross_pr:
         repo = resolve_repo_slug()
         if not repo:
@@ -236,9 +322,11 @@ def main(argv: list[str] | None = None) -> int:
                 findings.extend(check_cross_source(sources))
 
     for f in findings:
+        label = "DANGLING" if f.get("scope") == "dangling" else "COLLISION"
+        printable = {k: v for k, v in f.items() if k not in ("note", "first", "count")}
         print(
-            f"COLLISION {f['id']} [{f['scope']}]: {f['note']}\n  "
-            + json.dumps({k: v for k, v in f.items() if k not in ("note",)}, ensure_ascii=False),
+            f"{label} {f['id']} [{f['scope']}]: {f['note']}\n  "
+            + json.dumps(printable, ensure_ascii=False),
             file=sys.stderr,
         )
     for u in unverifiable:
@@ -251,15 +339,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     if findings:
+        n_col = sum(1 for f in findings if f.get("scope") != "dangling")
+        n_dang = len(findings) - n_col
         print(
-            f"RESULT: {len(findings)} finding-id collision(s) detected "
+            f"RESULT: {n_col} finding-id collision(s) and {n_dang} dangling citation(s) "
             f"across {len(working_headings)} headings on the working copy",
             file=sys.stderr,
         )
         return 1
     print(
-        f"OK: {len(working_headings)} `### D-nn` headings parsed, no collisions"
-        + (" (cross-PR mode)" if cross_pr else ""),
+        f"OK: {len(working_headings)} `### D-nn` headings parsed, no collisions, "
+        "no dangling citations" + (" (cross-PR mode)" if cross_pr else ""),
         file=sys.stderr,
     )
     return 0
