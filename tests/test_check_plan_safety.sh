@@ -305,6 +305,57 @@ else
   fail=$((fail + 1))
 fi
 
+# ── "Not a plan at all" must be exit 2, never exit 0 (measured 2026-10-19) ─────
+# Two inputs reached this gate in CI and both were reported SAFE:
+#   1. plan.yml's `Record skipped plan` step writes prose into plan-output.txt, and
+#      the gate read it as "no destroy, no visibility change" -> exit 0.
+#   2. run 39062414977 (rerun 2026-10-19): `Terraform Init` died with
+#      `Error: Failed to read organization "jolarca-dev" ... unauthorized`, and a
+#      plan-output.txt carrying only that error also exited 0.
+# A verdict of "safe to auto-apply" on text that is not a rendered plan is the D-22
+# class again: the gate answers a question nobody asked (AGENTS.md §7). The guard
+# below is deliberately ordered AFTER the refusal rules, so a plan-shaped input with
+# a refused action still exits 1 -- see the non-vacuity case at the end.
+assert 2 not-a-plan-workflow-stub <<'PLAN'
+terraform plan SKIPPED — STATE_MIGRATION_COMPLETE is not 'true'.
+
+The variable is the operator's switch on this workflow, nothing more.
+State itself already lives in the HCP Terraform workspace
+jolarca-dev/jolarca-control (see docs/state-migration-runbook.md,
+status COMPLETE 2026-10-10) and the legacy jolarca-infrastructure root
+was drained of github_* resources by `terraform state rm` (D-13), so
+this control plane IS the sole declarative owner.
+
+No plan was produced, so no apply may proceed from this run.
+Validate + fmt + init-only checks above DID run and passed.
+PLAN
+
+assert 2 not-a-plan-error-output <<'PLAN'
+Initializing HCP Terraform...
+
+Error: Failed to read organization "jolarca-dev" at host app.terraform.io
+
+  on main.tf line 28, in terraform:
+  28:     organization = "jolarca-dev"
+
+Encountered an unexpected error while reading the organization settings:
+unauthorized
+PLAN
+
+# Non-vacuity for the guard: real plan output carries warning noise and refresh
+# lines around the markers. If this flips to 2, the guard is matching too narrowly
+# and would fail every honest plan closed.
+assert 0 plan-shaped-with-warning-noise <<'PLAN'
+Warning: Value for previously declared attribute is null
+
+  on repositories.tf line 93, in resource "github_repository_vulnerability_alerts" "repo":
+
+github_repository.repo["jolarca"]: Refreshing state... [id=jolarca]
+github_branch_protection.main["jolarca"]: Refreshing state... [id=MDP:1234]
+
+No changes. Your infrastructure matches the configuration.
+PLAN
+
 echo
 echo "plan-gate tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -125,8 +125,20 @@ Set the repository variables and secrets (Settings → Secrets and variables →
 | Name | Kind | Value |
 |---|---|---|
 | `STATE_MIGRATION_COMPLETE` | Variable | leave **unset** until step 9 |
-| `TF_GITHUB_TOKEN` | Secret (env `production`) | fine-grained PAT: `jolarca-dev`, Administration **read/write**, Contents read, Metadata read |
-| `TF_GITHUB_TOKEN_READONLY` | Secret | fine-grained PAT: `jolarca-dev`, Administration **read**, Contents read, Metadata read |
+| `TF_GITHUB_TOKEN` | Secret (env `production`) | fine-grained PAT: `jolarca-dev`, Administration **read/write**, Metadata read |
+| `TF_GITHUB_TOKEN_READONLY` | Secret | fine-grained PAT: `jolarca-dev`, Administration **read**, Metadata read |
+
+Scope note corrected 2026-10-19 (D-76): the `github_repository_vulnerability_alerts` resources
+at `repositories.tf:93` and `health-repo.tf:69` refresh over
+`GET /repos/{owner}/{repo}/vulnerability-alerts`, and GitHub's own fine-grained permission
+table puts that endpoint under **Repository permissions → Administration** at `read`
+(`PUT`/`DELETE` at `write`). There is **no** separate `Vulnerability alerts` permission to
+select — an earlier revision of this table (2026-10-17) named one, and it sent the operator
+hunting for a scope that does not exist. What the plan actually needed was **Administration
+read** on the read-only PAT; proven by `HTTP/2.0 204 No Content` from
+`gh api -i repos/jolarca-dev/jolarca-dr/vulnerability-alerts` with that PAT. Without it every
+`github_repository_vulnerability_alerts` read fails `403 Resource not accessible by personal
+access token` in refresh, i.e. inside `terraform plan` itself.
 
 Create the `production` **environment** with required reviewers = the operator.
 That reviewer prompt is the manual gate `apply.yml` relies on.

@@ -96,9 +96,25 @@ jobs:
         run: terraform validate
 
       # ── Live plan is GATED ─────────────────────────────────────────────────
+      #
+      # `shell: bash {0}` is load-bearing, added 2026-10-19. The Actions default for
+      # a `run:` step is `bash -e {0}` (visible in the log of every step above), and
+      # `-detailed-exitcode` exits **2** when a plan has changes. Under `-e` the step
+      # therefore aborted at the pipeline, which meant:
+      #   * `echo "exit_code=..."` never ran, so `steps.plan.outputs.exit_code` was
+      #     always empty and the "Fail on plan error" step at the bottom could never
+      #     fire — a gate that is unreachable is not a gate (AGENTS.md §7);
+      #   * "Plan safety check" was skipped, so the refusal gate never read the plan on
+      #     exactly the input it exists for: a plan that actually changes something.
+      # apply.yml never had this bug because it plans without `-detailed-exitcode`
+      # (line ~133), so exit 0 on a diff. Measured on run 39062414977 (rerun
+      # 2026-10-19T11:58Z): steps after Init reported `skipped`, job red from Init.
+      # With `-e` off, exit 2 is a normal outcome that the safety gate judges, exit 1
+      # is routed to "Fail on plan error", and exit 0 passes through.
       - name: Terraform Plan (gated on STATE_MIGRATION_COMPLETE)
         id: plan
         if: vars.STATE_MIGRATION_COMPLETE == 'true'
+        shell: bash {0}
         run: |
           set -o pipefail
           terraform plan \
@@ -108,7 +124,17 @@ jobs:
             2>&1 | tee plan-output.txt
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Measured 2026-10-17, run 39061106590: with the runner default token this step
+          # failed on all fifteen sibling repositories --
+          #   GET /repos/jolarca-dev/<repo>/vulnerability-alerts: 403 Resource not
+          #   accessible by integration
+          # because `secrets.GITHUB_TOKEN` is scoped to jolarca-control alone. The same
+          # defect was fixed in apply.yml for the sibling reason (see D-56). A plan is a
+          # read, so the credential is the read-only PAT, not the write token: this job
+          # must never be able to mutate the organisation. Proven org-wide the same day by
+          # the `Fleet separation guard (ADR-0004)` step, which runs gh against the fleet
+          # with this very secret and passed.
+          GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN_READONLY }}
 
       - name: Record skipped plan
         if: vars.STATE_MIGRATION_COMPLETE != 'true'
@@ -130,17 +156,46 @@ jobs:
           Validate + fmt + init-only checks above DID run and passed.
           MSG
 
+      # Consequence of the guard above, stated rather than hidden: when
+      # STATE_MIGRATION_COMPLETE is flipped back to 'false', the stub written by
+      # "Record skipped plan" is prose, so "Plan safety check" now exits 2 and this
+      # required context goes RED instead of reporting green on a plan that never
+      # ran. That is the intended reading (AGENTS.md §3: could-not-verify is never
+      # a pass; and the 2026-10-10 lesson that a green plan gate planned nothing).
       - name: Plan safety check
         run: bash scripts/check_plan_safety.sh plan-output.txt
 
-      - name: Comment plan on PR
+      # Measured 2026-10-19, run 39062414977: `Terraform Init` failed, so
+      # plan-output.txt was never written, and this step died with
+      #   Either message or path input is required
+      # — a second red step whose text points at the sticky-comment action rather
+      # than at the credential that actually broke. `always()` alone is not enough:
+      # the action needs the file to exist. Existence is checked with `[ -s ]` in a
+      # preceding step rather than `hashFiles()`, because plan-output.txt is listed
+      # in .gitignore (line 68) and hashFiles skips ignored paths.
+      - name: Detect plan output
+        id: planout
         if: always()
+        run: |
+          if [ -s plan-output.txt ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment plan on PR
+        if: always() && steps.planout.outputs.present == 'true'
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           header: terraform-plan
           recreate: true
           path: plan-output.txt
 
+      # Reachable for the first time with `shell: bash {0}` above: this used to test
+      # an output that could never be set, so a plan that errored (exit 1) was only
+      # ever signalled by the aborting step, never by this named assertion.
       - name: Fail on plan error
         if: steps.plan.outputs.exit_code == '1'
-        run: exit 1
+        run: |
+          echo "::error::terraform plan exited 1 (see the 'Terraform Plan' step body). A plan that failed to compute is not a plan that was reviewed."
+          exit 1

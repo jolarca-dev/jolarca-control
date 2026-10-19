@@ -19,6 +19,13 @@ Basis: SOC 2 CC6.1, ISO 27001:2022 A.5.17.
 |---|---|---|---|
 | `TF_GITHUB_TOKEN_READONLY` | repo secret | `plan.yml`; `compliance-scan.yml` (policy, fleet-separation, drift jobs); `fleet-separation-guard.yml`; the plan step of `apply.yml` | read the org, plan, detect drift |
 | `TF_GITHUB_TOKEN` | **environment** secret on `production` | `apply.yml` (the apply step only) | write to the live org |
+| `TFC_TOKEN` | repo secret | `plan.yml` and `apply.yml` (`cli_config_credentials_token` for `setup-terraform`); `apply.yml`'s `Assert workspace execution mode is local` step, which curls the HCP API directly | authenticate to the **HCP Terraform** backend, not to GitHub |
+
+`TFC_TOKEN` was missing from this table until 2026-10-19. That omission is not
+cosmetic: it is the credential that D-56, D-64, D-76 and D-77 all tripped over, and
+until now no runbook in this repository said how to test it or what its scopes should
+be. Rotating the two GitHub PATs while leaving an HCP token undocumented reproduces
+the failure class rather than closing it.
 
 Both fall back to the built-in `secrets.GITHUB_TOKEN` where a job can be
 satisfied by it; that fallback cannot manage other repositories, so a missing
@@ -36,6 +43,28 @@ reason.
 ## Preconditions
 
 - You are a named custodian in `../security/key-custody.md`.
+SCOPE CHECKLIST (verify before pasting into `gh secret set`, D-76): a fine-grained PAT for
+this root needs **Administration** (read/write on the write token, read-only on the
+read-only token), **Metadata read** (auto-required), and — for the org webhook in
+`org-settings.tf` — Organization read. `Contents` read is listed in older drafts of this
+runbook and is **not** needed today: both `github_repository_file` resources
+(`codeowners.tf`, `health-repo.tf`) are commented out, so nothing reads file content.
+
+> **Corrected 2026-10-19 — there is no `Vulnerability alerts` repository permission.**
+> An earlier revision of this checklist (commit `e875c09`, 2026-10-17) told the operator to
+> grant `Vulnerability alerts` as a scope separate from Administration. It does not exist:
+> GitHub's *Permissions required for fine-grained personal access tokens* table lists
+> `GET /repos/{owner}/{repo}/vulnerability-alerts` under **Repository permissions for
+> "Administration"** at `read`, and `PUT`/`DELETE` at `write` — the section that runs from
+> "Administration" to the next heading, "Agent secrets". Verified the same way as the claim
+> was made, by probing rather than by reading: the read-only PAT (Administration read-only,
+> Metadata read-only, nothing else) answers `HTTP/2.0 204 No Content` for
+> `gh api -i repos/jolarca-dev/jolarca-dr/vulnerability-alerts`.
+> The `403 Resource not accessible by personal access token` on all sixteen repositories was
+> a missing **Administration read**, and the fix is the same action with the right name.
+> A scope checklist that names a permission nobody can select is worse than no checklist: it
+> sends the operator looking for a control that is not there while the real gap stays open.
+
 - A replacement token already generated (fine-grained PAT where the plan
   supports it, otherwise classic) with the minimum scope for its role — see
   the least-privilege note above `provider "github"` in `../../main.tf`:
@@ -75,6 +104,79 @@ reason.
    operator, reason). The access review that reconciles this register lives in
    `jolarca-infrastructure/security/access-review.md` — it was **not** ported to
    this repo, so raise the review there.
+
+## Diagnose a credential before editing anything
+
+Every credential failure in this repository's recent history (D-56, D-64, D-76, D-77)
+was diagnosed by editing a workflow or a document first and measuring second. Both
+credentials can be interrogated read-only, in a hidden prompt, with nothing written to
+disk. Run these before changing a file.
+
+**GitHub PAT — does it actually reach the fleet?**
+
+```bash
+read -rs -p "PAT: " T; GH_TOKEN="$T" gh api -i repos/jolarca-dev/jolarca-dr/vulnerability-alerts 2>&1 | grep -i '^HTTP'; unset T
+```
+
+`200`/`204` means the PAT has what the plan needs. `403 Resource not accessible by
+personal access token` means a **permission is missing on the PAT**, and the name to fix
+is found in GitHub's *Permissions required for fine-grained personal access tokens*
+table by locating the section heading that encloses the endpoint row — not by naming the
+scope after the error message's subject. `vulnerability-alerts` lives under
+**Repository permissions → Administration**; there is no `Vulnerability alerts`
+permission to select (D-76).
+
+**HCP Terraform token — the probe you will want does not exist. Measured 2026-10-19.**
+
+The GitHub probe above is sound because GitHub separates the two failure states: a
+malformed token answers `401 Unauthorized` and a valid token missing a permission answers
+`403` with `Resource not accessible by personal access token` (both measured on this host,
+2026-10-19 — deliberately not transcribed here, because §5 keeps credential-shaped strings
+out of documentation and push protection scans documentation). HCP Terraform does not make
+that distinction, so the same shape of probe fails there:
+
+```bash
+read -rs -p "HCP token: " H
+for p in account organizations/<org> organizations/<org>/workspaces/<workspace>; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $H" "https://app.terraform.io/api/v2/$p")
+  printf '%-56s %s\n' "$p" "$code"
+done; unset H
+```
+
+Run it, then run it again with `H=not-a-real-token-00000000`, then a third time with the
+`-H` flag removed. All three produce **the same output** — measured on `jolarca-dev`:
+
+| Input | `account` | `organizations/<org>` | workspace |
+|---|---|---|---|
+| the operator's real token | 404 | 401 | 401 |
+| `not-a-real-token-00000000` | 404 | 401 | 401 |
+| no `Authorization` header at all | 404 | 401 | (not reached) |
+
+An earlier draft of this section offered that response pattern as a **differential** —
+claiming `404` on `/account` proved the request had authenticated, and therefore that the
+token was alive but under-privileged. The control above refutes it: `/account` answers 404
+for garbage and for nothing, so the pattern discriminates nothing and cannot classify a
+token. It is the same defect D-22 recorded in an inline CI regex, living in a runbook
+instead of a workflow — which is why a diagnostic gets a known-bad input before it gets
+written down.
+
+Two rules survive the refutation:
+
+- A single `401` cannot separate "revoked" from "under-privileged": HCP returns
+  `unauthorized` for both. And a previously green `terraform init` is **not** evidence the
+  identity held organisation read — init needs only workspace-level read, which is why
+  D-56 called a green init misleading.
+- The discriminator is a **positive control**, not a probe: mint a token you know is
+  valid, `gh secret set` it, and `gh run rerun <run-id>`. Green means the old credential
+  was the defect; an identical failure means the problem is HCP-side (team grants, workspace
+  assignment, or the org/workspace itself), and the web UI is the only read — HCP exposes
+  no API to enumerate or introspect a token's grants.
+
+**Binding the probe to the stored secret.** `gh api .../actions/secrets` returns names
+and `updated_at`, never values, so a probe on a pasted token is not proof about the bytes
+in CI. `gh secret set` the value you just proved and re-run with `gh run rerun <run-id>`
+— a rerun resolves current secrets and current PAT permissions without a push, so it is
+the cheapest way to test the two together.
 
 ## Verification
 

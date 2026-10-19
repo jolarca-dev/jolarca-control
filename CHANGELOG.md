@@ -10,6 +10,52 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-19 (D-78)
+
+- `plan.yml` ran `terraform plan -detailed-exitcode` under the Actions default `bash -e {0}`, so a
+  plan with changes (exit 2) aborted the step before `Plan safety check` could read it, and
+  `Fail on plan error` tested an output that could never be set. Now `shell: bash {0}`: the
+  refusal gate runs on every plan the job produces. `apply.yml` never had this defect — it plans
+  without `-detailed-exitcode`.
+- `scripts/check_plan_safety.sh` exited **0** ("safe to auto-apply") on input that is not a
+  rendered plan: the workflow's own `Record skipped plan` prose, and a bare
+  `Error: Failed to read organization … unauthorized` block. Non-plan input is now exit 2
+  (could-not-verify), ordered **after** the refusal rules so it cannot mask a real refusal. This
+  also guards `apply.yml`'s pre-apply `terraform show` output — the D-74 version-skew case.
+- `Comment plan on PR` no longer fails with `Either message or path input is required` when init
+  died; gated on the file existing via `[ -s ]` rather than `hashFiles()`, because
+  `plan-output.txt` is gitignored and hashFiles skips ignored paths.
+- Negative controls first: `tests/test_check_plan_safety.sh` 22 → 25 cases, both new refusals run
+  red (`want exit=2 got=0`) before the fix, plus a non-vacuity case so the guard cannot quietly
+  start failing honest plans closed.
+
+### Corrected — 2026-10-19 (D-76, D-77)
+
+- The D-76 entry below is **incomplete as written**. Moving `plan.yml` onto
+  `TF_GITHUB_TOKEN_READONLY` did not by itself let the plan read the fleet: the PAT then answered
+  `403 Resource not accessible by personal access token` on all sixteen repositories until
+  **Administration read** was granted to it. There is no `Vulnerability alerts` permission on a
+  fine-grained PAT — GitHub lists `GET /repos/{owner}/{repo}/vulnerability-alerts` under
+  Repository permissions → **Administration** (`read`; `PUT`/`DELETE` are `write`). Both scope
+  tables (`docs/runbooks/github-token-rotation.md`, `docs/state-migration-runbook.md`) named the
+  phantom scope and are corrected; `Contents read` is dropped, since both `github_repository_file`
+  resources are commented out.
+- **D-77 opened:** `TFC_TOKEN` now fails `terraform init` with `Failed to read organization
+  "jolarca-dev" … unauthorized`, while the secret's `updated_at` is unchanged since it was placed
+  — the credential stopped working, not the workflow. Cause is not established: the three-endpoint
+  status probe written during this investigation was refuted by its own negative control (a
+  garbage token and no token at all produce the identical pattern), so recovery needs a positive
+  control, not more classification. `Validate & Plan` is **not** one of the four required contexts,
+  so this does not block merges — it removes the PR-time plan-review signal entirely, which is the
+  more serious reading.
+
+### Fixed — 2026-10-17 (D-76)
+
+- `plan.yml` handed Terraform the runner-scoped `secrets.GITHUB_TOKEN`, which cannot read the
+  fifteen sibling repositories: every PR-mode plan failed with `403 Resource not accessible by
+  integration` on `github_repository_vulnerability_alerts`. It now uses
+  `secrets.TF_GITHUB_TOKEN_READONLY` — read scope for a read-only job.
+
 ### Added — 2026-10-17 (deployment gate)
 
 - `production` now requires a **deploy reviewer** (`prevent_self_review: false`, the single
