@@ -10,6 +10,23 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-19 (D-77, continued)
+
+- The positive control recommended in the entry below was **run, and it failed**. `TFC_TOKEN`
+  was replaced at `16:26:30Z`; a plan run at `16:32:58Z` still dies in **0.7s** with
+  `Failed to read organization "jolarca-dev" … unauthorized`. Two placements, one result — so
+  swapping the credential is not the repair. D-77 is reclassified from token hygiene to an
+  **HCP-side identity/permission** defect, and the runbook now carries the only read that can
+  say anything: `GET /api/v2/organizations` returning 200 with `jolarca-dev` in the body.
+- Measured and recorded so nobody re-derives it: HCP answers **byte-identically** for a garbage
+  token and for no `Authorization` header (`401 {"errors":[{"status":"401","title":"unauthorized"}]}`),
+  so no status code or response body can classify a token — every non-200 is silence.
+- `gh run rerun` stops working once the originating PR merges: attempt 3 of run 39250147781 sits
+  `queued` forever because a `pull_request` run cannot be re-executed after its PR closes and
+  its head branch is deleted. `plan.yml` also has no `workflow_dispatch` trigger, so the gate
+  had to be exercised through a throwaway PR — **#83, closed not merged**, because `*.tf` is in
+  `apply.yml`'s push paths and merging a probe would enqueue a production apply.
+
 ### Fixed — 2026-10-19 (D-78)
 
 - `plan.yml` ran `terraform plan -detailed-exitcode` under the Actions default `bash -e {0}`, so a
