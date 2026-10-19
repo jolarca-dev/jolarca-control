@@ -10,14 +10,19 @@
 # `+ visibility = "private"` / `~ visibility = "public" -> "private"` — a colon
 # never appears. The gate therefore never fired, and the one control standing
 # between an unattended apply and a fleet-wide visibility flip (D-01) was
-# inert. Extracting it here makes it testable; see tests/fixtures/plan/*.txt.
+# inert. Extracting it here makes it testable; the fixtures are the inline
+# heredoc cases in tests/test_check_plan_safety.sh (25 of them as of 2026-10-19).
 #
 # Usage: scripts/check_plan_safety.sh <plan.txt>
 # Exit:  0 plan is safe to auto-apply
 #        1 plan contains a refused action (destroy / replace / visibility /
 #          branch-protection create or attribute change / security-feature
 #          disable)
-#        2 the plan could not be read — cannot-check is NEVER treated as safe
+#        2 the plan could not be read — cannot-check is NEVER treated as safe.
+#          This covers a missing file, an empty file, ANSI-coloured input, and
+#          (since 2026-10-19) input that is not a rendered Terraform plan at
+#          all: an error block or workflow prose used to exit 0, which reads as
+#          "safe to auto-apply" for a plan that never happened.
 set -uo pipefail
 
 usage() {
@@ -154,6 +159,28 @@ refuse "a security feature being disabled (nested status form)" \
   "Same rule, real Terraform rendering: the transition lives on a nested status attribute under security_and_analysis, not on the feature name. Enabling (disabled -> enabled) is deliberately not refused."
 
 if [ "$status" -eq 0 ]; then
+  # ── Plan-shape guard (found 2026-10-19, run 39062414977) ───────────────────
+  # Two non-plans were reported SAFE by this gate:
+  #   * plan.yml's `Record skipped plan` step writes prose into plan-output.txt,
+  #     and `Plan safety check` exited 0 on it;
+  #   * `Terraform Init` failed with `Error: Failed to read organization
+  #     "jolarca-dev" ... unauthorized`, and a plan-output.txt containing only
+  #     that error also exited 0.
+  # Both matched nothing because every refusal pattern here looks for a change
+  # marker — and an input with no markers is indistinguishable from a clean plan.
+  # Silence is not evidence of absence here (§7: verify the verifier), so an input
+  # that does not look like rendered Terraform at all is UNVERIFIABLE, exit 2.
+  #
+  # Ordered deliberately AFTER the refusal rules: a plan-shaped input carrying a
+  # destroy still exits 1, so this guard can never mask a real refusal.
+  if ! grep -qE '^[[:space:]]*#[[:space:]]+.+(will be|must be) |^[[:space:]]*[~+-][[:space:]]*[-+]?/?resource[[:space:]]+"|^Terraform will perform|^Plan:[[:space:]]+[0-9]+ to add|^No changes|Refreshing state\.\.\.' "$PLAN"; then
+    echo "::error::Input is not a rendered Terraform plan — no plan header, no resource action line, no change marker and no 'No changes' verdict."
+    echo "  why: refusing to call unparseable text safe. Measured 2026-10-19: workflow prose and a"
+    echo "       bare 'Error: ... unauthorized' block both exited 0 here. Check the step that wrote"
+    echo "       this file — if the plan never ran, nothing downstream may treat it as reviewed."
+    exit 2
+  fi
+
   echo "Plan contains no destroy, replace, visibility change, protection-layer change or security-feature disable."
 fi
 exit "$status"
