@@ -37,10 +37,26 @@ reason.
 
 - You are a named custodian in `../security/key-custody.md`.
 SCOPE CHECKLIST (verify before pasting into `gh secret set`, D-76): a fine-grained PAT for
-this root needs Administration read/write, Contents read, Metadata read **and**
-`Vulnerability alerts` (read/write for the write token, read for the read-only token).
-The last one is not implied by Administration and its absence fails the plan step with
-`403 Resource not accessible by personal access token` on every repository.
+this root needs **Administration** (read/write on the write token, read-only on the
+read-only token), **Metadata read** (auto-required), and — for the org webhook in
+`org-settings.tf` — Organization read. `Contents` read is listed in older drafts of this
+runbook and is **not** needed today: both `github_repository_file` resources
+(`codeowners.tf`, `health-repo.tf`) are commented out, so nothing reads file content.
+
+> **Corrected 2026-10-19 — there is no `Vulnerability alerts` repository permission.**
+> An earlier revision of this checklist (commit `e875c09`, 2026-10-17) told the operator to
+> grant `Vulnerability alerts` as a scope separate from Administration. It does not exist:
+> GitHub's *Permissions required for fine-grained personal access tokens* table lists
+> `GET /repos/{owner}/{repo}/vulnerability-alerts` under **Repository permissions for
+> "Administration"** at `read`, and `PUT`/`DELETE` at `write` — the section that runs from
+> "Administration" to the next heading, "Agent secrets". Verified the same way as the claim
+> was made, by probing rather than by reading: the read-only PAT (Administration read-only,
+> Metadata read-only, nothing else) answers `HTTP/2.0 204 No Content` for
+> `gh api -i repos/jolarca-dev/jolarca-dr/vulnerability-alerts`.
+> The `403 Resource not accessible by personal access token` on all sixteen repositories was
+> a missing **Administration read**, and the fix is the same action with the right name.
+> A scope checklist that names a permission nobody can select is worse than no checklist: it
+> sends the operator looking for a control that is not there while the real gap stays open.
 
 - A replacement token already generated (fine-grained PAT where the plan
   supports it, otherwise classic) with the minimum scope for its role — see
