@@ -42,3 +42,9 @@ output "compliance_summary" {
     solo_era_deviation = var.required_approving_review_count == 0
   }
 }
+
+# Probe comment for D-77: this file is touched only because plan.yml is path-filtered to
+# `**.tf` and has no workflow_dispatch trigger, so a PR touching a .tf file is the
+# cheapest way to exercise the PR-time plan gate against the current TFC_TOKEN.
+# CLOSE this PR, do not merge it: `*.tf` is in apply.yml's push paths, so merging
+# would start a production apply run.
