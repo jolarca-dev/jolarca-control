@@ -28,6 +28,25 @@ custodians; no single person may hold, use, or rotate it alone. See deviation 3
 | AGE identity for state backup encryption | 1 operator | operator workstation `~/.config/age/state-backup-key.txt` (mode 600) | on personnel change or compromise | regenerate keypair with `age-keygen`, update `.state-backup-pubkey.txt` and `AGE_SECRET_KEY_CI` repo secret |
 | Local Terraform state (`terraform.tfstate`) | 1 operator host | operator workstation only | n/a — see D-02 | restore from the off-host verified backup taken in `../state-migration-runbook.md` step 0 |
 
+### Expiry register (machine-read by `scripts/check_secret_inventory.sh`)
+
+Added 2026-10-20. This table is the single `expires`-bearing block the gate parses;
+the custody table above stays prose-stable. `unknown` fails the gate on purpose —
+verify, don't pad.
+
+| Credential | Expires | Rotation | Last verified | Notes |
+|---|---|---|---|---|
+| GitHub PAT — TF read-only (fine-grained `jolarca-dev`) | 2027-01-08 | 90d | 2026-10-20 | inferred backing of `TF_GITHUB_TOKEN_READONLY` — Actions secrets are write-only, confirm in a plan run |
+| GitHub PAT — TF write (fine-grained `jolarca-control-tf-write-2026-10-17`) | 2027-01-15 | 90d | 2026-10-20 | inferred backing of `TF_GITHUB_TOKEN` (production env); **Never used** since mint — revoke by 2026-11-15 if no apply exercises it |
+| `TFC_TOKEN` (HCP Terraform) | unknown | manual | — | read the actual expiry in the HCP UI and replace `unknown` — until then the gate is red by design |
+| Operator GitHub account (`JourneyOfLife`) | never | on-compromise | 2026-10-19 | org 2FA-required badge verified live on all three orgs 2026-10-19 |
+| AGE identity for state backup | never | on-compromise | 2026-10-17 | `~/.config/age/state-backup-key.txt`, mode 600 |
+
+> **Deviation 1 status hint (2026-10-20):** the two fine-grained PATs above were minted
+> 2026-10-17, which *suggests* the read/write split has been performed since this note
+> was written. Deviation 1 stays open until a plan/apply run proves each secret resolves
+> to its own token (the write token must be unreachable from a PR-triggered job).
+
 ### Why the operator account is the real crown jewel
 
 The write PAT can reconfigure or destroy every repository in a PCI-DSS-scoped
