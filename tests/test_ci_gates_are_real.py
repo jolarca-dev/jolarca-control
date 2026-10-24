@@ -116,6 +116,24 @@ def test_regression_job_actually_runs_the_suite() -> None:
     )
 
 
+def test_comments_point_at_files_that_exist() -> None:
+    """A comment naming a test module that does not exist is a pointer the next reader follows nowhere.
+
+    Not hypothetical: this repository's regression step carried
+    `# Guarded by tests/test_ci_steps_are_real.py` for a module that had already been renamed to
+    tests/test_ci_gates_are_real.py before the commit was made. Nothing failed, because nothing read the
+    sentence. A comment that cites a path is a claim, and a claim about a path is cheap to verify.
+    """
+    refs: list[tuple[str, int, str]] = []
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+            for m in re.finditer(r"(?:tests|scripts)/[A-Za-z0-9_./-]+\.(?:py|sh)", line):
+                refs.append((path.name, number, m.group(0)))
+    missing = [f"{wf}:{n} -> {ref}" for wf, n, ref in refs if not (REPO_ROOT / ref).exists()]
+    assert not missing, "workflow comments cite paths that do not exist:\n  " + "\n  ".join(missing)
+    assert refs, "no path references found in any workflow comment -- the rule is scanning nothing"
+
+
 def test_workflows_are_parsed_and_non_vacuous() -> None:
     """If the loader saw nothing, every rule above would pass for free."""
     names = [workflow for workflow, _doc in _workflows()]
