@@ -166,17 +166,41 @@ Two rules survive the refutation:
   `unauthorized` for both. And a previously green `terraform init` is **not** evidence the
   identity held organisation read — init needs only workspace-level read, which is why
   D-56 called a green init misleading.
-- The discriminator is a **positive control**, not a probe: mint a token you know is
-  valid, `gh secret set` it, and `gh run rerun <run-id>`. Green means the old credential
-  was the defect; an identical failure means the problem is HCP-side (team grants, workspace
-  assignment, or the org/workspace itself), and the web UI is the only read — HCP exposes
-  no API to enumerate or introspect a token's grants.
+- The **positive control was run on 2026-10-19 and it failed**: a freshly placed
+  `TFC_TOKEN` (`updated_at 16:26:30Z`, tested by a run at `16:32:58Z`) produced the same
+  `Failed to read organization "jolarca-dev" … unauthorized` in 0.7s. Two placements, one
+  result — so replacing the token is *not* the repair, and repeating it is wasted motion.
+  The defect is the identity's relationship to the organisation. See D-77.
+- The only HCP read that can say anything is a **200 with a body**. A valid **user** token
+  answers `GET /api/v2/account` with 200 (garbage answers 404) and `GET
+  /api/v2/organizations` with the list of organisations that identity can see:
+
+  ```bash
+  read -rs -p "HCP user token: " H
+  curl -s -o /dev/null -w 'account %{http_code}\n' -H "Authorization: Bearer $H" https://app.terraform.io/api/v2/account
+  curl -s -H "Authorization: Bearer $H" https://app.terraform.io/api/v2/organizations \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print([o["attributes"]["name"] for o in d.get("data",[])])'
+  unset H
+  ```
+
+  `jolarca-dev` **absent** from that list is the root cause — every token that account mints
+  will fail org read identically. **Present** means the failure is one layer down: team
+  grants (organisation read) or workspace assignment (`Runs: Plan + Apply`). Anything other
+  than 200 is silence, not evidence.
 
 **Binding the probe to the stored secret.** `gh api .../actions/secrets` returns names
 and `updated_at`, never values, so a probe on a pasted token is not proof about the bytes
-in CI. `gh secret set` the value you just proved and re-run with `gh run rerun <run-id>`
-— a rerun resolves current secrets and current PAT permissions without a push, so it is
-the cheapest way to test the two together.
+in CI. `gh secret set` the value you just proved, then re-run something. Two measured
+constraints on "re-run something":
+
+- `gh run rerun <id>` resolves current secrets and current PAT permissions without a push,
+  **but only while the originating PR is open** — after PR #81 merged, attempt 3 of its plan
+  run sat `queued` indefinitely, because a `pull_request` run cannot be re-executed once the
+  PR is closed and its head branch deleted.
+- `plan.yml` has no `workflow_dispatch` trigger, and its `push` path list is narrower than
+  its `pull_request` list. To fire the gate on demand, open a PR that touches a `**.tf`
+  file, read the verdict, then **close it — do not merge**: `*.tf` is in `apply.yml`'s push
+  paths, so merging a probe enqueues a real production apply.
 
 ## Verification
 
