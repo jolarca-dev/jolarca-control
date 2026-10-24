@@ -10,6 +10,32 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-10-19 (D-79: data stores outside git are now registered)
+
+- `docs/data-classification.md` gains a **Data stores outside git** section: Terraform
+  state, the age-encrypted state backup, the application's S3-compatible object store and
+  the marketplace database, each with classification, where it is configured and its
+  measured status. Until now the policy enumerated repositories only, so the store that
+  `jolarca` ADR-0005 names as holding **KYC identity documents and invoice PDFs** appeared
+  nowhere in the control plane an auditor reads (GDPR Art. 30/32, PCI-DSS Req 3.5.1).
+- New rule in that file: a data store is registered before it holds regulated data,
+  mirroring the existing rule that a repository is classified before its first commit.
+- The same file's repository table was **stale since `5a571ef` (2026-09-26)**: six
+  repositories, five declared `confidential`/`private`, a claim that it matched
+  `repos/*.yml` "exactly", and a blockquote citing **D-01** as an open blocking decision.
+  Measured instead: 16 entries, every one `visibility: public`, classifications
+  `internal` ×14 + `public` ×2 (`jolarca`, `jolarca-docs`). Corrected, with the superseded
+  text kept as a dated historical note and the command to reproduce the table recorded.
+- Answered by measurement and recorded, **not** changed: no AWS provider or S3 backend
+  exists anywhere in the fleet (ADR-0006's rejection of S3 + DynamoDB stands), and the
+  sibling `jolarca-infrastructure` GCS custody stack is **half-applied** — CMEK keyring/key
+  and a service account in state at serial 11, `google_storage_bucket.state` and
+  `.state_logs` never in state, no `production` bootstrap workspace. `gcloud storage ls`
+  cannot authenticate from here, so whether those objects exist outside Terraform's record
+  is logged as **could-not-verify**, never as "absent". No bucket, provider, credential or
+  `*.tf` change is made by this entry — destination and key custody remain the owner's
+  decision under AGENTS.md §5, and D-02/D-55 stay open.
+
 ### Fixed — 2026-10-19 (D-78)
 
 - `plan.yml` ran `terraform plan -detailed-exitcode` under the Actions default `bash -e {0}`, so a
