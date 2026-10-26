@@ -88,6 +88,16 @@ Every gate in this repo is three-valued. Preserve this in any new gate:
 
 An unreadable input, a missing baseline, or an unreachable API is `2`, not `0`.
 
+**The three-valued code lives on the script, never on `make`.** GNU make returns
+`2` for any failed recipe — proved, not assumed: a synthetic target that runs
+`exit 1` also makes `make` exit `2`. So `make drift`, `make readiness`,
+`make findings-check` and the rest cannot tell "findings" from "could not
+verify", and two targets used to send their detail to `/dev/null` while the
+surviving stderr table implied the gate had merely been terse (D-86). Automation,
+evidence collection and any judgement that turns on `1` vs `2` must call
+`.venv/bin/python scripts/<gate>` or `bash scripts/<gate>` directly and read that
+exit code.
+
 ## 4. Change classification — route on blast radius, not diff size
 
 A 3-line change here can be catastrophic; a 400-line docs change can be trivial.
@@ -106,8 +116,15 @@ Specific high-consequence edits:
 
 ## 5. Hard boundaries
 
-- **No `terraform apply` from this root.** State is owned by
-  `jolarca-infrastructure` until the migration runbook completes.
+- **No `terraform apply` from this root.** The stated reason — "state is owned by
+  `jolarca-infrastructure` until the migration runbook completes" — is **stale**:
+  `docs/state-migration-runbook.md:3` declares the migration COMPLETE (2026-10-10),
+  `STATE_MIGRATION_COMPLETE` measures `'true'`, and this root holds the state. The
+  rule survives for the opposite reason: an apply here is *permitted* by CI and only
+  stopped by `scripts/check_plan_safety.sh` and the operator's review (§8, D-61), so
+  the local refusal exists to keep a human in front of a path that is no longer
+  gated by the migration. See D-85 for what "the runbook says so" was worth while the
+  freeze it claimed was uncommitted.
 - **No `terraform state rm` / `state mv` / `import` by an agent.** Operator runs
   these; they are irreversible against a single local state copy (D-02).
 - **No `gh api -X PATCH` for branch protection or repo settings.** Terraform is
@@ -182,6 +199,19 @@ Specific high-consequence edits:
   them as clean. CI passed only by accident there: `apply.yml` renders through
   `terraform show -json | jq -r`, which is plain text.
 
+- **A claim about a fix must be verified against the artifact that carries it.**
+  Measured 2026-10-26: three governed records (`docs/drift-findings.md` D-06 and
+  D-13, `docs/state-migration-runbook.md` step 1) described a freeze as applied and
+  in force while `origin/main` of the repo concerned still defaulted its provider
+  `owner` to the other estate's organization, kept `module "github_org"` live, and
+  carried no `lifecycle` block — the fix was real, and it lived only in one
+  workstation's working tree (D-85). The runbook's own step-1 acceptance check was a
+  set of `grep -n` commands on that working tree, so it printed "expected" and could
+  not tell committed from typed. So: `git show origin/main:<path> | grep -n
+  <marker>` and `git log --all -S '<marker>' | wc -l`, not `grep -n <marker>
+  <path>`; and when a document's evidence line says "working-tree diff", read that as
+  *not applied* — AGENTS.md §6 forbids publishing it any other way. Cheaper than
+  either: read a fresh clone before you read a register.
 - **Evidence must be retained to count.** Verification output that justified a
   merge is a deliverable, not a transient. Evidence files under `docs/adr/`,
   `audit/`, `policy/`, `repos/`, `docs/runbooks/`, `docs/security/` are hashed

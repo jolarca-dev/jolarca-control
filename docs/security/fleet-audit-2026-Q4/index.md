@@ -1,7 +1,9 @@
 # Fleet Audit 2026-Q4 — index
 
-Control plane baseline: `jolarca-control` `1ef4f9b05addc795a1dc8cafa18f1049ca7932fa`
-(branch `docs/register-data-stores-d79`, PR #85 OPEN, `mergeStateStatus=BEHIND`).
+Control plane baseline: `jolarca-control` `a720789dae6ff3cc83a493e487d3ca8afb1a4da2`
+(`main`; the earlier `1ef4f9b…` row was a branch head whose PR **#85 is CLOSED/merged**, and
+the header here had kept saying `OPEN, mergeStateStatus=BEHIND` — corrected 2026-10-26 on the
+same principle as D-85: a record must state the live state, not the state when it was written).
 Method: stages A–L (A population, B baseline, C environment, D read-before-run, E enforcement
 layer, F trace a change, G data classification, H secrets, I supply chain, J tenant isolation,
 K agent/MCP surface, L resilience). Records are `<repo>.yml` (register) + `<repo>.md`
@@ -18,7 +20,7 @@ Population reconciliation (STAGE A, measured 2026-10-26):
 |---:|---|---|---|---:|---:|---:|---:|---:|---|
 | 1 | `jolarca` | — | NOT RUN | — | — | — | — | — | |
 | 2 | `jolarca-infrastructure` | — | NOT RUN | — | — | — | — | — | |
-| 3 | [`jolarca-control`](jolarca-control.yml) | `1ef4f9b05addc795a1dc8cafa18f1049ca7932fa` (branch head; `origin/main` = `bdbe971…`) | **NO-GO (assurance)** · CONDITIONALLY OPERATIONAL (control plane) — 4 of the 6 S1s **landed on `main`** (`e5b9b3f` PR #89, `4e0c22b` PR #91); FA-control-12 **landed `7048116` PR #95**; open: FA-control-03, FA-control-08, FA-control-13 (`gap`), FA-control-14 (pending merge) | 0 | 6 | 7 | 1 | 4 | 2026-10-26 |
+| 3 | [`jolarca-control`](jolarca-control.yml) | `a720789dae6ff3cc83a493e487d3ca8afb1a4da2` (`main`) | **NO-GO (assurance)** · CONDITIONALLY OPERATIONAL (control plane) — FA-control-12 **landed `7048116` PR #95**, FA-control-14 **landed `a720789` PR #97**; open: FA-control-03, FA-control-08, FA-control-13 (`gap`), FA-control-15 and FA-control-16 (`implemented-pending-merge`) | 0 | 7 | 8 | 1 | 4 | 2026-10-26 |
 | 4 | `jolarca-hermes-agents` | — | NOT RUN | — | — | — | — | — | |
 | 5 | `jolarca-identity` | — | NOT RUN | — | — | — | — | — | |
 | 6 | `jolarca-payments` | — | NOT RUN | — | — | — | — | — | |
@@ -36,8 +38,8 @@ Population reconciliation (STAGE A, measured 2026-10-26):
 
 Totals are parsed from the three YAML registers, not counted by hand — `.github` 13 controls
 (5 S1 / 7 S2 / 1 S3), consent 10 (1 S0 / 5 S1 / 4 S2, one of those S1 labelled `S1 (latent)` in its
-register), control plane 14 (6 S1 / 7 S2 / 1 S3), i.e. **37 findings across 3 of 17 repositories:
-1 S0, 16 S1, 18 S2, 2 S3**. An earlier
+register), control plane 16 (7 S1 / 8 S2 / 1 S3), i.e. **39 findings across 3 of 17 repositories:
+1 S0, 17 S1, 19 S2, 2 S3**. An earlier
 draft of this index carried hand-counted totals that were wrong in three cells, the same class of
 defect recorded in the 2026-10-24 audit; the count is now derived from the machine-readable source
 and re-checked by parsing the registers after every edit. That re-check caught a fresh instance of
@@ -153,6 +155,27 @@ files, weekly, and on demand; **not on every PR** (the docs-only #92 merge creat
 | Declared vs live visibility | `repos/jolarca-control.yml:21` `public` = live `public`, `private=false`, `forks_count=0` | VERIFIED PASS |
 | `Terraform Apply` triggered by the merge? | no run created; latest remains `2026-10-17T19:07:46Z` (cancelled) | VERIFIED PASS — third consecutive merge on a repo whose CI has never reached HCP (D-82) |
 | Claims this PR corrected about itself | D-83's "nothing local runs the formatter" (refuted: `ruff-format` is an installed pre-commit hook, all twelve pass) → regraded S2→S3; FA-control-11's D-22a note was briefly overwritten with a false absence read from an **empty grep through an unreliable capture channel** → restored (`### D-22a` is at `docs/drift-findings.md:235`; parser 82 vs raw 83) | VERIFIED — both kept in the text, not deleted; the intermediate wrong commit `e07dc54` was superseded by `403ad80` before the squash, so it never reached `main` |
+
+## Post-merge verification, PR #97 (2026-10-26, `main` = `a720789dae6ff3cc83a493e487d3ca8afb1a4da2`)
+
+| Check | Result | Verdict |
+|---|---|---|
+| Fresh clone of `main`, commands run directly so exit codes are the scripts' own (D-86) | `grep -c '^### D-84' docs/drift-findings.md` → **1**; `bash tests/test_check_plan_safety.sh` → **29 passed, 0 failed**; `check_gate_parity.py` → "OK: 18 gate scripts…"; `check_findings_register.py` → "OK: 83 headings parsed, no collisions, no dangling citations"; `hash_evidence.sh --check` → 46 files / 0 mismatches; `pytest tests/ -q` → **316 passed**; `gitleaks git .` → 113 commits, ~2.53 MB, **no leaks** | VERIFIED PASS |
+| CI on the merged head | `Compliance Scan` (run 40404668351) and `Static Analysis (SAST)` push runs on `a720789` both `success`; all 10 PR checks on `c9408fc` passed before the merge | VERIFIED PASS |
+| D-81 guard's own verdict on the merged branch | printed `OK: 10 changed file(s), none in apply.yml's push paths (5 pattern(s) read from apply.yml) — no apply armed`, `PR_ACTOR_TYPE: User` | VERIFIED PASS — second operating observation, and the first on a branch that changed the pre-apply brake itself |
+| `Terraform Apply` triggered by the merge? | no run created; latest remains `2026-10-17T19:07:46Z` (cancelled) | VERIFIED PASS — fourth consecutive merge with no apply |
+| Ruleset adoption executed? | **no.** `docs/state-migration-runbook.md` step 6b is staged; `terraform import` is the operator's (§5), and no ruleset is in state, so the new refusals have been proven against synthetic plans only | RECORD, not a pass |
+
+## What rejecting step (b) found (D-85, D-86) — 2026-10-26
+
+| Check | Result | Verdict |
+|---|---|---|
+| Committed vs working tree, `jolarca-infrastructure` `8f02d17` (fresh clone, public) | `var.org` default `journeyoflife-org` in root `variables.tf:79` and module `variables.tf:4`; `module "github_org"` live; no committed `terraform.tfvars`; `git grep -n lifecycle HEAD -- environments/production modules/github-org` → **no matches**; `git log --all -S "FROZEN — DO NOT PLAN OR APPLY"` → **0 commits**; `variables.tf.bak.20260831-2306` tracked at HEAD | GAP — **S1**, D-85; register rows D-06/D-13 and runbook step 1 asserted the opposite |
+| Where the fix was | 9 uncommitted entries, +133/−98 (banner, `prevent_destroy` ×3, org default ×2, `.bak` deletion, guard header) | landed as infra **PR #49** (`2eab214` + `693ec82`), both `%G?` = `G`; **open**, not merged |
+| Why it lingered | required contexts `ci, security, compliance` with `enforce_admins = true`; `compliance-check.yml` demands 7 governance files and this is the **only** fleet repo missing `.github/CODEOWNERS` → `compliance` failed on every PR, including all 8 Dependabot runs | MECHANISM FOUND — the repo was welded shut, not neglected |
+| Was the wrong-org plan hypothetical? | `terraform.yml` `plan` job runs on every `pull_request` touching `terraform/**`; runs `39925547516` / `39925560368` (2026-10-23) **succeeded** and posted `Plan: 16 to add, 0 to change, 0 to destroy` as comments on public PRs; `apply` is `if: github.event_name == 'workflow_dispatch'` | IMPACT CONFIRMED, mitigated only by a job condition |
+| `make` vs script exit codes | `repo_readiness_audit.py --repo jolarca-data` → **1**; `make readiness REPO=jolarca-data` → **2**; synthetic `@exit 1` target → **2** (make cannot convey 1); `readiness`/`first-commit` discarded stdout (85 / 128 B) while the table survived on stderr (373 / 808 B) | GAP — **S2**, D-86, fixed in this change |
+| Claims this change corrected about **its own** measurements | first `grep -rc prevent_destroy`/`FROZEN` repo-wide looked like a refutation of D-85 — it matched `modules/state-bucket` (GCS) and bucket-name prose; `grep -c "gh api -X PATCH"` returned **0** while the f-strings at `:1308/:1319/:1387/:2161` do emit PATCH remediations | TWO SELF-CAUGHT BAD GREPS, reported rather than quietly re-run |
 
 ## Standing rule for this directory
 
