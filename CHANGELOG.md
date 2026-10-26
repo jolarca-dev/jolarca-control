@@ -10,6 +10,88 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-26 (D-83: `make lint` did not run the formatter step the CI Lint job runs)
+
+- Found while reviewing D-81, not looked for: `make lint` exited **0** (313 passed) on a branch where
+  `ruff format --check scripts/ tests/` — a step the CI `Lint` job runs — reported
+  `1 file would be reformatted, 24 files already formatted` (13 hunks, all in the new
+  `tests/test_check_apply_path_trigger.py`). `Makefile` describes `lint` as "Everything CI runs
+  before a plan".
+- **This entry was first written as an S2 absence — "nothing local runs the formatter" — and that
+  was wrong.** `.pre-commit-config.yaml` declares `id: ruff-format`, the hook is installed
+  (`.git/hooks/pre-commit`, 2026-09-26), `pre-commit run --all-files` passes all twelve hooks, and the
+  commit attempt that prompted the check was itself refused by `end-of-file-fixer`. The formatter has
+  a local enforcer; what it did not have was a place in the surface AGENTS.md §2 documents and agents
+  are told to run. Graded **S3** on the measured premise.
+- Fixed by `py-fmt-check`, now a `lint` prerequisite: a gate **strengthened**, never weakened (§5),
+  and free at CI, which already ran the same command.
+- Corrected a second stale claim in the same AGENTS.md §2 sentence: it asserted CI runs
+  `repo_readiness_audit.py --no-live`. `grep -rn readiness .github/workflows/` matches only comments —
+  that audit is local-only (`make readiness`) — while `compliance_check.py` genuinely is invoked
+  (compliance-scan.yml:199, apply.yml:160). The instruction to run `make compliance` before pushing
+  stands; the readiness claim was removed.
+- Not fixed, and recorded rather than asserted: nothing compares the **three** surfaces — `make lint`,
+  the pre-commit hooks, and the CI jobs — in any direction. `check_gate_parity.py` R2 asks whether a
+  fixture that exists is invoked in CI; no control asks whether every command appearing in one list
+  appears in the other two. Open as **FA-control-13** (`status: gap`), because writing that rule is
+  itself a gate change needing its own negative control.
+
+### Added — 2026-10-26 (D-81: an unattended PR cannot arm the production apply)
+
+- `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`, `*.tfvars` and **itself**,
+  then runs `terraform apply -input=false -auto-approve tfplan`. Because §5 requires actions to be
+  pinned to a full SHA, the pins live *in the workflow files* — so a dependency bump can edit an
+  apply-path file. Measured: `gh pr diff 87 --name-only` (setup-python 7.0.0→7.1.0) and
+  `gh pr diff 68 --name-only` (upload-artifact 7.0.1→7.0.2) **both list `.github/workflows/apply.yml`**.
+  Merging either would start a whole-state apply that no person read, with
+  `required_approving_review_count = 0`; D-58 already records that the 30-minute wait is delay, not
+  approval.
+- New required-context step `An unattended PR must not arm the production apply (D-81)`
+  (`scripts/check_apply_path_trigger.py`, `pull_request` events only). The trigger set is **read from
+  `apply.yml`'s own `on.push.paths`** (T1) rather than duplicated, and GitHub `paths:` glob semantics
+  are implemented (T2: `*`/`?` do not cross `/`, `**` does) — `fnmatch` was rejected because its `*`
+  crosses `/` and `*.tf` would fire on `modules/x.tf`, i.e. on changes that cannot trigger anything.
+  Verdict is asymmetric on purpose: **bot/app → exit 1** (refused pre-merge, where a human can still
+  author the same diff deliberately — so this is *not* the dependency-bump deadlock class), **human →
+  exit 0 with a `NOTICE`** (refusing Terraform work would manufacture the A-01/FA-control-03 deadlock).
+  Missing, empty or unreadable diff and unparseable `apply.yml` are exit **2** (T3); an unknown author
+  kind is judged only when a path matches, then exit 2 (T4); a trigger set the script cannot model
+  (`!` exclusions, `paths-ignore`) is exit 2 rather than approximated (T5). Fixtures:
+  `tests/test_check_apply_path_trigger.py` (21 collected), including the real file lists of #87/#68 and
+  the real D-80 PRs (which must read clean).
+- Two defects found before wiring, both recorded in D-81: `path.lstrip("./")` is a character-set strip
+  and silently unmatchable `.github/workflows/apply.yml` — caught by running the gate against live
+  `gh pr diff` output, where it reported "no apply armed" on exactly the PRs to refuse; and
+  `gh pr view --json author --jq .author.type` returns an empty string (the GraphQL `author` node has
+  no `type`), so the CI step reads `github.event.pull_request.user.type` from the event payload.
+- A third defect was in the gate's own plumbing. The step calls
+  `gh api repos/…/pulls/<n>/files` from the `validate` job, and a job-level `permissions:` block sets
+  every scope it does not name to `none` — so the workflow's `pull-requests: read` did not reach it,
+  the call would 403, and a **required context would have failed on every PR in the repository**.
+  `pull-requests: read` is now restated at job level, pinned by a fixture that reads the workflow YAML
+  and was proved by deleting the line (`assert None == 'read'`). The workflow comment claiming the
+  scope was unused by the required step was corrected in the same edit.
+- New `make apply-path-trigger` (not a `lint` prerequisite: it needs a branch-relative diff that a
+  detached checkout may not have).
+
+### Fixed — 2026-10-26 (D-82: the credential register's unreadable expiry is now measured, and D-77 narrowed)
+
+- `docs/security/key-custody.md`'s `TFC_TOKEN` row said "read the actual expiry in the HCP UI". That
+  is still the only source of the date, and the row now records *why*, from reads rather than
+  assumption: the operator's own `~/.terraformrc` CLI credential returns **HTTP 200** on
+  `/api/v2/organizations` (lists `jolarca-dev`) and `/api/v2/account/details`, while the token-expiry
+  routes (`organization-tokens`, `organization-token`, `teams/owners/team-tokens`, `state-versions`)
+  answer **HTML 404** — a route that resolves nothing, which is not evidence that no organization
+  token exists. The gate's verdict is unchanged and re-measured after the edit: exit 1,
+  `::error::expiry unknown …`. No date was invented.
+- Same read closes D-77's missing positive control and adds a fact: `…/workspaces/jolarca-control/runs`
+  contains **three runs, all `Triggered via CLI`, none from Actions**, since the org was created
+  2026-10-10 — so the CI path has never reached HCP at all, and `resource-count: 48` is what the last
+  CLI run left. D-77 stays OPEN (operator-side); the search space is now much smaller.
+- `docs/runbooks/github-token-rotation.md` gains "What the HCP API can and cannot tell you" with the
+  endpoint table and the instruction not to pad the expiry, so the next session does not re-run the
+  inert 2026-10-19 differential.
+
 ### Added — 2026-10-26 (D-80: every gate must have a control, and every control must run)
 
 - New required check `scripts/check_gate_parity.py`, running inside `Validate Repo Allow-List`
