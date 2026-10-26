@@ -130,6 +130,16 @@ jobs:
       # and neither is ever OK.
       - name: Evidence hashes match the committed registry (CC4.1)
         run: bash scripts/hash_evidence.sh --check
+      # D-80: AGENTS.md §7 says every gate needs a negative control and §3 says every gate is
+      # three-valued, and nothing anywhere checked either rule. What that cost, measured: a
+      # credential-expiry gate landed unwired and untested (its verdict was never read by
+      # anyone), and a 13-case shell fixture ran only from the Makefile, so it could never
+      # protect a merge — `pytest tests/` collects .py and cannot collect .sh. This step is the
+      # ratchet: a new script without a fixture, or a fixture nobody executes, fails here. It
+      # applies to itself — scripts/check_gate_parity.py ships with
+      # tests/test_check_gate_parity.py in the same commit.
+      - name: Gate parity — every gate has a control that can fail (D-80)
+        run: python3 scripts/check_gate_parity.py
 
   # ── Context 2: Policy Compliance Check ─────────────────────────────────────
   compliance:
@@ -181,6 +191,13 @@ jobs:
       # against throwaway trees in mktemp -d — no repository file is touched.
       - name: Evidence integrity fixtures
         run: bash tests/test_hash_evidence.sh
+      # D-80 found these two: the fixtures existed and were green locally, and neither could
+      # ever fail a merge. A shell fixture is not collected by pytest, so naming it here is the
+      # only way it runs on the merge path; check_gate_parity.py R2 now enforces that.
+      - name: Workspace execution mode fixtures
+        run: bash tests/test_check_workspace_execution_mode.sh
+      - name: Credential expiry fixtures
+        run: bash tests/test_check_secret_inventory.sh
       # D-02: the backup tool's fixtures are shell, not pytest. Offline: the cases
       # generate an ephemeral age keypair and point the backend at a closed port.
       # CORRECTED 2026-10-26: the comment here claimed this job "is a required context".

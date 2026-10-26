@@ -3,7 +3,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 .PHONY: help setup validate compliance context-parity context-baseline backup drift fleet-audit org-audit readiness \
-        first-commit evidence-check evidence-register findings-check \
+        first-commit evidence-check evidence-register findings-check gate-parity secrets-inventory \
         init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
 
@@ -30,7 +30,7 @@ validate: ## Validate all repo YAML definitions against policy
 compliance: ## Run the full compliance report (JSON)
 	python3 scripts/compliance_check.py
 
-lint: fmt-check tf-validate validate context-baseline py-lint py-type sh-lint yaml-lint test ## Everything CI runs before a plan
+lint: fmt-check tf-validate validate context-baseline gate-parity py-lint py-type sh-lint yaml-lint test ## Everything CI runs before a plan
 
 fmt: ## Format Terraform files in place
 	terraform fmt -recursive
@@ -58,10 +58,11 @@ sh-lint: ## shellcheck over every shell script
 yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 	yamllint -c .yamllint .
 
-test: ## Regression tests: plan-safety (D-22) + execution mode + evidence integrity + backup (D-02) + readiness + first-commit
+test: ## Regression tests: plan-safety (D-22) + execution mode + evidence integrity + credential expiry + backup (D-02)
 	bash tests/test_check_plan_safety.sh
 	bash tests/test_check_workspace_execution_mode.sh
 	bash tests/test_hash_evidence.sh
+	bash tests/test_check_secret_inventory.sh
 	bash tests/test_state_backup.sh
 	.venv/bin/python -m pytest tests/ -q
 
@@ -86,6 +87,25 @@ evidence-check: ## Verify evidence hashes against the committed registry
 
 evidence-register: ## Regenerate docs/evidence-registry.csv (commit the diff)
 	bash scripts/hash_evidence.sh
+
+# Gate parity: the control that gates the controls (D-80).
+# AGENTS.md §7 requires a negative control for every gate and §3 requires 0/1/2 exits, but
+# nothing checked either rule, so both rotted unnoticed: scripts/check_secret_inventory.sh
+# landed unwired and untested, and tests/test_check_workspace_execution_mode.sh (13 cases)
+# ran only via this Makefile — never in CI, where `pytest tests/` collects .py and cannot
+# collect .sh. Offline, deterministic, no credentials.
+#   0 parity · 1 findings · 2 could not verify (unreadable Makefile or workflow)
+gate-parity: ## Every gate must have a fixture, and every fixture must actually run
+	python3 scripts/check_gate_parity.py
+
+# Credential expiry, read from the machine-read table in docs/security/key-custody.md.
+# STATUS 2026-10-26: exits 1 by design — the TFC_TOKEN row's expiry is `unknown` until the
+# operator reads it in the HCP UI, which is what that register itself says. Deliberately NOT a
+# `lint` prerequisite: a permanently-red local gate trains everyone to ignore red. It runs in
+# deploy-gates.yml, an advisory job, so the signal is visible without blocking every merge.
+# Promote it to a required context only once the row carries a real date.
+secrets-inventory: ## Fail if a dated credential is expired, imminent, or has an unknown expiry
+	bash scripts/check_secret_inventory.sh
 
 # Pre-first-commit readiness gate. Registry-driven (repos/*.yml), read-only, and
 # the only tool that inspects the LOCAL working copy — the gap that let D-28

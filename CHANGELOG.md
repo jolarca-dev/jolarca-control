@@ -10,6 +10,44 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-10-26 (D-80: every gate must have a control, and every control must run)
+
+- New required check `scripts/check_gate_parity.py`, running inside `Validate Repo Allow-List`
+  (one of the four live required contexts, `strict=true`), so it blocks a merge rather than
+  advising. Rules: **R1** every `scripts/*.{py,sh}` needs `tests/test_<name>.{py,sh}`;
+  **R1b** that fixture must name its subject (a placeholder is not a control); **R2** every
+  `tests/*.sh` must be invoked by a `run:` step in a workflow that can trigger on
+  `pull_request` — `pytest tests/` collects `.py` and cannot collect `.sh`, and a fixture that
+  only runs after the merge is a report; **R3** every script must appear in a Makefile recipe
+  or a parsed run step, with comment lines stripped from both corpora; **R4** the tolerated
+  no-fixture baseline may only shrink, and a stale entry fails. Three-valued per AGENTS.md §3:
+  unreadable input or an unparseable workflow exits 2, never 0.
+- Why a rule and not three more files: AGENTS.md §7 (negative controls) and §3 (exit codes)
+  were prose, enforced by nothing. `scripts/check_secret_inventory.sh` landed from PR #86 on
+  2026-10-20 with no fixture and no invoker (`git grep -n check_secret_inventory origin/main --
+  Makefile '.github/workflows'` → exit 1), and `tests/test_check_workspace_execution_mode.sh`
+  (13 passing cases) ran only via `make test`. A gate designed to be red, wired to nothing,
+  reports green forever.
+- Fixtures: `tests/test_check_gate_parity.py` (18 cases) and
+  `tests/test_check_secret_inventory.sh` (19 cases). Two defects in the gate were found by its
+  own fixtures and fixed: a `continue` after a baseline hit also skipped liveness — a baselined
+  **and** unwired script produced no finding at all — and raw text matching let a comment
+  satisfy liveness. New targets: `make gate-parity` (in `lint`) and `make secrets-inventory`
+  (deliberately not in `lint`; a permanently-red local gate trains everyone to add `|| true`).
+
+### Fixed — 2026-10-26 (D-80: a dead default path in the credential-expiry gate)
+
+- `scripts/check_secret_inventory.sh` defaulted to `docs/SECRETS_INVENTORY.md`, a file that has
+  **never existed** (`git log --all --diff-filter=A -- docs/SECRETS_INVENTORY.md` → 0 lines), so
+  run as documented it exited 2 every time and nobody saw it, because nothing invoked it. The
+  default is now `docs/security/key-custody.md`, which `:33` already named as "the single
+  `expires`-bearing block the gate parses". Against the real register it now reports its intended
+  verdict: two dated rows `ok` (2027-01-08, 2027-01-15) and `::error::expiry unknown` for
+  `TFC_TOKEN`, exit 1 — red by design until the operator records the actual date.
+- Wired into `deploy-gates.yml` as an **advisory** step ("Deploy Gates" is not a required
+  context), because promoting an intentionally-red check to a required context would wedge every
+  PR. It reads one markdown table and prints metadata only: offline, credential-free.
+
 ### Added — 2026-10-19 (D-79: data stores outside git are now registered)
 
 - `docs/data-classification.md` gains a **Data stores outside git** section: Terraform

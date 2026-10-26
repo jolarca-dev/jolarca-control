@@ -273,6 +273,66 @@ because the PR's diff is computed against its merge base.
 Open S1s on this repo after the merge: **FA-control-03** (fixtures advisory — needs a live
 protection change, operator decision) and **FA-control-08** (apply path never observed refusing).
 
+## FA-control-11 · S1 — a gate that runs nowhere, reading a path that never existed (D-80)
+
+The audit's own FA-control-05 recurred while its fix was being written, which is the clearest
+possible argument for a rule instead of more files.
+
+`scripts/check_secret_inventory.sh` arrived on 2026-10-20 in PR #86 (adding commit `bdbe971`):
+
+| Component | Measured 2026-10-26 | Consequence |
+|---|---|---|
+| Input | default `docs/SECRETS_INVENTORY.md`; `git log --all --oneline --diff-filter=A -- docs/SECRETS_INVENTORY.md` → 0 lines; `git ls-files` → empty | run as documented, `::error::… not readable — an unreadable register is not a pass`, exit **2**, forever |
+| Invoker | `git grep -n check_secret_inventory origin/main -- Makefile '.github/workflows'` → exit 1 | the verdict was read by nobody; `git grep -l` finds the name only in prose |
+| Intent | `docs/security/key-custody.md:33` — its table is "the single `expires`-bearing block the gate parses"; `:41` — `TFC_TOKEN` `expires = unknown`, "until then the gate is red by design" | pointed at the real register: two `ok:` rows (2027-01-08, 2027-01-15) then `::error::expiry unknown`, exit **1** |
+| Sister defect | `tests/test_check_workspace_execution_mode.sh` self-reports `13 passed, 0 failed`, invoked only by the Makefile; `origin/main` had four `.sh` fixtures and three were wired | `pytest tests/` cannot collect `.sh`, so 13 real cases could never fail a merge |
+
+A control designed to be red, connected to nothing, reports green forever. The fail-closed signal
+was swallowed not by `|| true` or `continue-on-error` — the classes `test_ci_gates_are_real.py`
+already hunts — but by absence, which no existing gate could see.
+
+### The control that gates the controls
+
+`scripts/check_gate_parity.py`, wired into `Validate Repo Allow-List` (a live required context, so
+it blocks a merge): **R1** every `scripts/*.{py,sh}` needs `tests/test_<name>.{py,sh}`; **R1b** that
+fixture must name its subject; **R2** every `tests/*.sh` must be invoked by a `run:` step in a
+workflow that can trigger on `pull_request`; **R3** every script must appear in a Makefile recipe or
+a parsed run step; **R4** the no-fixture baseline may only shrink, and a stale entry fails.
+
+| Negative control (on a copy of the real tree) | Result |
+|---|---|
+| baseline | `OK: 17 gate scripts each have a fixture or a dated baseline entry`, exit 0 |
+| add `scripts/check_brand_new_gate.sh`, no fixture | `R1=1, R3=1`, exit 1 |
+| add a script whose fixture is wired nowhere | `R2=1, R3=1`, exit 1 |
+| replace `tests/test_hash_evidence.sh` with `exit 0` | `R1b=1`, exit 1 |
+| restore | exit 0 |
+| add an unparseable workflow | exit **2**, `CANNOT-VERIFY: cannot parse …/broken.yml` |
+
+Two defects in the new gate were found by its own fixtures, and both are the interesting kind.
+(a) The first draft `continue`d after hitting a `NO_FIXTURE_BASELINE` entry, which also skipped
+R3 — measured before the fix: a script that was *both* baselined *and* unwired produced
+`findings: []`. An exception that forgives two rules is an off switch, and §5 forbids turning a
+gate off to make a pipeline pass, so R3 is now unconditional with a fixture pinning it. (b) Raw
+text matching let **prose** satisfy liveness — a YAML comment, a `#` line inside a shell `run:`
+block, and this gate's own docstring all named scripts without running them, so the draft passed
+the exact defect it was written to find. Workflows are now parsed for `- run:` bodies and comment
+lines are stripped from both corpora.
+
+**Judgement on where the red signal belongs.** `check_secret_inventory.sh` runs in
+`deploy-gates.yml`, an *advisory* job — verified: `gh api
+repos/jolarca-dev/jolarca-control/branches/main/protection --jq
+.required_status_checks.contexts` → `Validate Repo Allow-List`, `Policy Compliance Check`,
+`Repository Secret Pattern Scan`, `SAST (semgrep)`. Promoting an intentionally-red check to a
+required context would wedge every PR (the A-01 deadlock shape), and its register row cannot be
+fixed from here: the `TFC_TOKEN` expiry is a production-scope secret that HCP Terraform describes
+only to its holder, so the honest interim state is a visible red in a non-blocking job — not an
+absent signal, and not a weaker gate. It is excluded from `make lint` for the adjacent reason: a
+permanently-red local gate trains everyone to append `|| true`.
+
+Not claimed: that the credential risk is closed, that any other repository is covered (the parity
+gate reads this repo's `Makefile` and workflows only), or that this is Type II evidence. What lands
+is one S1 control operating on the merge path, and a rule that makes the class expensive to repeat.
+
 ## Method notes
 
 1. Three of my own probes were wrong and are recorded as wrong: a `sed`-based script↔test comparison
@@ -303,3 +363,23 @@ protection change, operator decision) and **FA-control-08** (apply path never ob
    evidence (§5), and widening `NON_EVIDENCE_PREFIXES` to cover it would be weakening the gate to
    make CI pass — also §5. So the sweep directory stays untracked for now, and the registry no
    longer attests it (FA-control-10's root fix: register only what git tracks).
+7. **How `index.md`'s totals are derived** (so a reader reproduces them rather than trusting the
+   prose). The severity cells are parsed from the registers, never hand-added:
+
+   ```bash
+   .venv/bin/python - <<'PY'
+   import yaml, pathlib, collections
+   for p in sorted(pathlib.Path("docs/security/fleet-audit-2026-Q4").glob("*.yml")):
+       c = collections.Counter(f["severity"] for f in (yaml.safe_load(p.read_text())["controls"])
+                               if isinstance(f, dict) and "severity" in f)
+       print(p.name, sum(c.values()), dict(c))
+   PY
+   ```
+
+   Measured 2026-10-26: `dot-github.yml` 13 (`S1` 5 / `S2` 7 / `S3` 1), `jolarca-consent.yml` 10
+   (`S0` 1 / `S1` 4 / `S1 (latent)` 1 / `S2` 4), `jolarca-control.yml` 11 (`S1` 6 / `S2` 5) →
+   **34 findings: 1 S0, 16 S1 (counting the latent one as S1, as the index prose does), 16 S2,
+   1 S3**. Two caveats the parse hides: the literal label `S1 (latent)` is a separate key, so a
+   naive `Counter` will not merge it into `S1`; and a register counts *controls*, so a control
+   whose defect was fixed but not yet merged (FA-control-05/11 today) is still in the total — the
+   status field, not the count, carries that distinction.
