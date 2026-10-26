@@ -439,13 +439,52 @@ only; a fresh CI clone has no hooks at all. Recorded as FA-control-13 (`status: 
 closed by assertion, because writing that comparison rule is itself a gate change needing its own
 negative control.
 
+## Landed, third observation: PR #95 (`main` = `7048116`)
+
+Squash-merged 2026-10-26T17:23:58Z with the branch deleted. What `main` proves today, per the
+table in `index.md`:
+
+- **The D-81 brake runs on the merge path.** In the required `Validate Repo Allow-List` job of PR
+  run 40358205519 it printed `OK: 13 changed file(s), none in apply.yml's push paths (5 pattern(s)
+  read from apply.yml) — no apply armed`, with `PR_ACTOR_TYPE: User` and shell `bash -e {0}`. That
+  single line also disproves the 403 I had written into the wiring: the job-level
+  `pull-requests: read` scope really does reach `gh api …/pulls/<n>/files`.
+- **What it does *not* prove, stated because it is tempting to assume.** The step is gated to
+  `pull_request`, so on the merge's own push run it reports `skipped`; and the bot-refusal branch
+  has still never rejected a live PR — #87/#68 were left open and un-rerun on purpose. The assurance
+  for that path is 21 fixtures plus a run against the committed tree (Bot + `apply.yml` → exit 1).
+  A control observed in one event class is a control observed in one event class.
+- **Nothing armed.** No `Terraform Apply` run exists after `2026-10-17T19:07:46Z` (cancelled), which
+  now corroborates D-82's separate HCP read: three runs in the workspace's history, all CLI.
+- **Protection unchanged** and re-read after the merge: 4 contexts, strict, admins, linear history,
+  conversation resolution, `allow_force_pushes=false`, `allow_deletions=false`, signatures off,
+  rulesets `[]`. Two fields had to be read as objects (`{enabled: false}`) rather than scalars — the
+  same jq-path trap that made an earlier probe report `strict: null`.
+- **Two of this PR's own claims were refuted and kept.** D-83's "nothing local runs the formatter"
+  (all twelve pre-commit hooks pass, including `ruff-format`, and a commit on this branch was refused
+  by `end-of-file-fixer`) → regraded S2→S3. FA-control-11's `D-22a` note was briefly overwritten with
+  the opposite claim after an **empty grep output through an unreliable capture channel** was read as
+  absence; the heading is at `docs/drift-findings.md:235` and `parse_headings()` returns 82 where the
+  raw count is 83. The wrong text lived only in the branch's intermediate commit `e07dc54` and was
+  superseded by `403ad80` before the squash, so `main` never carried it.
+
+Regression surface on `main`: 316 pytest tests, five shell fixtures at 25/19/19/13/10, gate parity
+18 scripts, evidence 46 files / 0 mismatches, gitleaks clean over 2.25 MB of history.
+
 ## Method notes
 
 1. Three of my own probes were wrong and are recorded as wrong: a `sed`-based script↔test comparison
    that falsely indicted 15 gates (fixed in Python — the truth is 12 of 15 covered); a `yaml.safe_load`
    read of `on:` that returned `None` for every workflow because YAML 1.1 parses bare `on` as `True`;
    and a `--json defaultBranchRef.name` field path `gh` rejected. An empty or odd result is a
-   property of my tooling until proven otherwise.
+   property of my tooling until proven otherwise. This session added a fourth instance of exactly that
+   lesson, and it went the other way: an **empty** result was trusted. A `grep` for sub-lettered `### D-\d+[a-z]`
+   headings returned nothing through the shell tool's capture channel while the tool's side effects
+   still ran, the emptiness was read as absence, and a correct audit note was overwritten with a false
+   one in commit `e07dc54`. Caught by re-running the claim through the parser itself (82 parsed vs 83
+   raw) and repaired in `403ad80` before the merge. Corollary for any session on this host: when a
+   command prints nothing, that is an *unread* result, not a measurement — re-issue it through a file
+   and read the file back, and prefer calling the program that owns the pattern over emulating it.
 2. The "missing secret" finding was killed by measuring environment- and org-scoped secrets before
    asserting. Scope the namespace before claiming absence.
 3. FA-control-01 was found by *experiment*, which cost one `mkdir` in `/tmp` and destroyed nothing in
