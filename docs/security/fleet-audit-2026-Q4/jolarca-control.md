@@ -439,6 +439,59 @@ only; a fresh CI clone has no hooks at all. Recorded as FA-control-13 (`status: 
 closed by assertion, because writing that comparison rule is itself a gate change needing its own
 negative control.
 
+## The brake could not see the second protection layer (D-84, and the D-46 decision it unblocks)
+
+Answering the consent ruleset question required knowing what the provider can express, so
+the schema was read — and the first question a schema raises is what enforces the object
+before and after it enters state. `grep -ic ruleset scripts/check_plan_safety.sh` → **0**. The
+fleet's pre-apply brake (AGENTS.md §8 calls it the thing that stands between a merge and an
+apply; `apply.yml` then runs `terraform apply -input=false -auto-approve tfplan`) refuses
+branch-protection creates and attribute changes, and has no rule that can see a ruleset at
+all — while consent, dr and vendor are protected **only** by rulesets (D-46).
+
+Blindness was proven by feeding the gate plans, not by reading its patterns. Three synthetic
+renderings in Terraform's own format, run against the unfixed script, all exited **0**: a
+`github_repository_ruleset.main["jolarca-consent"] will be created` block carrying only
+`deletion` + `non_fast_forward`; the same address `will be updated in-place` with
+`enforcement = "active" -> "disabled"`, `deletion = true -> false`, `non_fast_forward = true ->
+false` and a fresh `bypass_actors { actor_type = "RepositoryAdmin" }`; and an org-ruleset
+weakening. The middle one removes protection from a tier-1 GDPR repository and the gate prints
+"Plan contains no … protection-layer change …" over it. This is D-22's class for the fourth
+time in this register: the gate's real coverage was defined by the first object it was written
+for, and it passed ruleset plans only where they incidentally touched a shared token
+(`required_status_checks`).
+
+The fix is four refusals — create by address, every other action by address, a resource-header
+belt, and a ruleset-only attribute vocabulary — refusing ruleset changes in **both**
+directions, unlike the security-feature rule that allows enabling: requiring a context no
+workflow reports deadlocks every merge on that repo (`jolarca-identity` already paid for that
+once, D-44/D-47). Four fixtures, one of them the non-vacuity control (`ruleset-refresh-only-noise`
+must exit 0, or the adoption plan in step 6b could never pass its own gate). 29 cases pass,
+25 before. `make lint`'s shellcheck step then caught a defect in the fix itself: the reason
+strings are double-quoted shell arguments, so backticks in them were command substitution —
+which had already created a 0-byte file named `disabled` in the working tree from
+`… -> "disabled"`. Rewritten with single quotes, file deleted; recorded because the local
+surface that caught it is the one D-83 said was not compared to CI.
+
+The decision itself, with the measurement behind it, is written into `docs/drift-findings.md`
+D-46 and the operator procedure into `docs/state-migration-runbook.md` **Step 6b**: option **A**
+(adopt the rulesets as `github_repository_ruleset`), consent first, because option B (delete the
+rulesets, let the legacy rule be the single source) would leave all three repos with **no**
+protection layer at all until an apply lands — and CI has never reached the HCP workspace
+(D-82), so the window is unbounded. What was measured, not assumed: consent's ruleset carries
+three push rules and **neither** `pull_request` **nor** `required_status_checks` (so its 7
+declared contexts are enforced by nothing and `main` is directly pushable — the mechanism of
+the historical no-PR commit, still open); provider 6.13.0 **can** express the missing status
+checks (`rules.required_status_checks.required_check`) but **cannot** model
+`dismissal_restriction` or `require_extra_approval_for_unattributed_changes`, both live in dr's
+and vendor's payloads; and the import id is `<repo>:<ruleset_id>` because the importer calls
+`parseID2`, which splits on `:` — the same import-id ≠ state-id trap that broke the runbook's
+original branch-protection instructions. Nothing was imported, patched or planned against
+production: §5 reserves `terraform import` to the operator, and the staged HCL stays in the
+runbook until the PR that lands it is run immediately followed by the import, because a
+declared-but-unimported ruleset makes the plan want to create a **second** ruleset beside the
+one in force.
+
 ## Landed, third observation: PR #95 (`main` = `7048116`)
 
 Squash-merged 2026-10-26T17:23:58Z with the branch deleted. What `main` proves today, per the
@@ -510,8 +563,8 @@ Regression surface on `main`: 316 pytest tests, five shell fixtures at 25/19/19/
    longer attests it (FA-control-10's root fix: register only what git tracks).
 7. **How `index.md`'s totals are derived** (so a reader reproduces them rather than trusting the
    prose). The severity cells are parsed from the registers, never hand-added. Current parse after
-   D-81/D-82/D-83: `jolarca-control.yml` **13** controls (6 S1 / 6 S2 / 1 S3) → index totals **36
-   findings (1 S0 / 16 S1 incl. the latent one / 17 S2 / 2 S3)**. Re-run the block below; if it
+   D-81/D-82/D-83/D-84: `jolarca-control.yml` **14** controls (6 S1 / 7 S2 / 1 S3) → index totals
+   **37 findings (1 S0 / 16 S1 incl. the latent one / 18 S2 / 2 S3)**. Re-run the block below; if it
    disagrees with the table, the table is wrong.
 
    ```bash
