@@ -58,9 +58,10 @@ sh-lint: ## shellcheck over every shell script
 yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 	yamllint -c .yamllint .
 
-test: ## Regression tests: plan-safety (D-22) + execution mode + backup (D-02) + readiness + first-commit
+test: ## Regression tests: plan-safety (D-22) + execution mode + evidence integrity + backup (D-02) + readiness + first-commit
 	bash tests/test_check_plan_safety.sh
 	bash tests/test_check_workspace_execution_mode.sh
+	bash tests/test_hash_evidence.sh
 	bash tests/test_state_backup.sh
 	.venv/bin/python -m pytest tests/ -q
 

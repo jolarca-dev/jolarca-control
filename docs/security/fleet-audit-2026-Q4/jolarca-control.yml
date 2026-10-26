@@ -1,0 +1,308 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Fleet Audit 2026-Q4 — repository record: jolarca-control (the control plane)
+# ──────────────────────────────────────────────────────────────────────────────
+# This is the repository that defines what "correct" means for the other 16.
+# Audited against itself: every claim below cites a file, a line, or a command
+# that was actually run — including three of this repo's own controls, which
+# were tested by experiment rather than by reading.
+# Status vocabulary inherited from audit/soc2-checklist.yml (lines 9-21).
+# ──────────────────────────────────────────────────────────────────────────────
+
+framework_evidence: "jolarca-dev/jolarca-control"
+version: "fleet-audit-2026-Q4"
+owner: "jolarca-dev organization owner (single operator — D-10)"
+verification_date: "2026-10-26"
+verification_method: >-
+  read-only gh api + git + local gate runs, plus one deliberate experiment:
+  scripts/hash_evidence.sh was copied to an isolated tree under /tmp, a file
+  registered, the file deleted, and --check re-run. No repository file was
+  destroyed to learn this.
+
+baseline:
+  branch: "docs/register-data-stores-d79"
+  commit_sha: "1ef4f9b05addc795a1dc8cafa18f1049ca7932fa"
+  origin_main_sha: "bdbe971e3f2df25c0e3e57b3faab968f06351b4b"
+  branch_state: "1 ahead / 1 behind origin/main; PR #85 OPEN, mergeable=MERGEABLE, mergeStateStatus=BEHIND"
+  open_prs: 7
+  uncommitted_at_audit_start: "clean apart from 2 untracked audit docs"
+  scripts: 15
+  test_files: 15
+  test_lines_of_python_and_shell: 5288
+  pytest_collected: 277
+
+controls:
+  - id: "FA-control-01"
+    description: "The evidence-integrity gate detects evidence that is no longer there"
+    evidence: >-
+      EXPERIMENT (isolated /tmp tree, scripts/hash_evidence.sh copied verbatim):
+      registered policy/a.yml, then deleted the file, then ran --check.
+      Output: "Evidence check: 0 files scanned, 0 mismatches / OK: all registered
+      evidence hashes match", exit code 0. The check loop (lines 77-116) iterates
+      files found on disk and never asks whether every registered row still has a
+      file. The precondition guard (lines 52-64) covers a missing or header-only
+      baseline, but there is no floor on the scanned count.
+      Current real state, measured: 52 rows, 0 registered-but-missing — so this is
+      a detection gap, not an active loss.
+    enforcement: "scripts/hash_evidence.sh --check · make evidence-check"
+    status: "implemented"
+    finding: "FA-control-01"
+    severity: "S1"
+    frameworks: ["SOC 2 CC4.1", "ISO/IEC 27001 A.5.31", "PCI-DSS 12.10.1"]
+    note: >-
+      FIXED IN THIS PR (pending merge): --check now runs a reverse pass over every
+      registered path (MISSING -> exit 1) and refuses to report OK when nothing was
+      compared (exit 2). Negative controls live in the new
+      tests/test_hash_evidence.sh (19 cases). Compensating control still worth
+      naming: git history records the deletion, so the loss was always discoverable
+      by anyone who diffed the tree — but the GATE exists so auditors need not, and
+      AGENTS.md §7 is the rule this broke: a gate that reports green has not been
+      shown to detect anything. Running the fixed gate against a clean clone is what
+      exposed FA-control-10.
+
+  - id: "FA-control-02"
+    description: "Evidence integrity is enforced on the merge path"
+    evidence: >-
+      Live required contexts on main (4): Validate Repo Allow-List, Policy
+      Compliance Check, Repository Secret Pattern Scan, SAST (semgrep).
+      evidence-integrity.yml's job name is 'Evidence Integrity Check' —
+      NOT among them. It triggers on schedule + pull_request (paths
+      docs/adr/**, audit/**, policy/**, repos/**, docs/runbooks/**,
+      docs/security/**, the registry itself, and hash_evidence.sh), so it runs
+      and reports, and cannot block.
+    enforcement: "GitHub required_status_checks + new step in the required job"
+    status: "implemented"
+    finding: "FA-control-02"
+    severity: "S1"
+    note: >-
+      FIXED IN THIS PR the way this repo already enforces every other policy gate:
+      `bash scripts/hash_evidence.sh --check` now runs as a step INSIDE the required
+      Validate Repo Allow-List job, so evidence integrity blocks a merge with no
+      branch-protection change at all.
+      Making 'Evidence Integrity Check' itself a required context was proposed by
+      this audit and WITHDRAWN on measurement: that workflow's pull_request trigger
+      is path-filtered to eight patterns, so a PR touching anything else could never
+      report the context and, under strict=true, would sit 'Waiting for status to be
+      reported' forever. scripts/check_required_context_baseline.py:140-141 already
+      refuses a path-filtered job as a required-check backstop — the repo's own gate
+      would have rejected the change this audit first proposed.
+      The workflow logic was never the problem: its header (lines 36-48) documents
+      removing the register step after the tautology was found.
+
+  - id: "FA-control-03"
+    description: "Tests that prove the safety gates can fail are merge-blocking"
+    evidence: >-
+      'Regression Tests' (compliance-scan.yml job `test`) is NOT a required
+      context. It contains the repo's negative controls:
+      tests/test_check_plan_safety.sh (25 cases), tests/test_state_backup.sh
+      (10 cases, incl. skip-verify-is-not-a-pass exit 2), and
+      `python -m pytest tests/ -q` (277 tests). Measured exit 0 today, so the
+      controls currently pass — but nothing prevents a PR that breaks them.
+    enforcement: "GitHub required_status_checks — absent for this job"
+    status: "gap"
+    finding: "FA-control-03"
+    severity: "S1"
+    note: >-
+      apply.yml runs scripts/check_plan_safety.sh before -auto-approve. If the
+      fixtures regress in a merge that also touches an apply path, the refusal
+      gate is weaker than its own test suite believes, and CI will not have
+      objected.
+      NOT fixed here, deliberately: promoting this job to a required context is a
+      live branch-protection mutation. AGENTS.md §5 forbids out-of-band
+      `gh api -X PATCH`, the rules are Terraform-owned, and check_plan_safety.sh
+      refuses protection attribute changes in either direction (D-61) until
+      state-migration runbook step 6 closes. It is an operator decision, not
+      something a docs PR can smuggle. The job's own comment claiming it 'is a
+      required context' was corrected in the same edit that added the fixtures.
+
+  - id: "FA-control-04"
+    description: "Declared mandatory gates are executed somewhere"
+    evidence: >-
+      policy/compliance-gates.yml#code_quality is enforcement:"mandatory",
+      tier governance required list includes code_quality, and its python tool
+      list contains "pytest --cov --cov-fail-under=80". Measured: compliance-
+      scan.yml:180 runs `python -m pytest tests/ -q` (no --cov), and
+      pyproject.toml contains NO [tool.coverage] block and no fail_under.
+    enforcement: "none — the flag is not passed anywhere"
+    status: "declared"
+    finding: "FA-control-04"
+    severity: "S2"
+    note: >-
+      Same defect class the repo found in jolarca-consent (their A-10, fixed
+      there on 2026-09-28 by adding the flag). Here the mandate is unmet in the
+      repo that writes the mandate. Honest qualifier: coverage is a proxy, not a
+      control — this repo's real assurance is the negative-control fixtures, and
+      those DO run (they are just not required, see FA-control-03).
+
+  - id: "FA-control-05"
+    description: "Every gate has a test that proves it detects its defect class"
+    evidence: >-
+      Measured after merging origin/main on 2026-10-26: 16 scripts, 13 with a dedicated
+      tests/test_<script> file. Three without one: check_fleet_separation (.sh),
+      org_delivery_audit (.sh), and check_secret_inventory (.sh) — the last landed from
+      PR #86 while this audit was running, which is the finding recurring rather than a
+      one-off: nothing in CI asks whether a new gate has a negative control. At first
+      measurement the uncovered three were check_fleet_separation, hash_evidence and
+      org_delivery_audit; hash_evidence is now covered by the 19-case fixture added in
+      this PR.
+    enforcement: "partial"
+    status: "pending-adoption"
+    finding: "FA-control-05"
+    severity: "S2"
+    note: >-
+      hash_evidence is now covered by tests/test_hash_evidence.sh (19 cases), wired
+      into `make test` and into the Regression Tests job. Remaining without a
+      dedicated fixture: check_fleet_separation.sh, org_delivery_audit.sh and
+      check_secret_inventory.sh — and AGENTS.md §2 already concedes the second is not
+      in any workflow at all. The durable fix is not three more files: it is a gate
+      that fails a PR adding scripts/<name> without a matching tests/test_<name>, which
+      does not exist today (FA-cross-02's same shape: existence checked, producibility
+      not).
+      The two that matter most were ADR-0004 separation and evidence integrity;
+      FA-control-01/FA-control-10 are precisely the defect class a fixture catches
+      and a read does not.
+
+  - id: "FA-control-06"
+    description: "Code standard gates block a merge"
+    evidence: >-
+      'Lint' (ruff check, ruff format --check, mypy, shellcheck -x scripts/*.sh
+      tests/*.sh, yamllint -c .yamllint .) and 'Terraform Format'
+      (terraform fmt -check) both run on pull_request and are NOT required
+      contexts. Measured today: make lint exit 0, 277 passed.
+    enforcement: "advisory"
+    status: "gap"
+    finding: "FA-control-06"
+    severity: "S2"
+    note: "Contributes to FA-control-03: 4 of 14 reported job names can block."
+
+  - id: "FA-control-07"
+    description: "Signed commits are enforced where policy claims they are"
+    evidence: >-
+      branches/main/protection.required_signatures.enabled = false on this repo,
+      while git commit -S is a stated convention (CONTRIBUTING/AGENTS §6) and
+      jolarca-consent's three main commits all returned verification.verified=true.
+    enforcement: "convention only"
+    status: "accepted"
+    finding: "FA-control-07"
+    severity: "S2"
+    note: "D-05 pattern. Must not be described as an enforced control."
+
+  - id: "FA-control-08"
+    description: "The CI apply path is understood and current"
+    evidence: >-
+      apply.yml triggers: push to main paths repos/**, policy/**, *.tf, *.tfvars,
+      .github/workflows/apply.yml, plus workflow_dispatch. Job prod-apply declares
+      environment: production (line 57-59) — therefore the environment secret
+      TF_GITHUB_TOKEN IS reachable by that job. Repo-level secrets are
+      TFC_TOKEN and TF_GITHUB_TOKEN_READONLY; org-level secrets: none.
+      actions/variables: STATE_MIGRATION_COMPLETE=true.
+      Environment production protection, measured:
+      [{type: wait_timer, wait_timer: 30}, {type: required_reviewers,
+      reviewers: [JourneyOfLife], prevent_self_review: false}],
+      can_admins_bypass=false.
+      apply.yml run history, last 8 (2026-10-15..2026-10-17): 4 failure, 4
+      cancelled — no success in that window.
+    enforcement: "apply.yml + check_plan_safety.sh + prevent_destroy + wait_timer"
+    status: "pending-adoption"
+    finding: "FA-control-08"
+    severity: "S1"
+    note: >-
+      Two conclusions, stated carefully. (1) The reviewer requirement is
+      self-approval: the sole operator is both author and the only listed
+      reviewer, and prevent_self_review is deliberately false — so the 30-minute
+      wait is a cancel window, not an approval. (2) No successful apply in the
+      visible window means the pre-apply refusal gate has never been exercised in
+      production against a real plan; its 25 fixtures are the assurance, and the
+      fixtures are not merge-blocking (FA-control-03).
+
+  - id: "FA-control-09"
+    description: "Corrections to the control plane's own record land promptly"
+    evidence: >-
+      7 open PRs on this repo: #85 D-79 (2026-10-19, BEHIND), #84 D-77
+      (2026-10-19), #82 ruff bump (2026-10-19), #79 (introduces the id its own title
+      cites; unmerged, so that id has no row on main) (2026-10-17), #68
+      upload-artifact bump (2026-10-12), #54 D-33 rehearsal (2026-10-07), #40
+      dead-path fix (2026-10-05).
+    enforcement: "none"
+    status: "gap"
+    finding: "FA-control-09"
+    severity: "S2"
+    note: >-
+      Restates PDA-10 with today's numbers: #40 and #79 are the PRs whose subject
+      is documentation accuracy, unmerged 9-19 days, so main still carries the
+      text they were opened to fix.
+
+  - id: "FA-control-10"
+    description: "Every registry row names a file the repository actually contains"
+    evidence: >-
+      Found by running the FA-control-01 fix against a clean clone rather than the
+      working tree: git clone of the branch into /tmp, new script overlaid, --check
+      -> "46 files scanned, 26 mismatches / FAIL: 26 registered evidence file(s)
+      no longer exist", exit 1. The 26 rows are
+      docs/security/pre-deployment-audit-2026-10-25/* — present on disk, never
+      committed (git status showed 44 untracked files there, git ls-files 0).
+      Before the fix, CI checked 46 files, found nothing, and reported OK: the 26
+      attestations were vacuously true in the only environment that matters.
+      Publication risk checked first because this repo is PUBLIC: gitleaks dir over
+      471 KB -> no leaks; no private-key or token-shaped material; the only emails
+      are the role mailboxes the fleet already publishes in SECURITY.md plus the
+      GitHub noreply identity (D-59).
+    enforcement: "scripts/hash_evidence.sh --check (reverse pass) + tracked-tree enumeration"
+    status: "implemented"
+    finding: "FA-control-10"
+    severity: "S1"
+    frameworks: ["SOC 2 CC4.1", "ISO/IEC 27001 A.5.31", "GDPR Art. 5(2)"]
+    note: >-
+      Root cause is the gate's INPUT, not just its check: register mode walked the
+      working tree, so it could attest files git had never seen. Fixed at the root —
+      enumeration is now `git ls-files -z` (the same scope scripts/check_findings_register.py
+      uses), a non-repo or empty index is exit 2, and a fixture proves an untracked file
+      under an evidence directory acquires NO row. Consequence for this PR: the
+      pre-deployment-audit-2026-10-25 sweep directory is left untracked, because its raw
+      `gh pr list` output quotes an id that only unmerged PR #79 defines; committing it
+      would need either falsifying captured evidence or widening the citation gate's
+      exclusions, and AGENTS.md §5 forbids both. Its 26 rows therefore leave the registry,
+      which is the honest state: the registry now attests 46 files, all of them in git.
+      Verification practice adopted: run --check in a clean clone, not only in the working
+      tree — a green local run proves nothing about the committed tree.
+
+strengths:
+  - "5 policy gates run INSIDE the required Validate Repo Allow-List job: validate_repos.py, check_required_context_baseline.py, check_declared_contexts.py, check_deploy_gates.py, check_findings_register.py — enforcement is real for those, not advisory"
+  - "required contexts are 4 non-empty names that all match live job names, with strict=true, so a red required context genuinely blocks (measured: ctx list equals 4 reported jobs)"
+  - "enforce_admins=true, required_linear_history=true, allow_force_pushes=false, allow_deletions=false, required_conversation_resolution=true"
+  - "settings match policy/repo-defaults.yml#defaults exactly: squash-only (allow_merge_commit=false, allow_rebase_merge=false), has_projects=false, has_wiki=false"
+  - "secret scanning AND push protection enabled here — the repo that failed that test (.github) is not this one"
+  - "prevent_destroy=true verified to sit inside resource \"github_repository\" \"repo\" (block opens :25, lifecycle :76-77, closes :90) and on the health repo (health-repo.tf:64) — the AGENTS.md claim survives reading the block, not just grepping the keyword"
+  - "vulnerability_alerts enabled; forks=0 (bounded exposure of the governance record)"
+  - "ORG-LEVEL FACTS NOW MEASURED, previously recorded as unverifiable: orgs/jolarca-dev two_factor_requirement_enabled=true (the older two_factor_auth_enabled field is null on Free — the readable field exists), members_can_create_repositories=false (closes D-19's prevention gap), default_repository_permission=none"
+  - "every third-party action in the workflows inspected is SHA-pinned with a version comment"
+  - "277 pytest tests plus 67 shell fixture cases (plan-safety 25, workspace-mode 13, hash-evidence 19, state-backup 10) run in `make test`, and make lint exits 0"
+  - "the audit's own error was caught by the audited gate: check_findings_register.py reported a dangling citation introduced by this very record, because the finding id it used exists only on unmerged PR #79 — main's register runs D-71 then D-73. Citation re-pointed at the PR number, and the defect kept in the record rather than quietly reworded"
+
+not_run:
+  - item: "confirm the scope of the fine-grained PAT behind TF_GITHUB_TOKEN"
+    reason: >-
+      the secret value is not readable by design; the apply.yml header asserts
+      'Administration: read/write + Contents: read' on jolarca-dev, which is an
+      assertion, not a measurement. The AGENTS.md §5 prohibition on gh api -X
+      PATCH out-of-band is the practical bound
+    would_prove: "whether the CI apply path is over-privileged relative to its job"
+  - item: "run a real plan through apply.yml end-to-end to observe check_plan_safety.sh refusing"
+    reason: "requires triggering a production apply; explicitly not authorized"
+  - item: "attempt a merge with a red required context to prove blocking"
+    reason: "would need a deliberately failing PR; the 2026-10-12 GH006 push rejection is the standing evidence instead"
+  - item: "verify whether hash_evidence's deletion gap can be triggered by a PR that rm's an evidence file"
+    reason: "would require creating and merging such a PR; the /tmp experiment already establishes the script behaviour"
+
+verdict: "NO-GO — as an assurance claim; CONDITIONALLY OPERATIONAL as a control plane"
+blocking_findings: []
+s1_findings: ["FA-control-01", "FA-control-02", "FA-control-03", "FA-control-08", "FA-control-10"]
+s1_fixed_pending_merge: ["FA-control-01", "FA-control-02", "FA-control-10"]
+framework_claims_not_supported:
+  - "SOC 2 CC4.1 — evidence integrity monitoring reported success over zero inputs (FA-control-01) and over 26 rows naming uncommitted files (FA-control-10); both are refused now that the reverse pass exists, and both were unverifiable as claims until this PR merges"
+  - "ISO/IEC 27001 A.5.31 / PCI-DSS 12.10.1 — the same: the register was not self-verifying against deletion, and a green local run did not prove anything about the committed tree"
+  - "SOC 2 CC8.1 — change management is genuinely enforced for 4 contexts only; the test suite that guards the deploy gate is advisory (FA-control-03)"
+  - "code_quality coverage floor — declared mandatory, executed nowhere (FA-control-04)"
+framework_claims_supported:
+  - "SOC 2 CC6.1/CC6.2 for this repository: enforce_admins + strict required contexts + squash-only + no fork + org 2FA requirement true + org members cannot create repositories"
+  - "SOC 2 CC7.1 partial: repository secret pattern scan (gitleaks full history, pinned 8.30.1) and SAST (semgrep) are required contexts"
+  - "SOC 2 CC3.x for the register: check_findings_register.py runs inside a required context and parsed 78 D-nn headings with no collisions and no dangling citations today"

@@ -114,6 +114,22 @@ jobs:
       # that is what is enforced here. The cross-PR view stays local as `make findings-check`.
       - name: Finding IDs must be unique (register integrity)
         run: python3 scripts/check_findings_register.py
+      # FA-control-01 / FA-control-02: evidence integrity used to live only in
+      # evidence-integrity.yml, whose job name "Evidence Integrity Check" is NOT one of
+      # the four required contexts — so a PR could edit hashed evidence, skip
+      # re-registration, watch that check go red, and merge anyway.
+      # It also cannot simply BE one: that workflow's pull_request trigger is
+      # path-filtered to eight patterns, and
+      # scripts/check_required_context_baseline.py refuses to let a path-filtered job
+      # back a required check (under strict=true a context no PR can report leaves every
+      # unrelated PR "Waiting for status to be reported" forever — the A-01/Verify Chain
+      # class, and precisely the change this audit first proposed and then withdrew).
+      # Running the same verdict inside this job enforces it on every PR without touching
+      # branch protection. Exit codes stay three-valued (§3): a registered file that has
+      # gone missing is a finding (1), a run that compared nothing is cannot-verify (2),
+      # and neither is ever OK.
+      - name: Evidence hashes match the committed registry (CC4.1)
+        run: bash scripts/hash_evidence.sh --check
 
   # ── Context 2: Policy Compliance Check ─────────────────────────────────────
   compliance:
@@ -159,10 +175,21 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: bash tests/test_check_plan_safety.sh
-      # D-02: the backup tool's fixtures are shell, not pytest, and this job is a
-      # required context — so a regression that leaves the fleet with no verified
-      # state export fails here rather than during a restore. Offline: the cases
+      # FA-control-05: scripts/hash_evidence.sh enforced evidence integrity for months with
+      # no fixture of any kind, which is how "deleting evidence clears the control" survived
+      # review. These cases are the negative control AGENTS.md §7 requires, and they run
+      # against throwaway trees in mktemp -d — no repository file is touched.
+      - name: Evidence integrity fixtures
+        run: bash tests/test_hash_evidence.sh
+      # D-02: the backup tool's fixtures are shell, not pytest. Offline: the cases
       # generate an ephemeral age keypair and point the backend at a closed port.
+      # CORRECTED 2026-10-26: the comment here claimed this job "is a required context".
+      # It is not. Live required contexts are Validate Repo Allow-List, Policy Compliance
+      # Check, Repository Secret Pattern Scan and SAST (semgrep) — measured, not inferred.
+      # Promoting it needs a branch-protection change, which is Terraform-owned (§5 forbids
+      # out-of-band PATCH) and refused for protection attribute edits by
+      # scripts/check_plan_safety.sh (D-61), so it remains an operator decision recorded as
+      # FA-control-03 rather than something a comment can assert.
       - name: Install age
         # The fixtures below generate an ephemeral recipient/identity, so the tool
         # has to be installed first and explicitly: a job that quietly skips when a
