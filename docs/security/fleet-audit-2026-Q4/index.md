@@ -18,7 +18,7 @@ Population reconciliation (STAGE A, measured 2026-10-26):
 |---:|---|---|---|---:|---:|---:|---:|---:|---|
 | 1 | `jolarca` | — | NOT RUN | — | — | — | — | — | |
 | 2 | `jolarca-infrastructure` | — | NOT RUN | — | — | — | — | — | |
-| 3 | [`jolarca-control`](jolarca-control.yml) | `1ef4f9b05addc795a1dc8cafa18f1049ca7932fa` (branch head; `origin/main` = `bdbe971…`) | **NO-GO (assurance)** · CONDITIONALLY OPERATIONAL (control plane) — 3 of the S1s **landed on `main` as `e5b9b3f`** | 0 | 5 | 5 | 0 | 4 | 2026-10-26 |
+| 3 | [`jolarca-control`](jolarca-control.yml) | `1ef4f9b05addc795a1dc8cafa18f1049ca7932fa` (branch head; `origin/main` = `bdbe971…`) | **NO-GO (assurance)** · CONDITIONALLY OPERATIONAL (control plane) — 3 of the S1s **landed on `main` as `e5b9b3f`**, a 4th (FA-control-11) is implemented in this PR and **pending merge** | 0 | 6 | 5 | 0 | 4 | 2026-10-26 |
 | 4 | `jolarca-hermes-agents` | — | NOT RUN | — | — | — | — | — | |
 | 5 | `jolarca-identity` | — | NOT RUN | — | — | — | — | — | |
 | 6 | `jolarca-payments` | — | NOT RUN | — | — | — | — | — | |
@@ -35,13 +35,15 @@ Population reconciliation (STAGE A, measured 2026-10-26):
 | 17 | [`.github`](dot-github.yml) | `48b96656c6779788cf84444fc0973f9697d18dcb` | **NO-GO** | 0 | 5 | 7 | 1 | 3 | 2026-10-26 |
 
 Totals are parsed from the three YAML registers, not counted by hand — `.github` 13 controls
-(5 S1 / 7 S2 / 1 S3), consent 10 (1 S0 / 5 S1 / 4 S2), control plane 10 (5 S1 / 5 S2), i.e. **33
-findings across 3 of 17 repositories: 1 S0, 15 S1, 16 S2, 1 S3**. An earlier
+(5 S1 / 7 S2 / 1 S3), consent 10 (1 S0 / 5 S1 / 4 S2, one of those S1 labelled `S1 (latent)` in its
+register), control plane 11 (6 S1 / 5 S2), i.e. **34 findings across 3 of 17 repositories: 1 S0,
+16 S1, 16 S2, 1 S3**. An earlier
 draft of this index carried hand-counted totals that were wrong in three cells, the same class of
 defect recorded in the 2026-10-24 audit; the count is now derived from the machine-readable source
 and re-checked by parsing the registers after every edit. That re-check caught a fresh instance of
 the same class in this very file on 2026-10-26 — a hand-added S2 total of 17 where the registers sum
-16 — corrected by the parse, not by recounting by hand.
+16 — corrected by the parse, not by recounting by hand. The parse command is recorded in
+`jolarca-control.md` (method notes) so the numbers below are reproducible, not trusted.
 
 **Fleet verdict so far: NO-GO.** One S0 open (`FA-consent-01`). Three of seventeen repositories
 audited; the remaining fourteen are **NOT RUN**, which is a status, not a pass.
@@ -57,13 +59,15 @@ audited; the remaining fourteen are **NOT RUN**, which is a status, not a pass.
 | FA-cross-05 | S2 | Two byte-identical copies of the same audit documents exist: `docs/master-architect-prompt.md` (`733cf259…`, 1290 lines) and its copy `docs/security/pre-deployment-audit-2026-10-25/master-architect-prompt.md`; likewise `docs/pre-deployment-audit-2026-10-24.md` (`fcd0532c…`, 835 lines) and its copy. **Only the copies inside that directory are registered** — the `docs/` root copies are untracked and un-hashed, so the file an editor naturally opens is the file nothing checks. Identical bytes as measured 2026-10-26; divergence is the predictable next state. One fact, one owner. | OPEN — verified identical at time of writing |
 | FA-cross-07 | S1 | **A gate's verdict depended on the working tree, not the committed tree.** `hash_evidence.sh` enumerated files on disk, so `make evidence-register` attested 26 rows for files git had never seen; CI, which only ever checks out the commit, scanned 46 files and reported `OK: all registered evidence hashes match` over 26 vacuous attestations. Found only by running the newly added reverse pass inside a clean clone (`git clone` → overlay script → `--check` → `46 files scanned, 26 mismatches`, exit 1). Fixed at the root: enumeration is now `git ls-files -z`, a non-repo or empty index exits 2, and a fixture proves an untracked file acquires no row. Registry corrected from 72 to 46 rows, all tracked. | FIXED — LANDED (`main` = `e5b9b3f`, PR #89) — lesson generalises to every fleet gate that reads `$REPO_ROOT` |
 | FA-cross-08 | S2 | The register-integrity gate scans only `git ls-files` output (`check_findings_register.py:161`), so a dangling citation in an uncommitted draft is invisible until it is committed — proven in sequence here: 12:55 `no dangling citations`, then after `git commit` the same command reported the citation this audit had introduced. Correct-by-design (CI sees the committed tree) but the local reading must be stated, not assumed: `make findings-check` green does **not** cover work in progress. | VERIFIED — documented, not changed |
+| FA-cross-09 | S2 | **Prose is not an invocation, and an exception that forgives two rules is an off switch.** Two shapes, both reproduced while building the D-80 parity gate and both fleet-wide. (a) Matching script names against raw workflow/Makefile *text* let a YAML comment — and a `#` line inside a shell `run:` block, and the gate's own docstring — satisfy "this gate is invoked", so the draft reported green on `check_secret_inventory.sh`, the very unwired gate it was written to catch. Fix: parse the YAML, take only `- run:` bodies, strip comment lines from both corpora. (b) `continue` after a baseline exception also skipped the liveness rule: measured pre-fix, a script that was *both* baselined *and* unwired produced `findings: []`, i.e. adding a dead gate to the exception list switched the meta-gate off (§5 forbids exactly that). Fix: an exception forgives one rule, named in the comment, and a fixture pins it (`test_baseline_entry_does_not_excuse_liveness`). Third-party corollary: `pytest tests/` collects `.py` and cannot collect `.sh`, so an unwired shell fixture is invisible to every merge. | FIXED in this PR (local to `jolarca-control`) — generalises to any repo whose CI counts greps as coverage |
 | FA-cross-06 | S3 | Concurrent tree modification observed mid-audit: `docs/evidence-registry.csv` gained 8 rows (` M`, registered 2026-10-26) and the rescue directory appeared between two probes of the same session. Verified **not** caused by the audit pass — `Makefile:33` (`lint:` = fmt-check tf-validate validate context-baseline py-lint py-type sh-lint yaml-lint test) contains no `hash_evidence.sh` call; register mode exists only at the `evidence-register` target (`Makefile:87`), which this pass never invoked. Recorded so a later reader does not attribute it to these findings. | VERIFIED — not audit-caused |
 
 ## Local gate baseline (jolarca-control, 2026-10-25, tree `1ef4f9b`)
 
 | Gate | Exit | Status |
 |---|---|---|
-| `make lint` (fmt, tf-validate, validate, ruff, mypy, shellcheck, yamllint, pytest, shell fixtures) | 0 | VERIFIED PASS — 277 pytest + 67 shell cases: plan-gate 25, workspace-mode 13, hash-evidence 19 (new), state-backup 10 |
+| `make lint` (fmt, tf-validate, validate, context-baseline, gate-parity, ruff, mypy, shellcheck, yamllint, pytest, shell fixtures) | 0 | VERIFIED PASS — 295 pytest tests + five shell fixtures whose own counters read 25 (plan-safety) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup) |
+| `make gate-parity` (`scripts/check_gate_parity.py`, D-80) | 0 | VERIFIED PASS — `OK: 17 gate scripts each have a fixture or a dated baseline entry`; negative controls on a copy of the real tree: untested script → exit 1 (`R1=1, R3=1`), unwired script → exit 1 (`R2=1, R3=1`), placeholder fixture → exit 1 (`R1b=1`), unparseable workflow → exit **2**, restored → 0 |
 | `make compliance` | 0 | VERIFIED PASS — 16 repos, declared configuration only (`live_state_verified: false`) |
 | `make evidence-check` | 0 | VERIFIED PASS at baseline — 39 files, 0 mismatches |
 | `make evidence-check` (after registration of the 8 rescued files) | 0 | VERIFIED PASS — 52 files scanned, 0 mismatches (operator-run `make evidence-register`, +13 CSV rows) |

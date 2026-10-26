@@ -85,3 +85,15 @@ jobs:
           # environments are equally unprotected and belong to the mission-side workstream, so gating this
           # repo's CI on them would be red for someone else's settings.
         run: python3 scripts/check_deploy_gates.py
+      # D-80: the credential-expiry gate shipped on 2026-10-20 wired to nothing, so its
+      # verdict — including the `unknown` TFC_TOKEN row that its own register declares
+      # "red by design" — was never read by anyone. It runs here because this job is
+      # ADVISORY: `Deploy Gates` is not one of the four required contexts, so a red step is
+      # a visible signal rather than a merge blocker. Putting an intentionally-red gate in a
+      # required job would wedge every PR, which is how an unsatisfiable check was found to
+      # deadlock the identity repo (A-01). Promotion to a required context is the operator's
+      # call, and the precondition is a real date in the register, not a weaker gate.
+      # Offline and credential-free by design: it reads one markdown table and prints
+      # metadata only.
+      - name: Credential expiry register is dated and unexpired (D-80)
+        run: bash scripts/check_secret_inventory.sh

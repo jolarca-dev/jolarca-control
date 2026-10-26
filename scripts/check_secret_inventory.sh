@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # check_secret_inventory.sh — expiry gate for the secret register (metadata only).
 #
-# Reads the `expires` column of docs/SECRETS_INVENTORY.md and fails CI when any
-# dated credential is expired or expires within WARN_DAYS (default 14) days.
+# Reads the `expires` column of the machine-read table in
+# docs/security/key-custody.md and fails when any dated credential is expired or
+# expires within WARN_DAYS (default 14) days.
+#
+# PATH HISTORY (D-80): this script landed on 2026-10-20 (PR #86) defaulting to
+# docs/SECRETS_INVENTORY.md, a file that has never existed in this repository. Run as
+# documented it exited 2 every time, and because nothing invoked it — no Makefile target,
+# no workflow step — nobody saw that. key-custody.md:33 already stated its own table is
+# "the single `expires`-bearing block the gate parses", so the register was present the
+# whole time and only the pointer was dead. Same class as the guard-pointer defect PR #79
+# and PR #40 record: a cited path that does not exist, here in a default argument instead
+# of a comment.
 #
 # exit 0  every dated credential expires more than WARN_DAYS days ahead
 # exit 1  a credential is expired, expires within WARN_DAYS, or has expiry=unknown
@@ -14,7 +24,7 @@
 # credential-dependent step can mask it.
 set -u
 
-INV="${1:-docs/SECRETS_INVENTORY.md}"
+INV="${1:-docs/security/key-custody.md}"
 WARN_DAYS="${WARN_DAYS:-14}"
 
 if [ ! -r "$INV" ]; then

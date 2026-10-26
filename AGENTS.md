@@ -40,6 +40,7 @@ Setup and gates (all offline unless marked live):
 | `make first-commit REPO=<name> STEP=A..F` | Read-only pipeline gate; prints commands, never runs them |
 | `make evidence-check` | Verify evidence hashes against the **committed** registry |
 | `make evidence-register` | Regenerate `docs/evidence-registry.csv`, then commit the diff in a PR |
+| `make gate-parity` | Every gate must have a fixture that can fail, and every fixture must run on the merge path (D-80; offline) |
 | `make drift` / `make fleet-audit` / `make org-audit` | Live, read-only (need `gh` / token) |
 
 Run Python through the venv: `.venv/bin/python -m pytest tests/ -q`. The system
@@ -131,11 +132,23 @@ Specific high-consequence edits:
 
 - **Verify the verifier.** A gate that runs and reports green has not been shown
   to detect anything. Every gate needs a **negative control** — a fixture that
-  must fail. `tests/test_check_plan_safety.sh` is the model (10 cases including
-  empty and missing plan). An untested regex gate is a hypothesis: D-22 was an
+  must fail. `tests/test_check_plan_safety.sh` is the model (25 cases including
+  empty and missing plan — its own counter, not a hand-written number). An untested
+  regex gate is a hypothesis: D-22 was an
   inline `visibility\s*:` pattern that never matched `terraform show` output, so
   the only control between an unattended apply and a fleet-wide visibility flip
   was inert.
+  This rule is now itself enforced, by `scripts/check_gate_parity.py` inside the
+  required `Validate Repo Allow-List` context (D-80, 2026-10-26): **R1** a new
+  `scripts/<name>.{py,sh}` without `tests/test_<name>` fails the PR, **R1b** the
+  fixture must name its subject, **R2** every `tests/*.sh` must be invoked by a
+  `run:` step in a workflow that can trigger on `pull_request` — `pytest tests/`
+  collects `.py` and cannot collect `.sh` — **R3** every script must be invoked by
+  something executable (parsed `run:` bodies and Makefile recipes, comments
+  stripped: prose is not an invocation), **R4** the no-fixture baseline may only
+  shrink. Two self-caught lessons worth repeating: an exception that also silences
+  a second rule is an off switch, and grepping for a filename cannot tell an
+  invocation from a comment about it.
 - **A gate's verdict must not depend on how its input was rendered.** Measured
   2026-10-15: the same Terraform plan file made `scripts/check_plan_safety.sh` exit
   0 when produced by `terraform show tfplan` (840 ANSI escape bytes) and exit 1 when
@@ -297,6 +310,19 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   registered on the account. Signed commits are still cryptographically valid
   (`git verify-commit` passes) but are no longer shown as verified until the
   noreply address is added in Settings → Emails.
+
+- **The credential-expiry gate is red on purpose, and runs where red is safe.**
+  `scripts/check_secret_inventory.sh` shipped in PR #86 (2026-10-20) defaulting to
+  `docs/SECRETS_INVENTORY.md` — a path that has never existed — and invoked by nothing, so it
+  exited 2 forever and nobody saw it (D-80). Repaired 2026-10-26: it now reads the table in
+  `docs/security/key-custody.md` that declares itself the gate's input, and it runs as a step in
+  `deploy-gates.yml`. `Deploy Gates` is **not** one of the four required contexts (measured via
+  `gh api repos/jolarca-dev/jolarca-control/branches/main/protection`), which is deliberate: the
+  `TFC_TOKEN` row says `expires = unknown` until the operator reads the real date in the HCP UI,
+  the register calls that "red by design", and a permanently-red *required* check would wedge every
+  merge (the A-01 deadlock shape). It is excluded from `make lint` for the adjacent reason — an
+  always-red local gate trains everyone to append `|| true`. So: red in that job is expected, not
+  a regression to fix by editing the gate; the fix is a dated row in the register.
 
 ## 9. Session discipline
 

@@ -144,23 +144,27 @@ controls:
       one-off: nothing in CI asks whether a new gate has a negative control. At first
       measurement the uncovered three were check_fleet_separation, hash_evidence and
       org_delivery_audit; hash_evidence is now covered by the 19-case fixture added in
-      this PR.
-    enforcement: "partial"
-    status: "pending-adoption"
+      this PR. Re-measured after the parity gate was written: 17 scripts, 15 with a
+      fixture, 2 baselined with a dated reason and a ceiling of 2 (R4 only lets it
+      shrink). The rule itself is now scripts/check_gate_parity.py, run inside the
+      required Validate Repo Allow-List job, so a PR that adds scripts/<name> without
+      tests/test_<name> fails a required context instead of merging quietly.
+    enforcement: "scripts/check_gate_parity.py R1/R1b/R2/R3/R4 inside required context Validate Repo Allow-List"
+    status: "implemented-pending-merge"
     finding: "FA-control-05"
     severity: "S2"
     note: >-
-      hash_evidence is now covered by tests/test_hash_evidence.sh (19 cases), wired
-      into `make test` and into the Regression Tests job. Remaining without a
-      dedicated fixture: check_fleet_separation.sh, org_delivery_audit.sh and
-      check_secret_inventory.sh — and AGENTS.md §2 already concedes the second is not
-      in any workflow at all. The durable fix is not three more files: it is a gate
-      that fails a PR adding scripts/<name> without a matching tests/test_<name>, which
-      does not exist today (FA-cross-02's same shape: existence checked, producibility
-      not).
-      The two that matter most were ADR-0004 separation and evidence integrity;
-      FA-control-01/FA-control-10 are precisely the defect class a fixture catches
-      and a read does not.
+      The durable fix was not three more files: it is a gate that fails a PR adding
+      scripts/<name> without a matching tests/test_<name>, plus R2 (a shell fixture must
+      be invoked by a workflow that can trigger on pull_request, because `pytest tests/`
+      cannot collect .sh) and R3 (a script must be invoked by something executable, parsed
+      not grepped, because a comment is documentation). check_secret_inventory.sh now has
+      its own 19-case fixture and tests/test_check_workspace_execution_mode.sh's 13 cases
+      run on the merge path. Two named exceptions remain and are recorded in the gate's own
+      NO_FIXTURE_BASELINE with the reason each is tolerated: check_fleet_separation.sh and
+      org_delivery_audit.sh. FA-control-03 still governs whether the FIXTURE job's results
+      can block: the parity gate is required, but the fixtures it checks run in the
+      advisory Regression Tests job.
 
   - id: "FA-control-06"
     description: "Code standard gates block a merge"
@@ -266,6 +270,48 @@ controls:
       Verification practice adopted: run --check in a clean clone, not only in the working
       tree — a green local run proves nothing about the committed tree.
 
+  - id: "FA-control-11"
+    description: "A shipped control must produce a verdict somebody reads (readable input + an invoker)"
+    evidence: >-
+      scripts/check_secret_inventory.sh landed on 2026-10-20 in PR #86 (adds commit bdbe971)
+      with two independent silences. (1) INPUT: its default argument was
+      docs/SECRETS_INVENTORY.md and `git log --all --oneline --diff-filter=A --
+      docs/SECRETS_INVENTORY.md` returns 0 lines, `git ls-files` 0 — the file has never existed
+      on any branch, so running it exactly as documented printed
+      "::error::docs/SECRETS_INVENTORY.md not readable — an unreadable register is not a pass"
+      and exited 2, forever, correctly. (2) INVOKER: `git grep -n check_secret_inventory
+      origin/main -- Makefile '.github/workflows'` → exit 1 (no matches); `git grep -l` finds it
+      only in prose (key-custody.md and this audit's own records). Meanwhile
+      docs/security/key-custody.md:33 declares its table "the single `expires`-bearing block the
+      gate parses" and :41 sets TFC_TOKEN `expires = unknown` with "until then the gate is red by
+      design" — pointed at the real register today it exits 1 after two `ok:` rows. A control
+      designed to be red, wired to nothing, reports green forever: the fail-closed signal was
+      swallowed by absence, not by `||` or continue-on-error. Same class, second instance: tests/
+      test_check_workspace_execution_mode.sh (13 cases, self-reported "13 passed, 0 failed") was
+      invoked by the Makefile only, and `pytest tests/` cannot collect .sh, so it could never fail
+      a merge (origin/main had four .sh fixtures, three wired).
+    enforcement: "scripts/check_gate_parity.py R2/R3 (required context) + default path repaired + advisory step in deploy-gates.yml"
+    status: "implemented-pending-merge"
+    finding: "FA-control-11"
+    severity: "S1"
+    frameworks: ["SOC 2 CC4.1", "SOC 2 CC7.1", "ISO/IEC 27001 A.8.8", "PCI-DSS 8.3.1"]
+    note: >-
+      Recorded as S1 for the same reason FA-control-01 was: the repository documents a monitoring
+      control that was not operating, so a Type I description written from key-custody.md would be
+      inaccurate, and the evidence registry attests the file's bytes, not its effect. What this
+      row does NOT close: the TFC_TOKEN expiry itself (a production-scope GitHub secret whose
+      date HCP Terraform describes only to a holder of it — CANNOT VERIFY from here, §3), and any
+      claim about the other 16 repositories (the parity gate reads this repo's Makefile and
+      workflows only). Deliberate design choice, stated rather than hidden: the gate is wired into
+      deploy-gates.yml, an ADVISORY job — "Deploy Gates" is not among the four required contexts —
+      because promoting an intentionally-red check to a required context would wedge every PR
+      (A-01's deadlock shape). Its fixture tests/test_check_secret_inventory.sh (19 cases) does
+      run on the merge path, so the script's behaviour is protected even while its verdict is
+      advisory. Observed while measuring and not acted on: check_findings_register.py parses
+      `D-\\d+`, so the sub-lettered heading D-22a (docs/drift-findings.md:235) is invisible to
+      both the heading parse and the citation scan — symmetric, harmless today, a trap for the next
+      sub-lettered id.
+
 strengths:
   - "5 policy gates run INSIDE the required Validate Repo Allow-List job: validate_repos.py, check_required_context_baseline.py, check_declared_contexts.py, check_deploy_gates.py, check_findings_register.py — enforcement is real for those, not advisory"
   - "required contexts are 4 non-empty names that all match live job names, with strict=true, so a red required context genuinely blocks (measured: ctx list equals 4 reported jobs)"
@@ -276,7 +322,7 @@ strengths:
   - "vulnerability_alerts enabled; forks=0 (bounded exposure of the governance record)"
   - "ORG-LEVEL FACTS NOW MEASURED, previously recorded as unverifiable: orgs/jolarca-dev two_factor_requirement_enabled=true (the older two_factor_auth_enabled field is null on Free — the readable field exists), members_can_create_repositories=false (closes D-19's prevention gap), default_repository_permission=none"
   - "every third-party action in the workflows inspected is SHA-pinned with a version comment"
-  - "277 pytest tests plus 67 shell fixture cases (plan-safety 25, workspace-mode 13, hash-evidence 19, state-backup 10) run in `make test`, and make lint exits 0"
+  - "regression surface measured 2026-10-26: 295 pytest tests, plus five shell fixtures whose own counters read 25 (plan-safety) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before this PR workspace-mode ran only from the Makefile."
   - "the audit's own error was caught by the audited gate: check_findings_register.py reported a dangling citation introduced by this very record, because the finding id it used exists only on unmerged PR #79 — main's register runs D-71 then D-73. Citation re-pointed at the PR number, and the defect kept in the record rather than quietly reworded"
 
 not_run:
@@ -296,7 +342,7 @@ not_run:
 
 verdict: "NO-GO — as an assurance claim; CONDITIONALLY OPERATIONAL as a control plane"
 blocking_findings: []
-s1_findings: ["FA-control-01", "FA-control-02", "FA-control-03", "FA-control-08", "FA-control-10"]
+s1_findings: ["FA-control-01", "FA-control-02", "FA-control-03", "FA-control-08", "FA-control-10", "FA-control-11"]
 s1_fixed_landed:
   ids: ["FA-control-01", "FA-control-02", "FA-control-10"]
   commit: "e5b9b3f6a3e70119374a5cabcf807d3d445c6b89"
@@ -313,6 +359,7 @@ s1_fixed_landed:
     This is a Type I operating observation on the day it landed, not Type II effectiveness
     over an audit period.
 framework_claims_not_supported:
+  - "SOC 2 CC4.1 / CC7.1 (credential-expiry monitoring) — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: docs/security/key-custody.md documents a gate that was never invoked by anything and could not read its own input, so it produced no verdict anybody could see (FA-control-11, D-80). From this PR it runs in an advisory job and exits 1 by design until the operator records the TFC_TOKEN expiry — a red, visible signal replaces an absent one, which is the honest interim state, not a claim of monitoring effectiveness."
   - "SOC 2 CC4.1 — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: evidence integrity monitoring reported success over zero inputs (FA-control-01) and over 26 rows naming uncommitted files (FA-control-10), and the check was not on the merge path (FA-control-02). Refused by design from e5b9b3f onward; a Type I claim needs this control's operating history, which starts today."
   - "ISO/IEC 27001 A.5.31 / PCI-DSS 12.10.1 — same boundary: before 2026-10-26 the register was not self-verifying against deletion, and a green local run proved nothing about the committed tree. Retaining the 46-row registry (not 72) is the honest baseline for the period that follows."
   - "SOC 2 CC8.1 — change management is genuinely enforced for 4 contexts only; the test suite that guards the deploy gate is advisory (FA-control-03)"

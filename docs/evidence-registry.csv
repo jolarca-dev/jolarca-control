@@ -36,11 +36,11 @@ docs/security/dpia-marketplace-launch.md,125af31733cedd11b75752d91befff024bd8e82
 docs/security/f01-l16-synthetic-fixture-acceptance.md,bd4647063bce9a09829ace0b833bf6abc09967505a7b3696733ed4c55034823f,2026-10-15
 docs/security/fleet-audit-2026-Q4/dot-github.md,31320c83d86086d8abb8de4e54bac2f27fab579fccc968264cb039a1205c4f8d,2026-10-26
 docs/security/fleet-audit-2026-Q4/dot-github.yml,b8c712fd3c2a6752ba971c219c96b3bd9b0952cac9ad497cae3456c6c69d9b0b,2026-10-26
-docs/security/fleet-audit-2026-Q4/index.md,66f10a8857ca41d25fb4f28612283007e3812e1f3a4b376532c9c8d9085309ae,2026-10-26
+docs/security/fleet-audit-2026-Q4/index.md,58d3ddc7978fb2ce25c10cbcb463f66715aa4f6d7d296702645e5c40a99f7a81,2026-10-26
 docs/security/fleet-audit-2026-Q4/jolarca-consent.md,9d3ddb80d0b303af083692ca7e9c0d5f8c1db222f2f3876af7205656ea859851,2026-10-26
 docs/security/fleet-audit-2026-Q4/jolarca-consent.yml,3ec070ba3ccb244ff0a366b288a222fd11afbcc0642e247ce88fe8a5ba3e3175,2026-10-26
-docs/security/fleet-audit-2026-Q4/jolarca-control.md,760618e3eb2ab129069023a66998cb4686c72c82b2c3b4058cf5afff36cc0b51,2026-10-26
-docs/security/fleet-audit-2026-Q4/jolarca-control.yml,fd4b16b72a8d1cb8680414d0e039b99841ee7d0e2eedd6118979a124db39300d,2026-10-26
+docs/security/fleet-audit-2026-Q4/jolarca-control.md,8d361a2b478c2dac33a4a78dcda8861f9d1ccdcd8edfdc3496da730ef194efa7,2026-10-26
+docs/security/fleet-audit-2026-Q4/jolarca-control.yml,dd6b4a21a7c480925e33fc5f02dfff26bf7968f9c4e6d704fec58d0a8b2ae5b0,2026-10-26
 docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9ae8c43694991343c80,2026-10-15
 docs/security/key-custody.md,d1f067fc28077044a65983162fce7c6d2340cd7f2f63623cf759c9d328a609b0,2026-10-20
 docs/security/sast-mandatory-gate-2026-10-08.md,e4aa6f562a7a08295029ae2b8bcf5592b87447f9c2ce4fc09691ca5d2937625c,2026-10-15
