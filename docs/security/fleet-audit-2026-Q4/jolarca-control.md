@@ -122,7 +122,7 @@ not a reason to keep the gate advisory — fix the queue (FA-control-09).
 | ID | Sev | Defect | Evidence (measured 2026-10-26) |
 |---|---|---|---|
 | FA-control-04 | S2 | `code_quality` is `enforcement: mandatory` and lists `"pytest --cov --cov-fail-under=80"`, but CI runs a bare `pytest tests/ -q` (`compliance-scan.yml:180`) and `pyproject.toml` has **no** `[tool.coverage]` block and no `fail_under` | grep for `--cov` across `.github/workflows/` → none |
-| FA-control-05 | S2 | 3 of 15 gates have no dedicated test file: `check_fleet_separation`, `hash_evidence`, `org_delivery_audit` — the two that matter are ADR-0004 separation and evidence integrity | script↔test name mapping |
+| FA-control-05 | S2 | 3 of 16 gates have no dedicated test file: `check_fleet_separation`, `org_delivery_audit`, `check_secret_inventory` — and `check_secret_inventory` landed from PR #86 **while this audit was running**, so the finding is a process gap, not a one-off: nothing in CI asks whether a new gate carries a negative control. `hash_evidence` was in the original three and is now covered by this PR's 19-case fixture | script↔test name mapping, re-measured after merging `origin/main` |
 | FA-control-06 | S2 | `Lint` (ruff, mypy, shellcheck, yamllint) and `Terraform Format` run on PRs but are not required | context list vs job names |
 | FA-control-07 | S2 | `required_signatures.enabled=false` while signed commits are policy (D-05 pattern; `jolarca-consent`'s commits are all `verified=true`) | protection document |
 | FA-control-09 | S2 | 7 open PRs, #40 (2026-10-05) and #79 (2026-10-17) are documentation-accuracy fixes unmerged 9-19 days, so `main` still carries the text they were opened to correct | `gh pr list` |

@@ -136,19 +136,27 @@ controls:
   - id: "FA-control-05"
     description: "Every gate has a test that proves it detects its defect class"
     evidence: >-
-      12 of 15 scripts have a dedicated tests/test_<script> file. Three do not:
-      check_fleet_separation (.sh), hash_evidence (.sh), org_delivery_audit (.sh).
-      check_fleet_separation is cited by one test file; hash_evidence is cited by
-      zero; org_delivery_audit by one.
+      Measured after merging origin/main on 2026-10-26: 16 scripts, 13 with a dedicated
+      tests/test_<script> file. Three without one: check_fleet_separation (.sh),
+      org_delivery_audit (.sh), and check_secret_inventory (.sh) — the last landed from
+      PR #86 while this audit was running, which is the finding recurring rather than a
+      one-off: nothing in CI asks whether a new gate has a negative control. At first
+      measurement the uncovered three were check_fleet_separation, hash_evidence and
+      org_delivery_audit; hash_evidence is now covered by the 19-case fixture added in
+      this PR.
     enforcement: "partial"
     status: "pending-adoption"
     finding: "FA-control-05"
     severity: "S2"
     note: >-
-      hash_evidence is now covered by tests/test_hash_evidence.sh (16 cases), wired
+      hash_evidence is now covered by tests/test_hash_evidence.sh (19 cases), wired
       into `make test` and into the Regression Tests job. Remaining without a
-      dedicated fixture: check_fleet_separation.sh and org_delivery_audit.sh — and
-      AGENTS.md §2 already concedes the second is not in any workflow at all.
+      dedicated fixture: check_fleet_separation.sh, org_delivery_audit.sh and
+      check_secret_inventory.sh — and AGENTS.md §2 already concedes the second is not
+      in any workflow at all. The durable fix is not three more files: it is a gate
+      that fails a PR adding scripts/<name> without a matching tests/test_<name>, which
+      does not exist today (FA-cross-02's same shape: existence checked, producibility
+      not).
       The two that matter most were ADR-0004 separation and evidence integrity;
       FA-control-01/FA-control-10 are precisely the defect class a fixture catches
       and a read does not.
