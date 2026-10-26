@@ -363,6 +363,82 @@ Not claimed: that the credential risk is closed, that any other repository is co
 gate reads this repo's `Makefile` and workflows only), or that this is Type II evidence. What lands
 is one S1 control operating on the merge path, and a rule that makes the class expensive to repeat.
 
+## Controls that came out of verifying the first one (D-81, D-82, D-83)
+
+The instruction was "housekeeping: re-run/sync the Dependabot PRs, then resume the audit". Both
+halves turned into findings, which is what measuring instead of assuming tends to do here.
+
+**D-81 — a dependency bump can be a deploy decision.** `apply.yml`'s `push.paths` include
+`.github/workflows/apply.yml` itself, and §5 forces actions to be pinned by SHA, so the pins live in
+the files the trigger watches. `gh pr diff 87 --name-only` and `gh pr diff 68 --name-only` both list
+it. Merging either would emit a `main` commit that arms `terraform apply -input=false -auto-approve`
+with nobody having read a plan — the fleet's own D-58 exception says the 30-minute wait is delay,
+not approval. `scripts/check_apply_path_trigger.py` now runs inside the required
+`Validate Repo Allow-List` job for `pull_request` events, **reads** the trigger set from `apply.yml`
+(so it cannot drift the way the required-context baseline did, D-62), refuses **bot/app** authors and
+passes **human** authors with a `NOTICE`. The asymmetry is the point: refusing human Terraform work
+would manufacture the A-01/FA-control-03 deadlock, while a bot's bump stays mergeable — by a person,
+same diff, deliberate. Verified against live inputs before wiring: #87 and #68 → exit 1, this repo's
+own docs PR #93 → exit 0. Two bugs were caught first, one by fixtures and one only by the live run:
+`path.lstrip("./")` is a character-set strip and had made `.github/workflows/apply.yml` unmatchable
+(the gate reported "no apply armed" on precisely the PRs to refuse), and
+`gh pr view --json author --jq .author.type` returns an empty string, so the actor kind must come
+from `github.event.pull_request.user.type`.
+
+**D-82 — "operator-only" was re-probed, and the probe moved D-77.** The pending action said the
+`TFC_TOKEN` expiry can only be read in the HCP UI. Testing that claim rather than inheriting it:
+the operator's own CLI credential in `~/.terraformrc` (never printed) returns **HTTP 200** on
+`/api/v2/organizations` → `['jolarca-dev']`, on `/api/v2/account/details` → user `journey4oflife`,
+on the workspace, and on `…/runs`. Every token-expiry route tried (`organization-tokens`,
+`organization-token`, `teams/owners/team-tokens`, `state-versions`) answers **HTML 404** — a route
+that resolves nothing, which per §3 is "could not verify", not "does not exist". So the date really
+is UI-only and `unknown` stays (padding it would convert a visible red into a silent false clean —
+the D-80 class). But the 200s are the positive control D-77 said was missing: the API host, the org
+name, the workspace slug and the auth-header shape are all proven correct from this host, leaving
+the CI credential as the only unproven input. And `…/runs` shows **three runs in the org's whole
+history, all `Triggered via CLI`** — the GitHub Actions path has never produced an HCP run, so
+`resource-count: 48` is what the last CLI run left, and D-77 blocks every route through the remote
+backend, not just the PR-time plan.
+
+**The blocking claim is now observed, not inferred.** Throwaway PR #94 added
+`scripts/probe_untested.sh` with no fixture and no invoker, deliberately unmerged:
+`Validate Repo Allow-List` failed with `RESULT: 2 parity finding(s): R1=1, R3=1`, `Regression Tests`
+failed independently on `test_real_repository_has_parity`, and the PR read
+`mergeable=MERGEABLE` / **`mergeStateStatus=BLOCKED`**. That retires the register's longest-standing
+`not_run` item, which had leaned on a 2026-10-12 `GH006` push rejection — evidence about the push
+path, not about required checks.
+
+**The third D-81 defect was in the gate's own wiring, and only a fixture could have caught it in
+time.** The new step fetches the PR's file list with `gh api repos/…/pulls/<n>/files`. GitHub's rule
+is that a `permissions:` block sets every scope it does not name to `none`, and a job's block is
+applied after the workflow's — so the `validate` job, which declares only `contents` and `actions`,
+could not reach the pulls API even though the workflow declares `pull-requests: read`. The call
+would 403 under `bash -e`, the step would fail, and because that job's name **is** one of the four
+required contexts, every PR in the repository would have become unmergeable — the deadlock shape
+this gate was explicitly written to avoid. Found offline by asserting the scope against the
+workflow YAML; the assertion was then proved by deleting the line (`assert None == 'read'`), and the
+file restored to byte-identical (`diff` exit 0). Same job, same class, already in git history: #41
+had to add `actions: read` for the environments API.
+
+**D-83 — three gate surfaces, none of them compared to another.** Reviewing D-81 meant running the
+CI `Lint` job's commands, and `ruff format --check scripts/ tests/` wanted to reformat 13 hunks in
+the new fixture while `make lint` had exited 0 on the same tree. `lint`'s own Makefile description
+says "Everything CI runs before a plan"; `py-fmt-check` is in `lint` now — a gate strengthened, not
+weakened (§5).
+
+This row began as an S2 claiming the formatter was unenforced locally, and **that premise was wrong**.
+Two commands refute it: `.pre-commit-config.yaml` declares `id: ruff-format`, the hook is installed
+(`.git/hooks/pre-commit`, 2026-09-26), `pre-commit run --all-files` passes all twelve hooks, and the
+very commit attempt that prompted the check was *refused* by `end-of-file-fixer` — direct evidence the
+mechanism fires here. Severity revised to **S3** on the measured premise, keeping the row rather than
+deleting it. What survives is the narrower and still real observation: this repository has three
+overlapping gate surfaces — `make lint`, the hooks, the CI jobs — and nothing asks whether a command
+in one appears in the others. AGENTS.md §2 instructs an agent to run `make lint`, and a session can
+live inside it without ever invoking the hooks (this one did, dozens of times); hooks see staged files
+only; a fresh CI clone has no hooks at all. Recorded as FA-control-13 (`status: gap`) rather than
+closed by assertion, because writing that comparison rule is itself a gate change needing its own
+negative control.
+
 ## Method notes
 
 1. Three of my own probes were wrong and are recorded as wrong: a `sed`-based script↔test comparison
@@ -394,7 +470,10 @@ is one S1 control operating on the merge path, and a rule that makes the class e
    make CI pass — also §5. So the sweep directory stays untracked for now, and the registry no
    longer attests it (FA-control-10's root fix: register only what git tracks).
 7. **How `index.md`'s totals are derived** (so a reader reproduces them rather than trusting the
-   prose). The severity cells are parsed from the registers, never hand-added:
+   prose). The severity cells are parsed from the registers, never hand-added. Current parse after
+   D-81/D-82/D-83: `jolarca-control.yml` **13** controls (6 S1 / 6 S2 / 1 S3) → index totals **36
+   findings (1 S0 / 16 S1 incl. the latent one / 17 S2 / 2 S3)**. Re-run the block below; if it
+   disagrees with the table, the table is wrong.
 
    ```bash
    .venv/bin/python - <<'PY'
@@ -406,8 +485,9 @@ is one S1 control operating on the merge path, and a rule that makes the class e
    PY
    ```
 
-   Measured 2026-10-26: `dot-github.yml` 13 (`S1` 5 / `S2` 7 / `S3` 1), `jolarca-consent.yml` 10
-   (`S0` 1 / `S1` 4 / `S1 (latent)` 1 / `S2` 4), `jolarca-control.yml` 11 (`S1` 6 / `S2` 5) →
+   Measured earlier the same day, before FA-control-12/13 were added: `dot-github.yml` 13 (`S1` 5 /
+   `S2` 7 / `S3` 1), `jolarca-consent.yml` 10 (`S0` 1 / `S1` 4 / `S1 (latent)` 1 / `S2` 4),
+   `jolarca-control.yml` 11 (`S1` 6 / `S2` 5) →
    **34 findings: 1 S0, 16 S1 (counting the latent one as S1, as the index prose does), 16 S2,
    1 S3**. Two caveats the parse hides: the literal label `S1 (latent)` is a separate key, so a
    naive `Counter` will not merge it into `S1`; and a register counts *controls*, so a control

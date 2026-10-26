@@ -4,7 +4,8 @@
 
 .PHONY: help setup validate compliance context-parity context-baseline backup drift fleet-audit org-audit readiness \
         first-commit evidence-check evidence-register findings-check gate-parity secrets-inventory \
-        init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
+        apply-path-trigger \
+        init fmt fmt-check lint tf-validate py-lint py-fmt-check py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean
 
 .DEFAULT_GOAL := help
@@ -30,7 +31,7 @@ validate: ## Validate all repo YAML definitions against policy
 compliance: ## Run the full compliance report (JSON)
 	python3 scripts/compliance_check.py
 
-lint: fmt-check tf-validate validate context-baseline gate-parity py-lint py-type sh-lint yaml-lint test ## Everything CI runs before a plan
+lint: fmt-check tf-validate validate context-baseline gate-parity py-lint py-fmt-check py-type sh-lint yaml-lint test ## Everything CI runs before a plan
 
 fmt: ## Format Terraform files in place
 	terraform fmt -recursive
@@ -48,6 +49,17 @@ tf-validate: ## terraform init (no backend) + validate
 # nothing anywhere ran them (D-27).
 py-lint: ## ruff check over scripts/ and tests/ (rules pinned in pyproject.toml)
 	ruff check scripts/ tests/
+
+# D-83: `fmt-check` above is TERRAFORM fmt; `lint` ran no ruff formatter check, while the CI Lint
+# job does run `ruff format --check`. Measured 2026-10-26: `lint` exited 0 (313 passed) on a branch
+# whose new fixture file that check wanted to reformat in 13 places. This is NOT an unenforced
+# formatter — `.pre-commit-config.yaml` carries `ruff-format`, the hook is installed, and
+# `pre-commit run --all-files` passes all twelve — so the gap is that the surface AGENTS.md §2 tells
+# people to run (`make lint`) does not match CI's list, and a session can sit inside `lint` without
+# ever invoking the hooks. `lint` now covers it; the three surfaces (lint / hooks / CI) are still
+# compared by nothing.
+py-fmt-check: ## ruff format --check over scripts/ and tests/ (the check the CI Lint job runs)
+	ruff format --check scripts/ tests/
 
 py-type: ## mypy --strict over scripts/ (config in pyproject.toml)
 	mypy
@@ -106,6 +118,17 @@ gate-parity: ## Every gate must have a fixture, and every fixture must actually 
 # Promote it to a required context only once the row carries a real date.
 secrets-inventory: ## Fail if a dated credential is expired, imminent, or has an unknown expiry
 	bash scripts/check_secret_inventory.sh
+
+# Would this branch's diff arm a production apply, and who authored it? (D-81)
+# apply.yml triggers on `push: main` for repos/**, policy/**, *.tf, *.tfvars and itself, then
+# applies with -auto-approve; a pinned-action bump inside apply.yml therefore is a deploy change,
+# not a dependency chore. Run it on a feature branch: on main the diff against origin/main is
+# empty, and the script reports 2 (could not verify) rather than calling an unread diff clean.
+# Deliberately NOT a `lint` prerequisite: it needs a branch-relative diff that a detached CI
+# checkout may not have, and a red from checkout shape would be an artefact, not a finding.
+#   0 no trigger match, or a human changed one (announced) · 1 a bot would arm it · 2 unverifiable
+apply-path-trigger: ## Report whether this branch would start a production apply, and by whom
+	python3 scripts/check_apply_path_trigger.py --changed "$$(git diff --name-only origin/main...HEAD)"
 
 # Pre-first-commit readiness gate. Registry-driven (repos/*.yml), read-only, and
 # the only tool that inspects the LOCAL working copy — the gap that let D-28

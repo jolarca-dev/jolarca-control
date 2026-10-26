@@ -210,6 +210,41 @@ fleet public, environment protection rules are available — but do **not** rely
 on a gate whose enforceability you have not confirmed in the UI. Verify before
 each rotation and update the deviation record with what you find.
 
+## What the HCP API can and cannot tell you (measured 2026-10-26, D-82)
+
+The 2026-10-19 conclusion above stands: **no differential below HTTP 200 carries evidence**,
+because HCP collapses an invalid token and an under-scoped token into the same `unauthorized`
+surface. What was missing then was a positive control. It exists, and it is not exotic — the
+operator's own CLI credential on this host works:
+
+```bash
+# Nothing here prints a secret; the token is read from ~/.terraformrc into a variable only.
+T=$(awk '/credentials/{f=1} f&&/token/{gsub(/[",]/,"",$NF); print $NF; exit}' ~/.terraformrc)
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $T" \
+  https://app.terraform.io/api/v2/organizations          # -> 200, ['jolarca-dev']
+curl -s -H "Authorization: Bearer $T" \
+  https://app.terraform.io/api/v2/account/details | head -c 200   # -> the caller's username
+unset T
+```
+
+Read outcomes, all against `jolarca-dev`:
+
+| Endpoint | HTTP | What it proves | What it does NOT prove |
+|---|---|---|---|
+| `/organizations` | **200** | the API, the org name and the auth shape are correct from this host | anything about the **CI** secret, which is a different credential |
+| `/account/details` | **200** | the CLI credential is a **user** token (`journey4oflife`) | the identity or kind of `TFC_TOKEN` |
+| `/organizations/jolarca-dev/workspaces/jolarca-control` | **200** | workspace exists; `execution-mode: local`; `resource-count: 48`; `locked: false`; caller has `can-update` but **not** `can-queue-run`/`can-queue-apply` | that a CI run could ever be queued by that token |
+| `…/runs` | **200** | **three runs total since the org was created (2026-10-10), all `Triggered via CLI`** — no Actions-originated run has ever existed | that the apply path is broken *because* of the token alone |
+| `…/organization-tokens`, `…/organization-token`, `…/teams/owners/team-tokens`, `…/state-versions` | **HTML 404** | the route did not resolve | that no organization token exists — a 404 on a *route* is not a statement about a *resource* (§3) |
+
+**The expiry question is still operator-only, and now for a measured reason.** No endpoint
+reachable here returns the expiry of a token stored as an Actions secret, and the secret's value
+cannot be read to identify its kind. Read it in the HCP UI record of the token that was minted for
+`TFC_TOKEN`, then replace `unknown` in `../security/key-custody.md` — `make secrets-inventory` and
+the advisory `Deploy Gates` job go green by themselves. Do not pad the date: `check_secret_inventory.sh`
+fails on `unknown` on purpose, and a fabricated date turns a visible red into a silent false clean
+(the D-80 defect class).
+
 ## Log (append-only)
 
 | Date | Operator | Reason | Read token split from write | Old token revoked | Verified |

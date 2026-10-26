@@ -30,7 +30,7 @@ Setup and gates (all offline unless marked live):
 | Command | Purpose |
 |---|---|
 | `make setup` | Create `.venv`, install pinned deps |
-| `make lint` | fmt-check, tf-validate, validate, ruff, mypy, shellcheck, yamllint, tests. **Not** all of CI — see below |
+| `make lint` | fmt-check, tf-validate, validate, context-baseline, gate-parity, ruff check **and** `ruff format --check`, mypy, shellcheck, yamllint, tests. **Not** all of CI — see below |
 | `make test` | Plan-safety fixtures + `pytest` |
 | `make validate` | Validate `repos/*.yml` against policy |
 | `make context-parity` | Declared contexts must be checks each fleet repo can report (live, `gh`) |
@@ -41,17 +41,32 @@ Setup and gates (all offline unless marked live):
 | `make evidence-check` | Verify evidence hashes against the **committed** registry |
 | `make evidence-register` | Regenerate `docs/evidence-registry.csv`, then commit the diff in a PR |
 | `make gate-parity` | Every gate must have a fixture that can fail, and every fixture must run on the merge path (D-80; offline) |
+| `make apply-path-trigger` | Would this branch's diff arm a production apply, and is the author a bot? (D-81; reads `apply.yml`'s own `on.push.paths`) |
 | `make drift` / `make fleet-audit` / `make org-audit` | Live, read-only (need `gh` / token) |
 
 Run Python through the venv: `.venv/bin/python -m pytest tests/ -q`. The system
 `python3 -m pytest` can exit 1 with no output, which reads as a mystery failure.
 
 **`make lint` is not the whole CI surface.** `compliance-scan.yml` additionally
-runs `scripts/compliance_check.py` (`make compliance`) and
-`scripts/repo_readiness_audit.py --no-live`, and neither is in `lint`. Run both
-before pushing, or CI will surface failures the local gates never checked.
+runs `scripts/compliance_check.py` (`make compliance`; also `apply.yml:160`), and that
+one is not in `lint`. Run it before pushing, or CI will surface failures the local
+gates never checked. The same sentence used to claim `repo_readiness_audit.py --no-live`
+runs in CI too — it does not: measured 2026-10-26, `grep -rn readiness .github/workflows/`
+matches only comment lines, and the audit is invoked solely by `make readiness`.
 As of 2026-10-06 both required contexts pass on `main` (verified on PRs #42/#43);
 §8 records the current control status.
+
+The inverse gap existed too and is now closed (D-83, measured 2026-10-26): `lint`
+claimed to cover the CI pre-plan surface while running no ruff formatter check, which
+the `Lint` job does run — a branch passed `make lint` at exit 0 with a file that
+`ruff format --check` wanted to reformat in 13 places. `py-fmt-check` is in `lint` now.
+Say `lint` rather than "the local gates", because this repository has **three** overlapping
+surfaces and compares none of them: `make lint`, the installed pre-commit hooks
+(`.pre-commit-config.yaml` carries `ruff`, `ruff-format`, mypy, yamllint and terraform fmt,
+and `pre-commit run --all-files` passes all twelve), and the CI jobs. A commit is checked by
+the hooks; a session that only runs `make lint` never invokes them, and a fresh CI clone has
+no hooks at all. Whether every command in one list appears in the other two is enforced by
+nothing (FA-control-13, `status: gap`) — `check_gate_parity.py` asks the opposite question.
 
 `make apply` is **REFUSED by design** (exit 1) and `make plan` prompts before an
 offline `-refresh=false` plan. Do not "fix" either. Both read
@@ -224,7 +239,24 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
   apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
   `*.tfvars` and itself, then runs `terraform apply -input=false -auto-approve
-  tfplan`. The brakes are the execution-mode gate, `prevent_destroy`, and
+  tfplan`. Because actions are SHA-pinned (§5), the pins live *inside* those trigger
+  files, so **a dependency bump can arm the apply**: measured 2026-10-26, Dependabot PRs
+  #87 (setup-python) and #68 (upload-artifact) both list `.github/workflows/apply.yml` in
+  `gh pr diff --name-only`. Since D-81 there is a brake one layer earlier —
+  `scripts/check_apply_path_trigger.py` runs inside the required
+  `Validate Repo Allow-List` job and refuses a **bot-authored** PR touching those paths,
+  while a human PR passes with a `NOTICE` (refusing Terraform work would manufacture an
+  unsatisfiable check instead). Consequence to expect: a Dependabot bump that edits
+  `apply.yml` now turns a required context red and becomes unmergeable until a person
+  re-authors the same diff — that is the refusal working, so do not "fix" it by adding a
+  Dependabot `ignore` entry or by widening the gate (§5). #87 and #68 are left open
+  unmerged for exactly this reason; treat them as deploy decisions, not housekeeping.
+  The gate itself reads the PR file list through `gh api …/pulls/<n>/files`, so the job
+  must declare `pull-requests: read` at **job** level — a workflow-level scope is not
+  inherited by a job that has its own `permissions:` block, and without it the required
+  context 403s and fails on every PR (caught before push by
+  `tests/test_check_apply_path_trigger.py`). The brakes inside the run are unchanged: the execution-mode
+  gate, `prevent_destroy`, and
   `check_plan_safety.sh`, which since 2026-10-15 refuses destroy, replace,
   visibility, **branch-protection creates and attribute changes (either
   direction)**, and security-feature **disables** (D-61) — so the older note
@@ -237,7 +269,10 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   was **skipped** — so no apply happened. Read that as the current state of a
   broken CI credential (D-56), not as a control; after the init fix in D-64 the
   plan gets further before dying, and once the token is repaired the refusal gate
-  is what has to stop it.
+  is what has to stop it. Measured 2026-10-26 against HCP directly (D-82): the
+  workspace has **three runs, all `Triggered via CLI`**, and none originated from
+  GitHub Actions — the CI apply path has never reached the backend at all, so the
+  48-resource state is what the last human CLI run left.
 - **The production apply now has a 30-minute wait, and it is not an approval.**
   Measured 2026-10-16 after `gh api -X PUT
   repos/jolarca-dev/jolarca-control/environments/production -F wait_timer=30

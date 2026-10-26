@@ -206,6 +206,14 @@ controls:
       can_admins_bypass=false.
       apply.yml run history, last 8 (2026-10-15..2026-10-17): 4 failure, 4
       cancelled — no success in that window.
+      D-82 read, 2026-10-26, from the HCP side with the operator's own CLI credential (never
+      printed): `GET /api/v2/organizations` -> 200 listing jolarca-dev; the workspace exists
+      (ws-w6NSnTXXmYgh78Su, execution-mode local, terraform 1.16.5, resource-count 48, locked
+      false); `…/runs` -> 200 with THREE runs total since org creation 2026-10-10, every one
+      `source: terraform+cloud` / `Triggered via CLI`. So the GitHub-side apply failures were
+      never reaching HCP at all: no Actions-originated run has ever existed, and the 48-resource
+      state is what the last CLI run left. The caller also lacks can-queue-run/can-queue-apply,
+      which bounds what even this credential could do if it were used from CI.
     enforcement: "apply.yml + check_plan_safety.sh + prevent_destroy + wait_timer"
     status: "pending-adoption"
     finding: "FA-control-08"
@@ -307,10 +315,92 @@ controls:
       because promoting an intentionally-red check to a required context would wedge every PR
       (A-01's deadlock shape). Its fixture tests/test_check_secret_inventory.sh (19 cases) does
       run on the merge path, so the script's behaviour is protected even while its verdict is
-      advisory. Observed while measuring and not acted on: check_findings_register.py parses
-      `D-\\d+`, so the sub-lettered heading D-22a (docs/drift-findings.md:235) is invisible to
-      both the heading parse and the citation scan — symmetric, harmless today, a trap for the next
-      sub-lettered id.
+      advisory. Observed while measuring and not acted on: check_findings_register.py's HEADING_RE is
+      `^###\s+(D-\d+)\s+·\s+(.+?)\s*$`, so a sub-lettered id is invisible to both the heading parse
+      and the citation scan. Measured 2026-10-26 against the parser itself: 83 lines in
+      docs/drift-findings.md match `^###\s+D-[0-9A-Za-z]+` and `parse_headings()` returns 82 — the one
+      it drops is exactly `D-22a · apply.yml post-apply verification could not fail` at :235, and
+      `D-22a` is cited as prose at :456 and :482. Harmless today, a trap the first time two rows want
+      the same number.
+      CORRECTION OF A CORRECTION, kept because the mistake is the lesson: earlier today this note was
+      rewritten to say no sub-lettered heading exists. That claim came from a `grep` whose output
+      arrived EMPTY through an unreliable capture channel, and an empty result was read as an
+      absence — the exact failure AGENTS.md §1 and §7 exist to prevent, committed by this audit. The
+      heading is present. Measuring means calling the parser and comparing counts, not trusting that a
+      command printed nothing.
+
+  - id: "FA-control-12"
+    description: "Change management must distinguish a considered change from an unattended one"
+    evidence: >-
+      apply.yml triggers on push:main for repos/**, policy/**, *.tf, *.tfvars and itself, then runs
+      `terraform apply -input=false -auto-approve tfplan`. Because AGENTS.md §5 requires actions to
+      be pinned to a full SHA, the pins live inside the workflow files, so dependency automation
+      writes into the apply trigger by construction. Measured on the two open Dependabot PRs:
+      `gh pr diff 87 --name-only` (setup-python 7.0.0->7.1.0) and `gh pr diff 68 --name-only`
+      (upload-artifact 7.0.1->7.0.2) both include `.github/workflows/apply.yml`. Before this change
+      nothing said that merging a version bump is a deploy decision — not in the PR body, not in a
+      check, not in policy/compliance-gates.yml, whose D-58 exception already concedes that no
+      person signs the apply and that the 30-minute wait is delay plus a cancel window.
+    enforcement: "scripts/check_apply_path_trigger.py as a step inside required context Validate Repo Allow-List (pull_request events)"
+    status: "implemented-pending-merge"
+    finding: "FA-control-12"
+    severity: "S2"
+    frameworks: ["SOC 2 CC8.1", "ISO/IEC 27001 A.8.32", "PCI-DSS Req 12.10.1"]
+    note: >-
+      Asymmetric by design and stated in the script: a bot/app PR touching an apply-path file exits
+      1 (refused pre-merge, where a human can author the same diff deliberately), a human PR exits
+      0 with a NOTICE (refusing Terraform work would manufacture the A-01/FA-control-03 deadlock).
+      This is therefore not the dependency-bump deadlock class — the bump stays mergeable, by a
+      person. Trigger patterns are READ from apply.yml's own on.push.paths (T1) so the gate cannot
+      drift from the workflow the way the required-context baseline did (D-62); T5 refuses a trigger
+      set the script cannot model (`!` exclusions, `paths-ignore`) instead of approximating it. The
+      fixture count is 21 collected, counted by `pytest --collect-only`.
+      Three defects were caught before this shipped, which is the point of writing the fixtures
+      first: (a) `lstrip("./")` silently unmatchable `.github/...` (found by running the gate against
+      live `gh pr diff` output, where it reported clean on exactly the PRs to refuse); (b) `gh pr view
+      --json author --jq .author.type` returning an empty string, which would have handed the gate an
+      unknown actor kind; (c) the step could not run at all — it calls `gh api …/pulls/<n>/files`
+      inside a job whose own `permissions:` block sets every unspecified scope to `none`, so the
+      workflow-level `pull-requests: read` never reached it, and the 403 would have reddened the
+      REQUIRED context on every PR in the repository. (c) is pinned by a fixture that reads the
+      workflow YAML, proved by deleting the line (`assert None == 'read'`) and restored.
+      Related but separate: merging these two bumps is NOT
+      done here — it is the operator's call, and D-77/D-82 mean an apply attempt currently dies at
+      HCP init anyway, so no apply has ever happened from CI (three runs total since org creation,
+      all CLI-triggered).
+
+  - id: "FA-control-13"
+    description: "The three gate surfaces (`make lint`, the pre-commit hooks, the CI jobs) must be compared, not assumed equal"
+    evidence: >-
+      Measured 2026-10-26 while landing FA-control-12: `make lint` exited 0 (313 passed) on a branch
+      where `ruff format --check scripts/ tests/` — a step the CI `Lint` job runs and `lint` did not —
+      reported "1 file would be reformatted, 24 files already formatted" (13 hunks in the new fixture
+      file). The Makefile row for `lint` reads "Everything CI runs before a plan".
+      This row was first written as the absence "nothing local enforces the formatter" at S2, and that
+      premise was refuted by two commands: `.pre-commit-config.yaml` declares `id: ruff-format`, the
+      hook is installed (`.git/hooks/pre-commit`, 2026-09-26), `pre-commit run --all-files` passes all
+      twelve hooks, and the commit attempt that prompted the check was itself refused by
+      `end-of-file-fixer`. What is actually true is narrower: three overlapping surfaces (lint,
+      hooks, CI) exist and none of them is compared to another, so a command present in one list and
+      absent from a second is invisible to anyone who runs only the list they were told to run — and
+      AGENTS.md §2 tells an agent to run `make lint`, which this session did dozens of times without
+      invoking the hooks once. Hooks see staged files only; a fresh CI clone has no hooks at all.
+    enforcement: "py-fmt-check now runs inside `make lint`; nothing compares the three lists"
+    status: "gap"
+    finding: "FA-control-13"
+    severity: "S3"
+    frameworks: ["SOC 2 CC4.1", "ISO/IEC 27001 A.8.32"]
+    note: >-
+      Graded S3 rather than the S2 first drafted, on the measured premise: the formatter has a live
+      local enforcer and the `Lint` job is not a required context, so no merge was ever at risk and no
+      control was inert. The fix that landed is the specific gap (D-83: `py-fmt-check` added to `lint`,
+      a gate strengthened, never weakened — §5). The general class stays open:
+      check_gate_parity.py R2 asks whether a fixture that exists is invoked in CI, never whether every
+      command in CI, `lint` and the hooks appears in the other two. Writing that rule is itself a gate
+      change and needs its own negative control, so it is recorded here as a gap rather than closed by
+      assertion. Second-order value of this row: it is the audit catching its own overstatement, which
+      is the same discipline that caught D-81's inert `lstrip` — asserted absences are the cheapest
+      claims to test and the most expensive to leave untested.
 
 strengths:
   - "5 policy gates run INSIDE the required Validate Repo Allow-List job: validate_repos.py, check_required_context_baseline.py, check_declared_contexts.py, check_deploy_gates.py, check_findings_register.py — enforcement is real for those, not advisory"
@@ -322,8 +412,9 @@ strengths:
   - "vulnerability_alerts enabled; forks=0 (bounded exposure of the governance record)"
   - "ORG-LEVEL FACTS NOW MEASURED, previously recorded as unverifiable: orgs/jolarca-dev two_factor_requirement_enabled=true (the older two_factor_auth_enabled field is null on Free — the readable field exists), members_can_create_repositories=false (closes D-19's prevention gap), default_repository_permission=none"
   - "every third-party action in the workflows inspected is SHA-pinned with a version comment"
-  - "regression surface measured 2026-10-26: 295 pytest tests, plus five shell fixtures whose own counters read 25 (plan-safety) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before this PR workspace-mode ran only from the Makefile."
+  - "regression surface measured 2026-10-26 on the D-81 branch: 316 pytest tests (`make lint`'s own line; 295 earlier the same day, before the gate-parity and apply-path fixtures landed), plus five shell fixtures whose own counters read 25 (plan-safety) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before PR #91 workspace-mode ran only from the Makefile."
   - "the audit's own error was caught by the audited gate: check_findings_register.py reported a dangling citation introduced by this very record, because the finding id it used exists only on unmerged PR #79 — main's register runs D-71 then D-73. Citation re-pointed at the PR number, and the defect kept in the record rather than quietly reworded"
+  - "writing the negative control first is what found the defect in the control's own wiring: the D-81 gate calls `gh api …/pulls/<n>/files` from a job whose `permissions:` block sets unspecified scopes to `none`. Rehearsing the fixture against the real workflow YAML (and proving it by deleting the scope line) turned a would-be fleet-wide merge deadlock into a one-line change, before the push"
 
 not_run:
   - item: "confirm the scope of the fine-grained PAT behind TF_GITHUB_TOKEN"
@@ -335,13 +426,22 @@ not_run:
     would_prove: "whether the CI apply path is over-privileged relative to its job"
   - item: "run a real plan through apply.yml end-to-end to observe check_plan_safety.sh refusing"
     reason: "requires triggering a production apply; explicitly not authorized"
-  - item: "attempt a merge with a red required context to prove blocking"
-    reason: "would need a deliberately failing PR; the 2026-10-12 GH006 push rejection is the standing evidence instead"
   - item: "verify whether hash_evidence's deletion gap can be triggered by a PR that rm's an evidence file"
     reason: "would require creating and merging such a PR; the /tmp experiment already establishes the script behaviour"
 
 verdict: "NO-GO — as an assurance claim; CONDITIONALLY OPERATIONAL as a control plane"
 blocking_findings: []
+required_check_blocking_observed: >-
+  CLOSED 2026-10-26 (this item was listed under not_run for five sessions). Throwaway PR #94 added
+  scripts/probe_untested.sh with no fixture and no invoker, deliberately unmerged. Observed on that
+  head SHA: `Validate Repo Allow-List` (a required context) FAILED with `RESULT: 2 parity finding(s):
+  R1=1, R3=1`; `Regression Tests` failed independently on `test_real_repository_has_parity` with the
+  same two findings; PR state `mergeable=MERGEABLE` but `mergeStateStatus=BLOCKED`, and the
+  annotation was `Process completed with exit code 1`. The PR was then closed with the evidence
+  recorded in a comment and the remote branch deleted (`git ls-remote --heads` -> 0 rows). No
+  `Terraform Apply` run was created (latest remains 2026-10-17T19:07:46Z), confirming scripts/**
+  is outside apply.yml's push paths. This replaces the indirect inference from the 2026-10-12 GH006
+  push rejection with a direct observation of the required-check layer.
 s1_findings: ["FA-control-01", "FA-control-02", "FA-control-03", "FA-control-08", "FA-control-10", "FA-control-11"]
 s1_fixed_landed:
   ids: ["FA-control-01", "FA-control-02", "FA-control-10"]

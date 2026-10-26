@@ -39,9 +39,12 @@ permissions:
   contents: read
   # A-07: check_findings_register.py --cross-pr enumerates open PRs via
   # `gh api repos/{owner}/{repo}/pulls?state=open` to catch a finding-id collision against a
-  # sibling branch before either merges. Read-only; no write scope is granted. It is NOT
-  # used by the required step below -- see the reason there (an unrelated open branch would
-  # otherwise redden every merge); `make findings-check` runs the cross-PR form locally.
+  # sibling branch before either merges. Read-only; no write scope is granted. The --cross-pr
+  # form is NOT used by the required step below -- see the reason there (an unrelated open branch
+  # would otherwise redden every merge); `make findings-check` runs the cross-PR form locally.
+  # Note this workflow-level scope does NOT reach the `validate` job, which declares its own
+  # `permissions:` and therefore loses every scope not listed in it -- the D-81 step needs
+  # `pull-requests: read` spelled out at job level.
   pull-requests: read
 
 jobs:
@@ -53,9 +56,20 @@ jobs:
     # `environment:` protection rules through the environments API; contents stays read-only.
     # Measured in #41's own CI history: the script can only print the live exemption once the
     # token reaches the environment object.
+    #
+    # `pull-requests: read` is NOT inherited here even though the workflow declares it above:
+    # job-level `permissions` replaces the workflow-level set rather than merging into it, and
+    # "If you specify the access for any of these permissions, all of those that are not
+    # specified are set to `none`" (workflow-syntax, `permissions` and `jobs.<job_id>.permissions`).
+    # The D-81 step below reads the PR's changed files through the REST API, so without this line
+    # the call 403s, the step fails, and a REQUIRED context goes red on every PR in the repo —
+    # the same class #41 hit with the environments API, caught here by a fixture
+    # (test_permission_scope_for_the_d81_step_is_declared_at_job_level) instead of by CI going red.
+    # Read-only; grants no write scope anywhere.
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -140,6 +154,37 @@ jobs:
       # tests/test_check_gate_parity.py in the same commit.
       - name: Gate parity — every gate has a control that can fail (D-80)
         run: python3 scripts/check_gate_parity.py
+      # D-81: apply.yml fires on `push: main` for repos/**, policy/**, *.tf, *.tfvars and
+      # ITSELF, then runs `terraform apply -input=false -auto-approve tfplan`. Measured on the two
+      # open Dependabot PRs: #87 (setup-python 7.0.0->7.1.0) and #68 (upload-artifact 7.0.1->7.0.2)
+      # both list `.github/workflows/apply.yml` in `gh pr diff --name-only`, because the pinned
+      # action lives in it. So a routine version bump, merged unattended, arms a production apply
+      # that no person read — D-58's exception is recorded precisely because nothing signs that
+      # decision, and the 30-minute wait is delay, not approval. A HUMAN making the same change is
+      # a considered act: the step notices and passes, because refusing Terraform work would be a
+      # new deadlock (A-01 / FA-control-03). A BOT is refused, pre-merge, where a person can still
+      # do it deliberately. Trade-off stated rather than hidden: the file list comes from the REST
+      # API, so an API outage reddens a required context — kept strict because the script exits 2 on
+      # a missing or empty diff instead of calling an unread diff clean (§3, D-23, same reasoning as
+      # the declared-contexts step above). `gh pr view --json author --jq .author.type` returns an
+      # empty string (the GraphQL author node has no `type`), so the actor kind comes from the event
+      # payload field below — verified before wiring. The `gh api` call needs `pull-requests: read`
+      # on THIS job, not on the workflow: job-level permissions replace the workflow set, so a
+      # scope the workflow declares is `none` here unless restated (see the permissions block).
+      # Consequence to expect once this lands: a Dependabot bump that edits apply.yml turns this
+      # required context red and the PR becomes unmergeable until a human re-authors it — that is
+      # the refusal working, not a broken bot. #87/#68 were left open unmerged for this reason.
+      - name: An unattended PR must not arm the production apply (D-81)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_ACTOR: ${{ github.event.pull_request.user.login }}
+          PR_ACTOR_TYPE: ${{ github.event.pull_request.user.type }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
+            --paginate --jq '.[].filename' > pr_files.txt
+          python3 scripts/check_apply_path_trigger.py --files-from pr_files.txt
 
   # ── Context 2: Policy Compliance Check ─────────────────────────────────────
   compliance:
