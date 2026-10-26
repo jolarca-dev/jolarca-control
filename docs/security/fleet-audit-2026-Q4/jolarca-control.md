@@ -157,11 +157,15 @@ long-standing notes about it are imprecise.
    it works is its 25 fixtures — which are advisory (FA-control-03). That is a thin chain for the one
    control standing between a merge and a fleet-wide mutation.
 
-**What should change.** (a) Require `Regression Tests` and `Evidence Integrity Check`. (b) Rehearse
+**What should change.** (a) ~~Require `Regression Tests` and `Evidence Integrity Check` as required
+contexts~~ — **this proposal was withdrawn on 2026-10-26 after measurement**; see "Reviewing my own
+proposal" below. (b) Rehearse
 the apply path on a synthetic plan that *must* be refused, in a controlled window, and retain the
 refusal log as evidence — the rehearsal is the thing that converts a hypothesis into a control.
 (c) Add a gate that fails when a workflow cites a secret that is not defined at repo, org **or**
-environment scope — the D-72 rule (no dead path pointers) extended to credential names.
+environment scope — the rule PR #79 proposes ("workflows may not cite paths that do not exist");
+note that its register id is not on `main` while #79 stays open, which is why this file cites the PR
+and not the finding id.
 
 **Rollback / blast radius.** Every item here is configuration in this repo: reverting the PR restores
 the prior state. Nothing above touches `*.tf` semantics or live GitHub resource state, so no
@@ -183,6 +187,63 @@ on the Free plan. Re-measured with the correct field names:
 Both were closed by looking for a sibling field rather than accepting the unreadable one — the
 `plan_limited`-vs-`missing` distinction `drift_detect.py` already draws for branch protection.
 
+## Reviewing my own proposal (the reason two of these fixes look different from the plan)
+
+The remediation plan this file first carried said: *require `Evidence Integrity Check` and
+`Regression Tests` as required contexts 5 and 6, both pass today, so no deadlock.* That was wrong,
+and the repository's own gate is what proved it.
+
+1. `evidence-integrity.yml` triggers on `pull_request` **with** a path filter — eight patterns
+   (`docs/adr/**`, `audit/**`, `policy/**`, `repos/**`, `docs/runbooks/**`, `docs/security/**`,
+   the registry CSV, `scripts/hash_evidence.sh`). A PR touching anything else never starts that job,
+   so the context never reports. With `strict = true`, every such PR sits forever on "Expected —
+   Waiting for status to be reported". **Requiring that job would have wedged the control plane.**
+2. `scripts/check_required_context_baseline.py:140-141` already encodes exactly this rule
+   (`continue  # path-filtered: cannot report on every PR, so cannot be required`), with a named
+   fixture `test_path_filtered_workflow_cannot_back_a_required_context`. So the change I proposed
+   would have been refused by CI on the PR that proposed it. Recorded here because the near-miss is
+   the lesson: **read the gate before proposing the wiring.**
+3. `Regression Tests` *is* producible on every PR (its workflow has no path filter), so it is not
+   unsafe — but making it required is a **live branch-protection mutation**, and every channel for
+   that is closed to an agent by design: AGENTS.md §5 forbids out-of-band `gh api -X PATCH`, the
+   rules are Terraform-owned, and `check_plan_safety.sh` refuses protection attribute changes in
+   either direction (D-61) until state-migration runbook step 6 closes. It is therefore left as an
+   operator decision (FA-control-03), not smuggled in.
+
+What was implemented instead achieves the same enforcement with no protection change: the evidence
+verdict runs as a step **inside** the already-required `Validate Repo Allow-List` job, which is this
+repo's established convention for exactly this problem (`check_deploy_gates.py`,
+`check_findings_register.py` and `check_declared_contexts.py` are all wired that way, and
+`compliance-scan.yml:45-49` documents a gate that once lived only in a path-filtered workflow and
+"could describe a merge-killing declaration and still let the PR merge").
+
+## What the reverse check found the moment it ran against CI-equivalent state
+
+Locally the fixed gate passes (72 scanned, 0 mismatches) — which is not the interesting result, because
+the working tree has files that **git does not have**. Cloning the branch to `/tmp`, overlaying the new
+script, and running `--check` there:
+
+```
+MISSING:      docs/security/pre-deployment-audit-2026-10-25/sweep6.sh
+… 24 more …
+Evidence check: 46 files scanned, 26 mismatches
+FAIL: 26 registered evidence file(s) no longer exist.
+CI_EXIT=1
+```
+
+**26 of the 72 registry rows attest hashes for files that were never committed.** Before the fix,
+CI saw 46 files, found nothing wrong, and reported OK — 26 attestations were vacuously true in the
+one environment that matters. That is FA-cross-04's "not attributable to a commit SHA" made
+concrete, and it is why the reverse check had to be written before it could be run: no amount of
+reading the local output would have shown it.
+
+The fix is to commit the evidence, not to relax the check. Before doing that the directory was
+scanned for publication risk, because this repository is **public**: `gitleaks dir` over 471 KB
+returned no leaks; no private-key or token-shaped material anywhere; the only addresses present are
+the role mailboxes the fleet already publishes in its SECURITY.md files plus the GitHub noreply
+identity, so committing quotes nothing that was not already public (D-59 context noted in the
+record). 44 files, 552 KB.
+
 ## Method notes
 
 1. Three of my own probes were wrong and are recorded as wrong: a `sed`-based script↔test comparison
@@ -197,3 +258,19 @@ Both were closed by looking for a sibling field rather than accepting the unread
 4. Strengths are listed first-class in the register, including the correct `prevent_destroy`
    placement — verified by reading the resource block boundaries (`:25`→`:77`→`:90`), not by grepping
    the keyword, because the nearest `for_each` above line 77 belongs to a *different* resource.
+5. **The audit's own citation was caught by the gate it audited.** `check_findings_register.py`
+   reported a dangling reference at this file's line 164 once the file was committed: the finding id
+   I cited is claimed by open PR #79 and has no row on `main` — main's register runs D-71, then
+   D-73. The same run also showed the
+   gate scans only `git ls-files` output (`:161`), so an uncommitted draft carries no citation check
+   at all — a local "OK" does not cover work in progress. Both are recorded (FA-cross-08), the
+   citation is re-pointed at the PR, and the fix that surfaced it is the reverse check in FA-control-01.
+6. **Why this file names no id for that finding.** The gate matches `\bD-\d{1,3}\b` in any tracked
+   file, so even prose explaining that an id is *absent* counts as a citation of it. That is
+   deliberate and correct — a reader cannot be trusted to tell the two apart — but it means the only
+   compliant wording is to cite the PR number. Retained raw evidence has the same constraint: the
+   `gh pr list` sweep quotes #79's own title, which contains the id, so that probe cannot be
+   committed until #79 merges. Editing a captured output to satisfy a gate would be falsifying
+   evidence (§5), and widening `NON_EVIDENCE_PREFIXES` to cover it would be weakening the gate to
+   make CI pass — also §5. So the sweep directory stays untracked for now, and the registry no
+   longer attests it (FA-control-10's root fix: register only what git tracks).
