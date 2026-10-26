@@ -383,6 +383,19 @@ fixes_landed_pr91:
     docs/security/key-custody.md — verify and record it"; mergeStateStatus on #91 read UNSTABLE
     before the merge, i.e. all required checks passed with one non-required check failing.
     Type I operating observation on the day it landed, not Type II effectiveness.
+  visibility_of_the_red: >-
+    Measured on main 20e4dc4: deploy-gates.yml is path-filtered (pull_request and push:main
+    fire only on .github/workflows/apply.yml, .github/workflows/deploy-gates.yml and
+    scripts/check_deploy_gates.py) plus a Wed 08:00 UTC schedule and workflow_dispatch. The
+    credential signal therefore appears on PRs/merges touching those three files, weekly, and
+    on dispatch — not on every PR (the docs-only #92 merge created no Deploy Gates run). Side
+    effect recorded, not discovered later: Dependabot PRs that bump an action inside those
+    files now show a red Deploy Gates — measured on PR #87 (setup-python 7.0.0→7.1.0, head
+    357fc84): Deploy Gates FAILURE with all four required contexts SUCCESS,
+    mergeable=MERGEABLE, mergeStateStatus=BEHIND, so it is noise, not a block. Corollary for
+    FA-control-03: promoting Deploy Gates to a required context while `expires = unknown`
+    stands would fail every such Dependabot PR — the dependency-bump deadlock shape the fleet
+    has already recorded. Precondition is a dated row in key-custody.md, not a weaker gate.
   still_open:
     - "TFC_TOKEN expiry date: operator reads it in the HCP UI and replaces `unknown` in docs/security/key-custody.md, which turns Deploy Gates green by itself"
     - "FA-control-03: Regression Tests / Lint / Deploy Gates are still not required contexts (operator branch-protection decision, D-61 refuses it from here)"

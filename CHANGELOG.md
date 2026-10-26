@@ -47,6 +47,13 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 - Wired into `deploy-gates.yml` as an **advisory** step ("Deploy Gates" is not a required
   context), because promoting an intentionally-red check to a required context would wedge every
   PR. It reads one markdown table and prints metadata only: offline, credential-free.
+- When that red is visible, stated rather than left to be discovered: `deploy-gates.yml` is
+  path-filtered (`apply.yml`, `deploy-gates.yml`, `scripts/check_deploy_gates.py`) plus a
+  Wednesday 08:00 UTC schedule and `workflow_dispatch`, so the signal runs on PRs/merges touching
+  those files and weekly — not on every PR. A Dependabot PR bumping an action inside them now shows
+  a red `Deploy Gates` (measured on #87: required contexts all green, `mergeStateStatus=BEHIND`,
+  so nothing blocks). Promoting the job to a required context before `TFC_TOKEN` carries a real
+  date would fail every such bump — the precondition is the dated row, not a weaker gate.
 
 ### Added — 2026-10-19 (D-79: data stores outside git are now registered)
 

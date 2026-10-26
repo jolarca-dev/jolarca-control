@@ -113,6 +113,23 @@ this directory should be read as certification.
 | Branch protection re-read | 4 required contexts, `strict=true`, `enforce_admins=true`, linear history, `required_approving_review_count=0`, rulesets `[]`, `.protected=true` | VERIFIED PASS — unchanged by this PR (as required: no protection attribute was edited) |
 | Declared vs live visibility | `repos/jolarca-control.yml` `public` = live `public`, `forks_count=0` | VERIFIED PASS |
 
+### How often that red is actually visible (measured on `main` = `20e4dc4`)
+
+`deploy-gates.yml` is path-filtered — `pull_request` and `push: main` fire only on
+`.github/workflows/apply.yml`, `.github/workflows/deploy-gates.yml` and
+`scripts/check_deploy_gates.py` — plus `schedule: cron "0 8 * * 3"` (Wed 08:00 UTC) and
+`workflow_dispatch`. So the credential-expiry signal runs on PRs and merges touching those three
+files, weekly, and on demand; **not on every PR** (the docs-only #92 merge created no
+`Deploy Gates` run). Two consequences recorded at the time rather than rediscovered later:
+
+1. Dependabot PRs that bump an action inside those files now show a red `Deploy Gates`. Measured
+   on PR #87 (`actions/setup-python` 7.0.0→7.1.0, head `357fc84`): `Deploy Gates` = `FAILURE` with
+   all four required contexts `SUCCESS`, `mergeable=MERGEABLE`, `mergeStateStatus=BEHIND` — noise,
+   not a block, and the reason the wording in `D-80` spells it out.
+2. Promoting `Deploy Gates` to a required context while `expires = unknown` stands would fail every
+   such Dependabot PR (the dependency-bump deadlock shape the fleet has recorded before). The
+   precondition for promotion is a dated row in `docs/security/key-custody.md`, not a weaker gate.
+
 ## Standing rule for this directory
 
 Edit any file here and re-register in the same PR
