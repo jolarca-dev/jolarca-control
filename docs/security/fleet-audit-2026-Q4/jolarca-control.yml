@@ -316,9 +316,13 @@ controls:
       (A-01's deadlock shape). Its fixture tests/test_check_secret_inventory.sh (19 cases) does
       run on the merge path, so the script's behaviour is protected even while its verdict is
       advisory. Observed while measuring and not acted on: check_findings_register.py parses
-      `D-\\d+`, so the sub-lettered heading D-22a (docs/drift-findings.md:235) is invisible to
-      both the heading parse and the citation scan — symmetric, harmless today, a trap for the next
-      sub-lettered id.
+      `D-\d+`, so a sub-lettered id would be invisible to both the heading parse and the citation
+      scan. Corrected 2026-10-26 (D-81 follow-up): this note asserted that case exists — "the
+      sub-lettered heading D-22a (docs/drift-findings.md:235)" — and it does not. `grep -nE '^###\s+D-[0-9]+[a-z]'
+      docs/drift-findings.md` returns nothing, and line 235 is a prose bullet quoting D-22's regex
+      inside backticks. `D-22a` appears at :265 and :328 as prose only. So the parse gap is LATENT,
+      not observed: harmless today, a trap for the first sub-lettered id, and the earlier claim was
+      itself the class this audit keeps recording — a cited artefact not re-read before asserting it.
 
   - id: "FA-control-12"
     description: "Change management must distinguish a considered change from an unattended one"
@@ -403,7 +407,7 @@ strengths:
   - "vulnerability_alerts enabled; forks=0 (bounded exposure of the governance record)"
   - "ORG-LEVEL FACTS NOW MEASURED, previously recorded as unverifiable: orgs/jolarca-dev two_factor_requirement_enabled=true (the older two_factor_auth_enabled field is null on Free — the readable field exists), members_can_create_repositories=false (closes D-19's prevention gap), default_repository_permission=none"
   - "every third-party action in the workflows inspected is SHA-pinned with a version comment"
-  - "regression surface measured 2026-10-26: 295 pytest tests, plus five shell fixtures whose own counters read 25 (plan-safety) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before this PR workspace-mode ran only from the Makefile."
+  - "regression surface measured 2026-10-26 on the D-81 branch: 316 pytest tests (`make lint`'s own line; 295 earlier the same day, before the gate-parity and apply-path fixtures landed), plus five shell fixtures whose own counters read 25 (plan-safety) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before PR #91 workspace-mode ran only from the Makefile."
   - "the audit's own error was caught by the audited gate: check_findings_register.py reported a dangling citation introduced by this very record, because the finding id it used exists only on unmerged PR #79 — main's register runs D-71 then D-73. Citation re-pointed at the PR number, and the defect kept in the record rather than quietly reworded"
   - "writing the negative control first is what found the defect in the control's own wiring: the D-81 gate calls `gh api …/pulls/<n>/files` from a job whose `permissions:` block sets unspecified scopes to `none`. Rehearsing the fixture against the real workflow YAML (and proving it by deleting the scope line) turned a would-be fleet-wide merge deadlock into a one-line change, before the push"
 
