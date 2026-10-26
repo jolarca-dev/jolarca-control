@@ -18,7 +18,7 @@ Population reconciliation (STAGE A, measured 2026-10-26):
 |---:|---|---|---|---:|---:|---:|---:|---:|---|
 | 1 | `jolarca` | — | NOT RUN | — | — | — | — | — | |
 | 2 | `jolarca-infrastructure` | — | NOT RUN | — | — | — | — | — | |
-| 3 | [`jolarca-control`](jolarca-control.yml) | `1ef4f9b05addc795a1dc8cafa18f1049ca7932fa` (branch head; `origin/main` = `bdbe971…`) | **NO-GO (assurance)** · CONDITIONALLY OPERATIONAL (control plane) — 4 of the 6 S1s **landed on `main`** (`e5b9b3f` PR #89, `4e0c22b` PR #91); open: FA-control-03, FA-control-08, FA-control-13 (new, `gap`); FA-control-12 pending merge | 0 | 6 | 6 | 1 | 3 | 2026-10-26 |
+| 3 | [`jolarca-control`](jolarca-control.yml) | `1ef4f9b05addc795a1dc8cafa18f1049ca7932fa` (branch head; `origin/main` = `bdbe971…`) | **NO-GO (assurance)** · CONDITIONALLY OPERATIONAL (control plane) — 4 of the 6 S1s **landed on `main`** (`e5b9b3f` PR #89, `4e0c22b` PR #91); FA-control-12 **landed `7048116` PR #95**; open: FA-control-03, FA-control-08, FA-control-13 (`gap`) | 0 | 6 | 6 | 1 | 3 | 2026-10-26 |
 | 4 | `jolarca-hermes-agents` | — | NOT RUN | — | — | — | — | — | |
 | 5 | `jolarca-identity` | — | NOT RUN | — | — | — | — | — | |
 | 6 | `jolarca-payments` | — | NOT RUN | — | — | — | — | — | |
@@ -136,6 +136,21 @@ files, weekly, and on demand; **not on every PR** (the docs-only #92 merge creat
 2. Promoting `Deploy Gates` to a required context while `expires = unknown` stands would fail every
    such Dependabot PR (the dependency-bump deadlock shape the fleet has recorded before). The
    precondition for promotion is a dated row in `docs/security/key-custody.md`, not a weaker gate.
+
+## Post-merge verification, PR #95 (2026-10-26, `main` = `7048116a04ba01c69daf5c1d8220a415862d1262`)
+
+| Check | Result | Status |
+|---|---|---|
+| Merge itself | squash, `mergedAt` `2026-10-26T17:23:58Z`, 13 files `+1140/-30`; remote branch deleted (`git ls-remote --heads origin fix/apply-path-trigger-guard-d81` → 0 rows) | VERIFIED PASS |
+| Pre-merge CI on the final head `403ad80` | all ten reported checks `pass` (incl. the four required), `mergeStateStatus=CLEAN`, `mergeable=MERGEABLE` | VERIFIED PASS |
+| D-81 step, live observation (PR run 40358205519, inside the **required** `Validate Repo Allow-List`) | printed `OK: 13 changed file(s), none in apply.yml's push paths (5 pattern(s) read from apply.yml) — no apply armed` with `PR_ACTOR_TYPE: User`, shell `/usr/bin/bash -e {0}` | VERIFIED PASS — first operating observation, and proof the job-level `pull-requests: read` reaches `gh api …/pulls/<n>/files` |
+| Same step on the merge's push run (40368243557, `conclusion=success`) | `conclusion=skipped` | VERIFIED — **by design**: the brake is gated to `pull_request`, so it cannot observe a merge in progress. Stated rather than glossed: the **bot-refusal path has never rejected a live PR** (21 fixtures + a committed-tree run → exit 1 for a Bot author are the assurance so far) |
+| Fresh clone of `main` | `hash_evidence.sh --check` 46/0 exit 0 · `check_gate_parity.py` "OK: 18 gate scripts…" exit 0 · `pytest tests/ -q` **316 passed** · `gitleaks git .` over 2.25 MB → no leaks · `check_findings_register.py` 82 headings, none dangling | VERIFIED PASS |
+| Guard non-vacuity in the clone | Bot + `.github/workflows/apply.yml,README.md` → exit **1** with the refusal text; User + `docs/x.md` → exit 0 "no apply armed" | VERIFIED PASS — the gate detects its own defect class on the committed tree |
+| Branch protection re-read | contexts exactly `[Validate Repo Allow-List, Policy Compliance Check, Repository Secret Pattern Scan, SAST (semgrep)]`, `strict=true`, `enforce_admins=true`, `required_approving_review_count=0`, `required_linear_history=true`, `required_conversation_resolution=true`, `allow_force_pushes=false`, `allow_deletions=false`, `required_signatures.enabled=false`, rulesets `[]`, `.protected=true` | VERIFIED PASS — unchanged by this PR; note `restrictions` users/teams/apps all 0 and that `allow_force_pushes`/`allow_deletions` read as **present objects** (`{enabled: false}`), the naming the earlier `strict: null` probe got wrong |
+| Declared vs live visibility | `repos/jolarca-control.yml:21` `public` = live `public`, `private=false`, `forks_count=0` | VERIFIED PASS |
+| `Terraform Apply` triggered by the merge? | no run created; latest remains `2026-10-17T19:07:46Z` (cancelled) | VERIFIED PASS — third consecutive merge on a repo whose CI has never reached HCP (D-82) |
+| Claims this PR corrected about itself | D-83's "nothing local runs the formatter" (refuted: `ruff-format` is an installed pre-commit hook, all twelve pass) → regraded S2→S3; FA-control-11's D-22a note was briefly overwritten with a false absence read from an **empty grep through an unreliable capture channel** → restored (`### D-22a` is at `docs/drift-findings.md:235`; parser 82 vs raw 83) | VERIFIED — both kept in the text, not deleted; the intermediate wrong commit `e07dc54` was superseded by `403ad80` before the squash, so it never reached `main` |
 
 ## Standing rule for this directory
 

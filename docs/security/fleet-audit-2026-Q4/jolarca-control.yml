@@ -320,8 +320,8 @@ controls:
       and the citation scan. Measured 2026-10-26 against the parser itself: 83 lines in
       docs/drift-findings.md match `^###\s+D-[0-9A-Za-z]+` and `parse_headings()` returns 82 — the one
       it drops is exactly `D-22a · apply.yml post-apply verification could not fail` at :235, and
-      `D-22a` is cited as prose at :456 and :482. Harmless today, a trap the first time two rows want
-      the same number.
+      `D-22a` is written as prose at :456, :482 and :1223. Harmless today, a trap the first time two
+      rows want the same number.
       CORRECTION OF A CORRECTION, kept because the mistake is the lesson: earlier today this note was
       rewritten to say no sub-lettered heading exists. That claim came from a `grep` whose output
       arrived EMPTY through an unreliable capture channel, and an empty result was read as an
@@ -342,7 +342,7 @@ controls:
       check, not in policy/compliance-gates.yml, whose D-58 exception already concedes that no
       person signs the apply and that the 30-minute wait is delay plus a cancel window.
     enforcement: "scripts/check_apply_path_trigger.py as a step inside required context Validate Repo Allow-List (pull_request events)"
-    status: "implemented-pending-merge"
+    status: "implemented"
     finding: "FA-control-12"
     severity: "S2"
     frameworks: ["SOC 2 CC8.1", "ISO/IEC 27001 A.8.32", "PCI-DSS Req 12.10.1"]
@@ -500,6 +500,61 @@ fixes_landed_pr91:
     - "TFC_TOKEN expiry date: operator reads it in the HCP UI and replaces `unknown` in docs/security/key-custody.md, which turns Deploy Gates green by itself"
     - "FA-control-03: Regression Tests / Lint / Deploy Gates are still not required contexts (operator branch-protection decision, D-61 refuses it from here)"
     - "two baselined no-fixture gates: check_fleet_separation.sh, org_delivery_audit.sh (ceiling 2, lowers only)"
+fixes_landed_pr95:
+  ids: ["FA-control-12", "FA-control-13"]
+  commit: "7048116a04ba01c69daf5c1d8220a415862d1262"
+  pr: 95
+  merged: "2026-10-26T17:23:58Z"
+  operating_evidence: >-
+    Pull-request run 40358205519 (event=pull_request, head 5e91d2c, conclusion=success): all six
+    Compliance Scan jobs success, and the step 'An unattended PR must not arm the production apply
+    (D-81)' INSIDE the required Validate Repo Allow-List job printed
+    "OK: 13 changed file(s), none in apply.yml's push paths (5 pattern(s) read from apply.yml) — no
+    apply armed" with env PR_ACTOR=JourneyOfLife, PR_ACTOR_TYPE=User and shell `/usr/bin/bash -e {0}`.
+    That line is the first operating observation of the gate, and it also proves the job-level
+    `pull-requests: read` scope reaches `gh api …/pulls/<n>/files` — the defect that would have made
+    the required context 403 on every PR. Final head 403ad80: all ten reported checks pass,
+    mergeStateStatus=CLEAN, merged by squash with the remote branch deleted
+    (`git ls-remote --heads origin fix/apply-path-trigger-guard-d81` -> 0 rows).
+  scope_of_the_observation: >-
+    The step is gated `if: github.event_name == 'pull_request'`, so on the merge's own push run
+    (40368243557, conclusion=success) it reports conclusion=**skipped** by design: this is a pre-merge
+    brake, and it has now been seen firing in exactly one event class. The bot-refusal path is
+    proven offline (21 collected fixtures, including the real file lists of #87/#68) and has NOT yet
+    been observed rejecting a live Dependabot PR, because #87 and #68 were deliberately left unmerged
+    and un-rerun. A Type I observation on the day it landed; no bot-authored apply-path PR has been
+    refused in production yet.
+  post_merge_verification: >-
+    Fresh clone of main at 7048116: `hash_evidence.sh --check` -> 46 files, 0 mismatches, exit 0;
+    `check_gate_parity.py` -> "OK: 18 gate scripts…", exit 0; `pytest tests/ -q` -> 316 passed;
+    `gitleaks git .` over 2.25 MB of history -> no leaks; `check_findings_register.py` -> 82 headings,
+    no collisions, no dangling. Guard non-vacuity on the committed tree: `--changed
+    .github/workflows/apply.yml,README.md --actor-type Bot` -> exit 1 with the refusal text, and
+    `--changed docs/x.md --actor-type User` -> exit 0 "no apply armed". Protection re-read after
+    merge: required contexts exactly [Validate Repo Allow-List, Policy Compliance Check, Repository
+    Secret Pattern Scan, SAST (semgrep)], strict=true, enforce_admins=true,
+    required_approving_review_count=0, required_linear_history=true,
+    required_conversation_resolution=true, allow_force_pushes=false, allow_deletions=false,
+    required_signatures.enabled=false, rulesets [], branches/main .protected=true. Declared
+    visibility `public` (repos/jolarca-control.yml:21) equals live `public`, forks_count=0. NO
+    Terraform Apply run was created by this merge — the latest apply run remains
+    2026-10-17T19:07:46Z (cancelled), so three consecutive trigger-path-adjacent merges have armed
+    nothing.
+  self_corrections_landed_in_this_pr: >-
+    Two of this PR's own record claims were refuted by measurement before merge and are kept in the
+    text rather than deleted: D-83 first asserted "nothing local runs the formatter" (false —
+    `.pre-commit-config.yaml` carries `ruff-format`, the hook is installed, all twelve hooks pass, and
+    a commit attempt on this very branch was refused by `end-of-file-fixer`), regraded S2 -> S3; and
+    FA-control-11's D-22a note was briefly "corrected" into claiming no sub-lettered heading exists
+    (false — an empty grep through an unreliable capture channel was read as absence; `### D-22a` sits
+    at docs/drift-findings.md:235 and `parse_headings()` returns 82 against 83 raw headings). The
+    second mistake was caught after the branch's intermediate commit e07dc54 and repaired in 403ad80
+    before merge, which is why the squash history carries only the corrected text.
+  still_open:
+    - "D-81 has never refused a live bot PR: #87/#68 remain open and un-rerun pending the operator's deploy decision"
+    - "D-82 / FA-control-08: TFC_TOKEN expiry is still `unknown`; Deploy Gates stays red by design until the operator reads the date"
+    - "FA-control-13: no control compares `make lint`, the pre-commit hooks and the CI job step lists"
+    - "D-22a is invisible to check_findings_register.py's heading parse and citation scan (82 parsed vs 83 raw); sub-lettered ids need a rule of their own"
 framework_claims_not_supported:
   - "SOC 2 CC4.1 / CC7.1 (credential-expiry monitoring) — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: docs/security/key-custody.md documents a gate that was never invoked by anything and could not read its own input, so it produced no verdict anybody could see (FA-control-11, D-80). Landed at 4e0c22b (PR #91) it runs in the advisory Deploy Gates job and exits 1 by design until the operator records the TFC_TOKEN expiry — observed red on that merge's own push run, so a red, visible signal replaces an absent one. That is the honest interim state, not a claim of monitoring effectiveness."
   - "SOC 2 CC4.1 — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: evidence integrity monitoring reported success over zero inputs (FA-control-01) and over 26 rows naming uncommitted files (FA-control-10), and the check was not on the merge path (FA-control-02). Refused by design from e5b9b3f onward; a Type I claim needs this control's operating history, which starts today."
