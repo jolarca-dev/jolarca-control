@@ -402,6 +402,54 @@ controls:
       is the same discipline that caught D-81's inert `lstrip` — asserted absences are the cheapest
       claims to test and the most expensive to leave untested.
 
+  - id: "FA-control-14"
+    description: "A pre-apply brake must cover every protection object class, not only the one it was written for"
+    evidence: >-
+      Measured 2026-10-26 while staging D-46 option A (import consent's ruleset as
+      `github_repository_ruleset`). `grep -ic ruleset scripts/check_plan_safety.sh` -> 0: both
+      protection refusals are scoped to `github_branch_protection` — the create rule by resource
+      address, the attribute rule by a token list (`strict`, `enforce_admins`,
+      `required_status_checks`, `restrict_pushes`, …) that contains no ruleset word. Meanwhile
+      `terraform state list` returns 14 `github_branch_protection` addresses, 0 ruleset addresses,
+      and three fleet repos are protected by rulesets alone (consent 24087580, dr 24136490,
+      vendor 24138288 — D-46). Two synthetic plans in Terraform's own rendering were fed to the
+      unfixed gate: (a) `# github_repository_ruleset.main["jolarca-consent"] will be created`
+      carrying only `rules.deletion` + `rules.non_fast_forward` -> exit 0; (b) the same address
+      `will be updated in-place` with `enforcement = "active" -> "disabled"`,
+      `deletion = true -> false`, `non_fast_forward = true -> false` and a new
+      `bypass_actors { actor_type = "RepositoryAdmin", bypass_mode = "always" }` -> exit 0,
+      printing "Plan contains no destroy, replace, visibility change, protection-layer change or
+      security-feature disable." Case (b) removes protection from a tier-1 GDPR-scoped repo, and
+      `apply.yml` runs `terraform apply -input=false -auto-approve tfplan` on merge.
+    enforcement: "four ruleset refusals in scripts/check_plan_safety.sh; 29 cases in tests/test_check_plan_safety.sh"
+    status: "implemented-pending-merge"
+    finding: "FA-control-14"
+    severity: "S2"
+    frameworks: ["SOC 2 CC8.1", "ISO/IEC 27001 A.8.32", "PCI-DSS Req 12.10.1"]
+    note: >-
+      Latent, not exercised: no configuration in this root declares a ruleset, so no real plan
+      could have contained one while the hole existed. That is why it is graded S2 and fixed
+      BEFORE the adoption rather than after — the adoption's own next change (adding
+      `pull_request` plus the 7 required contexts consent declares and nothing enforces) is a
+      ruleset mutation, and without this fix the single brake between that change and an
+      unattended `-auto-approve` apply was a pattern list structurally incapable of seeing the
+      object. Fourth instance of the D-22 class in this register (a control defined by its first
+      input rather than by the control it claims). Fixed in both directions deliberately, unlike
+      the security-feature rule which allows enabling: tightening a ruleset can deadlock every
+      merge on a repo (a required context no workflow reports — the A-01/FA-control-03 shape
+      already paid for once on `jolarca-identity`), so there is no safe direction to wave through.
+      Coverage is anchored on the action line Terraform prints for every changed resource plus a
+      resource-header belt, because the ruleset attribute vocabulary (`update`, `creation`,
+      `deletion`, `include`, `exclude`, `target`, `name`) is too generic to list without refusing
+      unrelated resources. Non-vacuity is a fixture, not a claim: `ruleset-refresh-only-noise`
+      asserts that Terraform's real `Refreshing state... [id=24087580]` line still exits 0, so the
+      adoption plan in step 6b can pass the gate. NOT closed by this row: `drift_detect.py` reads
+      ruleset content and flags hollow `required_status_checks` but asserts nothing about whether
+      an active branch ruleset carries a `pull_request` rule — the absence that leaves consent's
+      `main` directly pushable — and `repo_readiness_audit.py`'s G-12c probe for exactly that sits
+      inside the empty-repository branch (`return` before any populated repo reaches it), so on
+      consent the readiness gate reports could-not-verify instead of a finding.
+
 strengths:
   - "5 policy gates run INSIDE the required Validate Repo Allow-List job: validate_repos.py, check_required_context_baseline.py, check_declared_contexts.py, check_deploy_gates.py, check_findings_register.py — enforcement is real for those, not advisory"
   - "required contexts are 4 non-empty names that all match live job names, with strict=true, so a red required context genuinely blocks (measured: ctx list equals 4 reported jobs)"
@@ -412,9 +460,10 @@ strengths:
   - "vulnerability_alerts enabled; forks=0 (bounded exposure of the governance record)"
   - "ORG-LEVEL FACTS NOW MEASURED, previously recorded as unverifiable: orgs/jolarca-dev two_factor_requirement_enabled=true (the older two_factor_auth_enabled field is null on Free — the readable field exists), members_can_create_repositories=false (closes D-19's prevention gap), default_repository_permission=none"
   - "every third-party action in the workflows inspected is SHA-pinned with a version comment"
-  - "regression surface measured 2026-10-26 on the D-81 branch: 316 pytest tests (`make lint`'s own line; 295 earlier the same day, before the gate-parity and apply-path fixtures landed), plus five shell fixtures whose own counters read 25 (plan-safety) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before PR #91 workspace-mode ran only from the Makefile."
+  - "regression surface measured 2026-10-26 on the D-81 branch: 316 pytest tests (`make lint`'s own line; 295 earlier the same day, before the gate-parity and apply-path fixtures landed), plus five shell fixtures whose own counters read 29 (plan-safety, was 25 before D-84) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before PR #91 workspace-mode ran only from the Makefile."
   - "the audit's own error was caught by the audited gate: check_findings_register.py reported a dangling citation introduced by this very record, because the finding id it used exists only on unmerged PR #79 — main's register runs D-71 then D-73. Citation re-pointed at the PR number, and the defect kept in the record rather than quietly reworded"
   - "writing the negative control first is what found the defect in the control's own wiring: the D-81 gate calls `gh api …/pulls/<n>/files` from a job whose `permissions:` block sets unspecified scopes to `none`. Rehearsing the fixture against the real workflow YAML (and proving it by deleting the scope line) turned a would-be fleet-wide merge deadlock into a one-line change, before the push"
+  - "the pre-apply brake's own coverage was measured by feeding it a synthetic plan of the new object class rather than by reading its passing test summary — which found the ruleset hole (FA-control-14, D-84) before any ruleset config could land, and the same habit then caught a command-substitution bug in the fix's own message string via `make lint`'s shellcheck step"
 
 not_run:
   - item: "confirm the scope of the fine-grained PAT behind TF_GITHUB_TOKEN"

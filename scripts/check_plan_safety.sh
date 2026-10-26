@@ -11,13 +11,14 @@
 # never appears. The gate therefore never fired, and the one control standing
 # between an unattended apply and a fleet-wide visibility flip (D-01) was
 # inert. Extracting it here makes it testable; the fixtures are the inline
-# heredoc cases in tests/test_check_plan_safety.sh (25 of them as of 2026-10-19).
+# heredoc cases in tests/test_check_plan_safety.sh (25 of them as of 2026-10-19,
+# 29 as of 2026-10-26 after D-84 added the ruleset class).
 #
 # Usage: scripts/check_plan_safety.sh <plan.txt>
 # Exit:  0 plan is safe to auto-apply
 #        1 plan contains a refused action (destroy / replace / visibility /
-#          branch-protection create or attribute change / security-feature
-#          disable)
+#          branch-protection create or attribute change / ruleset create or any
+#          ruleset change (D-84) / security-feature disable)
 #        2 the plan could not be read — cannot-check is NEVER treated as safe.
 #          This covers a missing file, an empty file, ANSI-coloured input, and
 #          (since 2026-10-19) input that is not a rendered Terraform plan at
@@ -143,6 +144,56 @@ refuse "a branch-protection attribute change" \
   '^[[:space:]]*[~+-][[:space:]]+(require_signed_commits|require_code_owner_reviews|requires_approving_reviews|required_status_checks|required_pull_request_reviews|dismiss_stale_reviews|dismissal_restrictions|require_last_push_approval|required_linear_history|require_conversation_resolution|block_force_pushes|block_deletions|allows_force_pushes|allows_deletions|enforce_admins|strict|lock_branch|restrict_pushes|push_allowances|blocks_creations)[[:space:]]*(\{|=|->)' \
   "D-26: protection attributes are the gate between an unreviewed change and main. Weakening is a fleet-wide exposure; tightening can deadlock merges (a required context that no workflow can report — see the Context Parity class). Either way a human reads it."
 
+# ── Ruleset-layer refusals (D-84) ────────────────────────────────────────────
+# The two rules above are scoped to `github_branch_protection` — by address in the create
+# rule, by attribute name in the change rule. jolarca-consent (24087580), jolarca-dr
+# (24136490) and jolarca-vendor (24138288) are protected by repository RULESETS (D-46), and
+# no ruleset vocabulary appears in either pattern. Measured 2026-10-26 against the unfixed
+# gate: a plan creating a ruleset with only push rules exited 0, and a plan rendering
+# `~ enforcement = "active" -> "disabled"` plus `~ deletion = true -> false` plus a new
+# `RepositoryAdmin` bypass actor ALSO exited 0. The second is the total removal of
+# protection on a GDPR-scoped tier-1 repo, reported by the brake AGENTS.md §8 names as "what
+# actually stands between a merge and an apply" as safe to `terraform apply -auto-approve`.
+# The hole was latent while nothing declared a ruleset resource; it becomes live the moment
+# D-46 option A imports one, which is why this fix lands BEFORE any ruleset config.
+#
+# Anchored on the action line Terraform prints for every changed resource (`  # <address>
+# will be created` / `will be updated in-place` / `must be replaced` / `will be destroyed`),
+# not on attribute names, because a ruleset's whole surface — `enforcement`, `target`,
+# `conditions.ref_name`, `bypass_actors`, `rules.creation` — is either absent from the legacy
+# list or too generic (`update`, `include`, `exclude`, `name`) to list without refusing
+# unrelated resources. Any change to a ruleset is by definition a protection-layer change,
+# so unlike the security-feature rule above there is no "safe direction" to let through:
+# requiring a context that no workflow reports (tightening) deadlocks a merge exactly as
+# dropping one exposes main. `Refreshing state... [id=…]` lines do not start with `#`, so a
+# fixtures 'ruleset-refresh-only-noise' and the pre-fix measurement in
+# docs/drift-findings.md D-84 pin both halves. NOTE for anyone editing the reason
+# strings below: they are DOUBLE-quoted shell arguments, so a backtick inside one is
+# command substitution, not typography — shellcheck SC2006/SC2283 catches it and
+# `make lint` runs shellcheck. Use single quotes for code fragments here.
+refuse "a ruleset resource being created" \
+  '^[[:space:]]*#[[:space:]].*github_(repository|organization)_ruleset.*will be created' \
+  "D-84/D-46: a ruleset create means Terraform writing a protection object it never adopted (the three fleet rulesets were created out-of-band on 2026-09-28), or adding one beside the ruleset that already bites — GitHub enforces the union of both layers, so a create is never a no-op. Import it: terraform import '<address>' '<repo>:<ruleset_id>' (the provider's parseID2 splits on ':', so a bare numeric id fails to parse), or delete the ruleset out-of-band, then apply by hand."
+
+refuse "any other change to a ruleset resource" \
+  '^[[:space:]]*#[[:space:]].*github_(repository|organization)_ruleset.*(will be updated in-place|must be replaced|will be destroyed)' \
+  "D-84/D-26: ruleset attributes are the same control surface as branch protection and none of them are in the legacy attribute list — 'enforcement = active -> disabled' turns protection off for every branch it matches while this gate's patterns stare through it. A provider that does not model a live field (6.13.0 omits 'dismissal_restriction' and 'require_extra_approval_for_unattributed_changes') also means an update silently resets what it never read. A human reads the diff first."
+
+# Belt for the same class if a future Terraform stops printing the action line: the resource
+# header itself carries the change marker, and ruleset-only attribute tokens catch a nested
+# rendering. `+` is included deliberately — a create the action line does not announce is
+# worse than one that does. The token list is limited to names no other resource in this
+# root can produce: 'update', 'creation', 'deletion', 'include', 'exclude', 'target' and
+# 'name' are real ruleset attributes but too generic to list here without refusing unrelated
+# resources, and every change that touches only those still trips the address rules above.
+refuse "a ruleset resource block marked for change (rendering belt)" \
+  '^[[:space:]]*[~+-][[:space:]]+resource[[:space:]]+"github_(repository|organization)_ruleset"' \
+  "D-84: same coverage as the two rules above, matched on the resource header instead of the action line, so a change in Terraform's rendering cannot silently narrow the refusal."
+
+refuse "a ruleset attribute change (ruleset-only vocabulary)" \
+  '^[[:space:]]*[~+-][[:space:]]+(enforcement|bypass_actors|actor_type|bypass_mode|non_fast_forward|update_allows_fetch_and_merge|required_signatures|strict_required_status_checks_policy|do_not_enforce_on_create|required_check|integration_id|allowed_merge_methods|dismiss_stale_reviews_on_push|require_code_owner_review|require_last_push_approval|required_review_thread_resolution|required_reviewers|ref_name|required_deployments|required_deployment_environments|merge_queue|copilot_code_review|file_path_restriction|file_extension_restriction|max_file_size|max_file_path_length|branch_name_pattern|tag_name_pattern|commit_message_pattern|committer_email_pattern|commit_author_email_pattern)[[:space:]]*(\{|=|->)' \
+  "D-84/D-26: these tokens exist only on ruleset objects in this root, so a hit is unambiguous — and a ruleset has no safe direction: 'enforcement' off removes protection, 'required_check' on a context no workflow reports deadlocks every merge on that repo (the A-01/FA-control-03 shape). Either way a human reads it."
+
 # Security-feature switches. Terraform renders the change on the NESTED `status`
 # attribute inside `security_and_analysis { secret_scanning { … } }`, so matching
 # on the feature name alone never fires on real output — the first draft of this
@@ -181,6 +232,6 @@ if [ "$status" -eq 0 ]; then
     exit 2
   fi
 
-  echo "Plan contains no destroy, replace, visibility change, protection-layer change or security-feature disable."
+  echo "Plan contains no destroy, replace, visibility change, protection-layer change (branch protection or ruleset) or security-feature disable."
 fi
 exit "$status"

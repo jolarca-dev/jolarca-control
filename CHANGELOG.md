@@ -10,6 +10,49 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-26 (D-84: the pre-apply brake could not see rulesets, and D-46's decision is now recorded)
+
+- `scripts/check_plan_safety.sh` refused branch-protection creates and every protection
+  attribute change, and mentioned rulesets **zero** times (`grep -ic ruleset` → 0) — while
+  `jolarca-consent`, `jolarca-dr` and `jolarca-vendor` are protected *only* by rulesets
+  (`terraform state list` → 14 `github_branch_protection`, 0 ruleset addresses).
+- Blindness proven by feeding the unfixed gate plans, not by reading its patterns. Three
+  synthetic renderings all exited **0**: a `github_repository_ruleset … will be created` block
+  with only `deletion`/`non_fast_forward`; the same address `will be updated in-place` with
+  `enforcement = "active" -> "disabled"`, both push rules turned off and a new
+  `bypass_actors { actor_type = "RepositoryAdmin" }`; and an org-ruleset weakening. The middle
+  one strips protection from a tier-1 GDPR repository, over the printed words "no …
+  protection-layer change", with `apply.yml` ready to run `terraform apply -auto-approve`.
+- Four refusals added: create by address, every other action by address, a resource-header belt,
+  and a ruleset-only attribute vocabulary. Ruleset changes are refused in **both** directions —
+  unlike the security-feature rule, which allows enabling — because requiring a context no
+  workflow reports deadlocks every merge on that repo (`jolarca-identity` paid for that once,
+  D-44/D-47). Generic tokens a ruleset also owns (`update`, `creation`, `deletion`, `include`,
+  `exclude`, `target`, `name`) are deliberately not listed: a gate that refuses unrelated plans
+  gets bypassed (§5).
+- `tests/test_check_plan_safety.sh`: 4 new cases, **29 passed** (was 25). Includes the
+  non-vacuity control `ruleset-refresh-only-noise` → 0, using Terraform's real
+  `Refreshing state... [id=24087580]` line, so the step-6b adoption plan can pass its own gate.
+  Run against the unfixed script the three refusal cases printed `FAIL … want exit=1 got=0`.
+- A defect in the fix was caught by `make lint`'s own `sh-lint`: the refusal reasons are
+  double-quoted shell arguments, so backticks in them were command substitution — a 0-byte file
+  named `disabled` had appeared in the working tree. Rewritten with single quotes.
+- **D-46 decided (option A) and staged, nothing executed.** Live ruleset bodies re-read today:
+  consent has three push rules and **neither** `pull_request` **nor** `required_status_checks`
+  (7 declared contexts enforced by nothing; `main` directly pushable); vendor's status-checks
+  rule carries an **empty** context list; dr requires `[lint, gitleaks]` strict false. Provider
+  6.13.0 can express the missing checks but does not model `dismissal_restriction` /
+  `require_extra_approval_for_unattributed_changes` that are live in dr/vendor, and cannot
+  express `restrict_pushes`, `require_conversation_resolution` or per-rule `enforce_admins` that
+  these repos declare. Import id read from provider source (`parseID2` splits on `:`):
+  `<repo>:<ruleset_id>`. Sequence, ready HCL and verification commands: `docs/state-migration-runbook.md`
+  **Step 6b**; `terraform import` stays operator-run (§5). Option B (delete the rulesets) was
+  rejected because CI has never reached the HCP workspace (D-82), so the unprotected window is
+  unbounded rather than minutes.
+- Records: `docs/drift-findings.md` D-84 + D-46 decision packet, `AGENTS.md` §7 (new coverage
+  rule) and §8 (ruleset bullet), fleet-audit `FA-control-14` (S2) with the index totals re-parsed
+  to 14 control-plane controls / 37 findings.
+
 ### Fixed — 2026-10-26 (D-83: `make lint` did not run the formatter step the CI Lint job runs)
 
 - Found while reviewing D-81, not looked for: `make lint` exited **0** (313 passed) on a branch where

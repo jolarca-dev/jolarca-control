@@ -527,6 +527,109 @@ backup, and diagnose. `prevent_destroy` should already have aborted the plan.
 
 ---
 
+## Step 6b — The three ruleset-only repos (D-46 option A) — STAGED, NOT EXECUTED
+
+`jolarca-consent`, `jolarca-dr` and `jolarca-vendor` are excluded from
+`github_branch_protection.main` by `local.ruleset_protected_repos` and are protected only
+by an active `protect-main` ruleset that no configuration declares. The decision was taken
+on 2026-10-26 in favour of **option A — adopt the rulesets into Terraform**, with consent
+first. The measured case for it is in `docs/drift-findings.md` D-46's decision packet, and
+the prerequisite (the pre-apply gate could not see rulesets at all) is closed by D-84.
+
+**Nothing in this section has been run.** Steps 2 and 3 are `terraform import`, which
+AGENTS.md §5 reserves to the operator, and step 4 changes live protection, which
+`scripts/check_plan_safety.sh` now refuses by design.
+
+**1. Declare the resource with no intent to change it.** The HCL below mirrors consent's
+live ruleset *exactly* (measured 2026-10-26 from `gh api repos/jolarca-dev/jolarca-consent/rulesets/24087580`),
+so the plan after import must read `0 to add, 0 to change` for this address. It is written
+here rather than committed as `rulesets.tf` deliberately: a declared-but-unimported ruleset
+makes the plan want to **create a second ruleset beside the one in force**, and a `.tf`
+merge arms `apply.yml`. Land this file only in the PR that runs step 2 immediately after.
+
+```hcl
+# rulesets.tf — D-46 option A, consent first.
+# Mirrors live content measured 2026-10-26; changes NOTHING about what GitHub enforces.
+# Import it before any plan that includes this file (step 2), and require 0 changes.
+resource "github_repository_ruleset" "main" {
+  for_each = toset(["jolarca-consent"]) # dr and vendor follow after a provider bump
+
+  repository  = each.value
+  name        = "protect-main"
+  target      = "branch"
+  enforcement = "active"
+
+  conditions {
+    ref_name {
+      include = ["~DEFAULT_BRANCH"]
+      exclude = []
+    }
+  }
+
+  rules {
+    deletion             = true
+    non_fast_forward     = true
+    required_linear_history = true
+    # Deliberately absent, because live lacks them: pull_request and
+    # required_status_checks. Adding them is step 4, a separate reviewed change.
+  }
+
+  # Live `bypass_actors` is [] and `current_user_can_bypass` is never. Do not add a
+  # bypass_actors block: an empty list here means nobody, including admins, gets around it.
+}
+```
+
+**2. Import (operator-run).** The provider's importer calls `parseID2`, which splits on
+`:` — so the id is `<repo>:<ruleset_id>`, and the **numeric** ruleset id from the list call,
+not the name (the `…/rulesets/protect-main` form returns HTTP 404).
+
+```bash
+cd /opt/jolarca/repos/jolarca-control
+terraform init -input=false
+terraform import -input=false \
+  'github_repository_ruleset.main["jolarca-consent"]' 'jolarca-consent:24087580'
+# Import ID ≠ state ID again (D-56's sibling trap): state `id` becomes 24087580, and
+# `terraform state show` prints the numeric ruleset id, not the pair you typed.
+terraform state list | grep -c ruleset   # expect 1
+```
+
+**3. Prove the adoption is inert before doing anything else.**
+
+```bash
+terraform plan -input=false -no-color -out=tfplan6b
+bash scripts/check_plan_safety.sh <(terraform show -no-color tfplan6b)   # expect exit 0
+terraform show -no-color tfplan6b | grep -A3 'github_repository_ruleset'  # expect: no change block
+```
+
+`-no-color` is not optional (D-61's fourth correction: ANSI bytes defeat every pattern in
+that gate, which is why the script now exits 2 on coloured input). If the plan shows *any*
+change on the ruleset address, stop: the config does not mirror live content, and applying
+it would rewrite a protection object this root has just adopted.
+
+**4. Then, and only then, close the actual gap** — consent declares 7 required contexts and
+nothing enforces them; its ruleset also has **no `pull_request` rule**, so `main` is directly
+pushable (the mechanism behind the historical no-PR commit). That change is
+`rules { pull_request { … } required_status_checks { required_check { context = … } } }`.
+It is a protection-layer mutation and `check_plan_safety.sh` now refuses it by name, so it is
+applied by hand after (a) `make context-parity` proves each of the 7 names is producible on a
+PR in that repo — the D-44/D-47 deadlock class, already paid for once on `jolarca-identity`,
+and (b) the three inexpressible declaration keys (`restrict_pushes`,
+`require_conversation_resolution`, per-rule `enforce_admins`) are either dropped from
+`repos/jolarca-consent.yml` or recorded as a dated deviation in
+`policy/compliance-gates.yml#exceptions.active`, so `make drift` stops reporting a permanent
+false red.
+
+**5. dr and vendor wait.** Their payloads carry `dismissal_restriction` and
+`require_extra_approval_for_unattributed_changes`, neither of which provider 6.13.0 models
+(`grep -c` over `resource_github_repository_ruleset.go` at tag v6.13.0 → 0). An update PUTs
+only what the provider knows, so both revert to GitHub's defaults on the first change. They
+are at their defaults today, so the expected delta is nil — but that is an inference, not a
+measurement, and this runbook does not accept inference as a reason to touch protection.
+Revisit after a provider bump models the fields, or after the defaults are accepted in
+writing.
+
+---
+
 ## Step 7 — Decide the visibility question before applying — **SUPERSEDED**
 
 This step asked the owner to choose between making four repos private and

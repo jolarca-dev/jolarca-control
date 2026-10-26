@@ -147,8 +147,9 @@ Specific high-consequence edits:
 
 - **Verify the verifier.** A gate that runs and reports green has not been shown
   to detect anything. Every gate needs a **negative control** — a fixture that
-  must fail. `tests/test_check_plan_safety.sh` is the model (25 cases including
-  empty and missing plan — its own counter, not a hand-written number). An untested
+  must fail. `tests/test_check_plan_safety.sh` is the model (29 cases as of
+  2026-10-26, including empty and missing plan — its own counter, not a
+  hand-written number). An untested
   regex gate is a hypothesis: D-22 was an
   inline `visibility\s*:` pattern that never matched `terraform show` output, so
   the only control between an unattended apply and a fleet-wide visibility flip
@@ -164,6 +165,13 @@ Specific high-consequence edits:
   shrink. Two self-caught lessons worth repeating: an exception that also silences
   a second rule is an off switch, and grepping for a filename cannot tell an
   invocation from a comment about it.
+- **A gate's coverage is measured against the object classes it must see, not
+  against its passing tests.** Before relying on any pattern-matched gate, ask
+  which resource types it is structurally incapable of naming, and feed it one
+  synthetic line of that shape. This found D-84: `check_plan_safety.sh` refused
+  branch-protection mutations but `grep -ic ruleset` in it returned **0**, so a
+  plan setting `enforcement = "active" -> "disabled"` on a ruleset exited 0 — and
+  three fleet repos are protected by rulesets alone.
 - **A gate's verdict must not depend on how its input was rendered.** Measured
   2026-10-15: the same Terraform plan file made `scripts/check_plan_safety.sh` exit
   0 when produced by `terraform show tfplan` (840 ANSI escape bytes) and exit 1 when
@@ -259,7 +267,8 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   gate, `prevent_destroy`, and
   `check_plan_safety.sh`, which since 2026-10-15 refuses destroy, replace,
   visibility, **branch-protection creates and attribute changes (either
-  direction)**, and security-feature **disables** (D-61) — so the older note
+  direction)**, **any create or change to a ruleset resource (D-84, added
+  2026-10-26)**, and security-feature **disables** (D-61) — so the older note
   that it "does not catch required-context, `strict`, linear-history or
   code-owner changes" is superseded for those attribute classes. What is still
   NOT caught: an attribute change to `github_repository` settings that is not in
@@ -310,6 +319,27 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   `STATE_MIGRATION_COMPLETE` measures `'true'`. The refusal there is
   `scripts/check_plan_safety.sh`, which since 2026-10-15 also covers
   protection-layer changes and security-feature disables (D-61).
+- **Three fleet repos are protected by rulesets that no configuration declares,
+  and their declared required checks enforce nothing.** `jolarca-consent`
+  (24087580), `jolarca-dr` (24136490) and `jolarca-vendor` (24138288) each run an
+  active `protect-main` ruleset created out-of-band on 2026-09-28; the legacy
+  `…/branches/main/protection` endpoint returns HTTP 404 for all three while
+  `.protected` is `true`, and `terraform state list` holds **0** ruleset addresses
+  (D-46). Re-measured 2026-10-26: **consent's ruleset has no `pull_request` rule
+  and no `required_status_checks` rule at all** — so its 7 declared contexts in
+  `repos/jolarca-consent.yml` are enforced by nothing and `main` is directly
+  pushable — while vendor's status-checks rule carries an **empty** context list.
+  Do not read `.protected=true` here as enforcement. The decision is now recorded
+  as option **A** (adopt the rulesets as `github_repository_ruleset`, consent
+  first): the sequence, the ready HCL and the exact `terraform import` ids
+  (`<repo>:<ruleset_id>` — the importer's `parseID2` splits on `:`) are in
+  `docs/state-migration-runbook.md` **Step 6b**, and nothing there has been run:
+  §5 reserves `import`/`state rm`/`state mv` to the operator. The prerequisite —
+  the pre-apply gate could not see rulesets — is closed by D-84. Note also that
+  provider 6.13.0 cannot express three keys these repos declare
+  (`restrict_pushes`, `require_conversation_resolution`, per-rule
+  `enforce_admins`), and does not model two fields that are live in dr/vendor
+  (`dismissal_restriction`, `require_extra_approval_for_unattributed_changes`).
 - **A 404 from the branch-protection endpoint means nothing on its own.**
   Measured twice on 2026-10-15 with the same token and the same path:
   `gh api repos/jolarca-dev/jolarca-control/branches/main/protection` answered
