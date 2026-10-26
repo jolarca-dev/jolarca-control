@@ -49,7 +49,7 @@ controls:
     severity: "S1"
     frameworks: ["SOC 2 CC4.1", "ISO/IEC 27001 A.5.31", "PCI-DSS 12.10.1"]
     note: >-
-      FIXED IN THIS PR (pending merge): --check now runs a reverse pass over every
+      FIXED — LANDED ON main AS e5b9b3f (PR #89) 2026-10-26. --check now runs a reverse pass over every
       registered path (MISSING -> exit 1) and refuses to report OK when nothing was
       compared (exit 2). Negative controls live in the new
       tests/test_hash_evidence.sh (19 cases). Compensating control still worth
@@ -74,7 +74,8 @@ controls:
     finding: "FA-control-02"
     severity: "S1"
     note: >-
-      FIXED IN THIS PR the way this repo already enforces every other policy gate:
+      FIXED — LANDED ON main AS e5b9b3f (PR #89) 2026-10-26, the way this repo already enforces every
+      other policy gate:
       `bash scripts/hash_evidence.sh --check` now runs as a step INSIDE the required
       Validate Repo Allow-List job, so evidence integrity blocks a merge with no
       branch-protection change at all.
@@ -296,10 +297,24 @@ not_run:
 verdict: "NO-GO — as an assurance claim; CONDITIONALLY OPERATIONAL as a control plane"
 blocking_findings: []
 s1_findings: ["FA-control-01", "FA-control-02", "FA-control-03", "FA-control-08", "FA-control-10"]
-s1_fixed_pending_merge: ["FA-control-01", "FA-control-02", "FA-control-10"]
+s1_fixed_landed:
+  ids: ["FA-control-01", "FA-control-02", "FA-control-10"]
+  commit: "e5b9b3f6a3e70119374a5cabcf807d3d445c6b89"
+  pr: 89
+  merged: "2026-10-26"
+  operating_evidence: >-
+    Push-triggered run 40329048473 (event=push, head_sha=e5b9b3f, conclusion=success) ran
+    the step 'Evidence hashes match the committed registry (CC4.1)' INSIDE the required
+    Validate Repo Allow-List job and printed "Evidence check: 46 files scanned,
+    0 mismatches / OK: all registered evidence hashes match, and every registered file
+    exists". Independent re-verification in a fresh clone of main: same 46/0, exit 0, and
+    `gitleaks git .` over 2.17 MB of history reported no leaks. No Terraform Apply run was
+    created by the merge — latest apply run remains 2026-10-17T19:07:46Z (cancelled).
+    This is a Type I operating observation on the day it landed, not Type II effectiveness
+    over an audit period.
 framework_claims_not_supported:
-  - "SOC 2 CC4.1 — evidence integrity monitoring reported success over zero inputs (FA-control-01) and over 26 rows naming uncommitted files (FA-control-10); both are refused now that the reverse pass exists, and both were unverifiable as claims until this PR merges"
-  - "ISO/IEC 27001 A.5.31 / PCI-DSS 12.10.1 — the same: the register was not self-verifying against deletion, and a green local run did not prove anything about the committed tree"
+  - "SOC 2 CC4.1 — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: evidence integrity monitoring reported success over zero inputs (FA-control-01) and over 26 rows naming uncommitted files (FA-control-10), and the check was not on the merge path (FA-control-02). Refused by design from e5b9b3f onward; a Type I claim needs this control's operating history, which starts today."
+  - "ISO/IEC 27001 A.5.31 / PCI-DSS 12.10.1 — same boundary: before 2026-10-26 the register was not self-verifying against deletion, and a green local run proved nothing about the committed tree. Retaining the 46-row registry (not 72) is the honest baseline for the period that follows."
   - "SOC 2 CC8.1 — change management is genuinely enforced for 4 contexts only; the test suite that guards the deploy gate is advisory (FA-control-03)"
   - "code_quality coverage floor — declared mandatory, executed nowhere (FA-control-04)"
 framework_claims_supported:

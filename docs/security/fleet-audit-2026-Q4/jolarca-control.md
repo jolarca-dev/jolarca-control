@@ -244,6 +244,35 @@ the role mailboxes the fleet already publishes in its SECURITY.md files plus the
 identity, so committing quotes nothing that was not already public (D-59 context noted in the
 record). 44 files, 552 KB.
 
+## Landed: what main proves today
+
+PR #89 squash-merged to `main` as **`e5b9b3f6a3e70119374a5cabcf807d3d445c6b89`** on 2026-10-26.
+The three closed S1s are now observed, not configured:
+
+- push run **40329048473** (`event=push`, `head_sha=e5b9b3f`, `success`) ran the step
+  `Evidence hashes match the committed registry (CC4.1)` **inside the required**
+  `Validate Repo Allow-List` job and printed `Evidence check: 46 files scanned, 0 mismatches`.
+  That line is the enforcement proof — a config file only claims intent.
+- fresh clone of `main`: `--check` → 46/0 exit 0; `gitleaks git .` over 2.17 MB → no leaks.
+- no `Terraform Apply` run was created by the merge (latest remains 2026-10-17, cancelled), so
+  the "no apply path touched" claim in the PR held under real conditions.
+- protection re-read after merge: 4 required contexts, `strict=true`, `enforce_admins=true`,
+  `required_linear_history.enabled=true`; declared visibility (`repos/jolarca-control.yml`: `public`)
+  equals live, `forks_count=0`.
+
+**What this does not buy.** A Type I observation dated today. CC4.1/A.5.31/12.10.1 cannot be claimed
+for any period *before* 2026-10-26, because the control demonstrably reported OK over zero inputs and
+over 26 unattestable rows throughout that period — recorded in
+`framework_claims_not_supported`, not smoothed over. Type II needs run history that does not exist yet.
+
+PR #85 was closed as superseded: this branch was cut from its head commit, and
+`git diff --numstat origin/main 1ef4f9b` returns nothing for all three of its files, so its content
+landed inside #89. Closing (not merging) states the true history; GitHub still lists those files
+because the PR's diff is computed against its merge base.
+
+Open S1s on this repo after the merge: **FA-control-03** (fixtures advisory — needs a live
+protection change, operator decision) and **FA-control-08** (apply path never observed refusing).
+
 ## Method notes
 
 1. Three of my own probes were wrong and are recorded as wrong: a `sed`-based script↔test comparison
