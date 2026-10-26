@@ -150,7 +150,7 @@ controls:
       required Validate Repo Allow-List job, so a PR that adds scripts/<name> without
       tests/test_<name> fails a required context instead of merging quietly.
     enforcement: "scripts/check_gate_parity.py R1/R1b/R2/R3/R4 inside required context Validate Repo Allow-List"
-    status: "implemented-pending-merge"
+    status: "implemented"
     finding: "FA-control-05"
     severity: "S2"
     note: >-
@@ -283,7 +283,7 @@ controls:
       origin/main -- Makefile '.github/workflows'` → exit 1 (no matches); `git grep -l` finds it
       only in prose (key-custody.md and this audit's own records). Meanwhile
       docs/security/key-custody.md:33 declares its table "the single `expires`-bearing block the
-      gate parses" and :41 sets TFC_TOKEN `expires = unknown` with "until then the gate is red by
+      gate parses", and `:41` sets TFC_TOKEN `expires = unknown` with "until then the gate is red by
       design" — pointed at the real register today it exits 1 after two `ok:` rows. A control
       designed to be red, wired to nothing, reports green forever: the fail-closed signal was
       swallowed by absence, not by `||` or continue-on-error. Same class, second instance: tests/
@@ -291,7 +291,7 @@ controls:
       invoked by the Makefile only, and `pytest tests/` cannot collect .sh, so it could never fail
       a merge (origin/main had four .sh fixtures, three wired).
     enforcement: "scripts/check_gate_parity.py R2/R3 (required context) + default path repaired + advisory step in deploy-gates.yml"
-    status: "implemented-pending-merge"
+    status: "implemented"
     finding: "FA-control-11"
     severity: "S1"
     frameworks: ["SOC 2 CC4.1", "SOC 2 CC7.1", "ISO/IEC 27001 A.8.8", "PCI-DSS 8.3.1"]
@@ -358,8 +358,37 @@ s1_fixed_landed:
     created by the merge — latest apply run remains 2026-10-17T19:07:46Z (cancelled).
     This is a Type I operating observation on the day it landed, not Type II effectiveness
     over an audit period.
+fixes_landed_pr91:
+  ids: ["FA-control-05", "FA-control-11"]
+  commit: "4e0c22bd64fe9d7ab3ff44eabf7242e322555f34"
+  pr: 91
+  merged: "2026-10-26T14:20:37Z"
+  operating_evidence: >-
+    Push run 40338769793 (event=push, head_sha=4e0c22b, conclusion=success) ran the step
+    'Gate parity — every gate has a control that can fail (D-80)' INSIDE the required
+    Validate Repo Allow-List job and printed "OK: 17 gate scripts each have a fixture or a
+    dated baseline entry; every shell fixture runs in a PR-triggerable workflow; no gate is
+    unreferenced". Same run: all six jobs success (Lint, Policy Compliance Check, Terraform
+    Format, Regression Tests, Repository Secret Pattern Scan, Validate Repo Allow-List) and
+    the evidence step printed "Evidence check: 46 files scanned, 0 mismatches". Independent
+    re-verification in a fresh clone of main: evidence 46/0 exit 0, gate parity exit 0,
+    `gitleaks git .` over 2.60 MB no leaks. `make findings-check` parses 79 D-nn headings with
+    no collisions and no dangling citations, i.e. D-80 is now defined. Protection re-read after
+    merge: 4 required contexts, strict=true, enforce_admins=true, linear history true,
+    required_approving_review_count=0, rulesets []; declared visibility `public` equals live,
+    forks_count=0. No Terraform Apply run was created by this merge — latest apply run remains
+    2026-10-17T19:07:46Z (cancelled). Observed designed red, not a regression: the `Deploy
+    Gates` push run on 4e0c22b concluded failure at the step 'Credential expiry register is
+    dated and unexpired (D-80)' with the annotation "expiry unknown for a row in
+    docs/security/key-custody.md — verify and record it"; mergeStateStatus on #91 read UNSTABLE
+    before the merge, i.e. all required checks passed with one non-required check failing.
+    Type I operating observation on the day it landed, not Type II effectiveness.
+  still_open:
+    - "TFC_TOKEN expiry date: operator reads it in the HCP UI and replaces `unknown` in docs/security/key-custody.md, which turns Deploy Gates green by itself"
+    - "FA-control-03: Regression Tests / Lint / Deploy Gates are still not required contexts (operator branch-protection decision, D-61 refuses it from here)"
+    - "two baselined no-fixture gates: check_fleet_separation.sh, org_delivery_audit.sh (ceiling 2, lowers only)"
 framework_claims_not_supported:
-  - "SOC 2 CC4.1 / CC7.1 (credential-expiry monitoring) — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: docs/security/key-custody.md documents a gate that was never invoked by anything and could not read its own input, so it produced no verdict anybody could see (FA-control-11, D-80). From this PR it runs in an advisory job and exits 1 by design until the operator records the TFC_TOKEN expiry — a red, visible signal replaces an absent one, which is the honest interim state, not a claim of monitoring effectiveness."
+  - "SOC 2 CC4.1 / CC7.1 (credential-expiry monitoring) — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: docs/security/key-custody.md documents a gate that was never invoked by anything and could not read its own input, so it produced no verdict anybody could see (FA-control-11, D-80). Landed at 4e0c22b (PR #91) it runs in the advisory Deploy Gates job and exits 1 by design until the operator records the TFC_TOKEN expiry — observed red on that merge's own push run, so a red, visible signal replaces an absent one. That is the honest interim state, not a claim of monitoring effectiveness."
   - "SOC 2 CC4.1 — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: evidence integrity monitoring reported success over zero inputs (FA-control-01) and over 26 rows naming uncommitted files (FA-control-10), and the check was not on the merge path (FA-control-02). Refused by design from e5b9b3f onward; a Type I claim needs this control's operating history, which starts today."
   - "ISO/IEC 27001 A.5.31 / PCI-DSS 12.10.1 — same boundary: before 2026-10-26 the register was not self-verifying against deletion, and a green local run proved nothing about the committed tree. Retaining the 46-row registry (not 72) is the honest baseline for the period that follows."
   - "SOC 2 CC8.1 — change management is genuinely enforced for 4 contexts only; the test suite that guards the deploy gate is advisory (FA-control-03)"

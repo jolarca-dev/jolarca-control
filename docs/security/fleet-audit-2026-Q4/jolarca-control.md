@@ -273,6 +273,36 @@ because the PR's diff is computed against its merge base.
 Open S1s on this repo after the merge: **FA-control-03** (fixtures advisory — needs a live
 protection change, operator decision) and **FA-control-08** (apply path never observed refusing).
 
+## Landed, second observation: PR #91 (`main` = `4e0c22b`)
+
+PR #91 squash-merged at 2026-10-26T14:20:37Z as **`4e0c22bd64fe9d7ab3ff44eabf7242e322555f34`**,
+closing **FA-control-05** (no parity rule existed) and **FA-control-11** (the unwired, dead-path
+gate).
+
+- Push run **40338769793** (`event=push`, `success`) shows the step
+  `Gate parity — every gate has a control that can fail (D-80)` **inside the required**
+  `Validate Repo Allow-List` job, printing `OK: 17 gate scripts each have a fixture or a dated
+  baseline entry; every shell fixture runs in a PR-triggerable workflow; no gate is unreferenced`.
+  All six jobs on that run succeeded, and the evidence step again printed `46 files scanned,
+  0 mismatches`.
+- Independent read rather than a re-read of the log: fresh clone of `main` → gate parity exit 0,
+  `hash_evidence.sh --check` 46/0, `gitleaks git .` over 2.60 MB → no leaks; `make findings-check`
+  → 79 headings, no collisions, no dangling citations (so D-80 is defined, not merely cited).
+- **The designed red is now visible in CI, which is the whole point of the change**: the
+  `Deploy Gates` push run on the same SHA failed at `Credential expiry register is dated and
+  unexpired (D-80)` with the annotation `expiry unknown for a row in
+  docs/security/key-custody.md — verify and record it`. Before this change that verdict existed
+  nowhere. #91's `mergeStateStatus` read `UNSTABLE` — required checks green, one non-required check
+  red — so the signal costs no merge capacity and blocks nothing (FA-control-03 is still the reason
+  it cannot block).
+- No `Terraform Apply` run was created by the merge (latest remains 2026-10-17T19:07:46Z,
+  cancelled); the diff touched no `*.tf`, `*.tfvars`, `repos/**` or `policy/**` path.
+- Blind spot checked rather than assumed: this repo makes no reusable-workflow calls (grep for
+  `uses: ./` and `uses: jolarca` under `.github/workflows/` → no matches), so R2/R3 reading only
+  `run:` steps costs nothing today. If a fleet repo later calls a shared workflow, those two rules
+  must learn to follow `uses:` — otherwise a real invocation would look like a finding, and a
+  fixture hosted only in the shared workflow would look unrun.
+
 ## FA-control-11 · S1 — a gate that runs nowhere, reading a path that never existed (D-80)
 
 The audit's own FA-control-05 recurred while its fix was being written, which is the clearest
@@ -381,5 +411,6 @@ is one S1 control operating on the merge path, and a rule that makes the class e
    **34 findings: 1 S0, 16 S1 (counting the latent one as S1, as the index prose does), 16 S2,
    1 S3**. Two caveats the parse hides: the literal label `S1 (latent)` is a separate key, so a
    naive `Counter` will not merge it into `S1`; and a register counts *controls*, so a control
-   whose defect was fixed but not yet merged (FA-control-05/11 today) is still in the total — the
-   status field, not the count, carries that distinction.
+   whose defect was fixed but not yet merged stays in the total — the status field, not the count,
+   carries that distinction (FA-control-05/11 read `implemented-pending-merge` in the PR and
+   `implemented` with a `fixes_landed_pr91` block once `4e0c22b` shipped).
