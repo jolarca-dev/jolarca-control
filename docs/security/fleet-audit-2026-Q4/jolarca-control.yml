@@ -315,14 +315,19 @@ controls:
       because promoting an intentionally-red check to a required context would wedge every PR
       (A-01's deadlock shape). Its fixture tests/test_check_secret_inventory.sh (19 cases) does
       run on the merge path, so the script's behaviour is protected even while its verdict is
-      advisory. Observed while measuring and not acted on: check_findings_register.py parses
-      `D-\d+`, so a sub-lettered id would be invisible to both the heading parse and the citation
-      scan. Corrected 2026-10-26 (D-81 follow-up): this note asserted that case exists — "the
-      sub-lettered heading D-22a (docs/drift-findings.md:235)" — and it does not. `grep -nE '^###\s+D-[0-9]+[a-z]'
-      docs/drift-findings.md` returns nothing, and line 235 is a prose bullet quoting D-22's regex
-      inside backticks. `D-22a` appears at :265 and :328 as prose only. So the parse gap is LATENT,
-      not observed: harmless today, a trap for the first sub-lettered id, and the earlier claim was
-      itself the class this audit keeps recording — a cited artefact not re-read before asserting it.
+      advisory. Observed while measuring and not acted on: check_findings_register.py's HEADING_RE is
+      `^###\s+(D-\d+)\s+·\s+(.+?)\s*$`, so a sub-lettered id is invisible to both the heading parse
+      and the citation scan. Measured 2026-10-26 against the parser itself: 83 lines in
+      docs/drift-findings.md match `^###\s+D-[0-9A-Za-z]+` and `parse_headings()` returns 82 — the one
+      it drops is exactly `D-22a · apply.yml post-apply verification could not fail` at :235, and
+      `D-22a` is cited as prose at :456 and :482. Harmless today, a trap the first time two rows want
+      the same number.
+      CORRECTION OF A CORRECTION, kept because the mistake is the lesson: earlier today this note was
+      rewritten to say no sub-lettered heading exists. That claim came from a `grep` whose output
+      arrived EMPTY through an unreliable capture channel, and an empty result was read as an
+      absence — the exact failure AGENTS.md §1 and §7 exist to prevent, committed by this audit. The
+      heading is present. Measuring means calling the parser and comparing counts, not trusting that a
+      command printed nothing.
 
   - id: "FA-control-12"
     description: "Change management must distinguish a considered change from an unattended one"

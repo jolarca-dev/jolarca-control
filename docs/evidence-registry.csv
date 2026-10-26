@@ -40,7 +40,7 @@ docs/security/fleet-audit-2026-Q4/index.md,6160cb4f07ac5873d591b755a2d7595c26a01
 docs/security/fleet-audit-2026-Q4/jolarca-consent.md,9d3ddb80d0b303af083692ca7e9c0d5f8c1db222f2f3876af7205656ea859851,2026-10-26
 docs/security/fleet-audit-2026-Q4/jolarca-consent.yml,3ec070ba3ccb244ff0a366b288a222fd11afbcc0642e247ce88fe8a5ba3e3175,2026-10-26
 docs/security/fleet-audit-2026-Q4/jolarca-control.md,56a07e4a51c27403218bd3299d0843848b418b1b60350c0611ead7e87c5d3026,2026-10-26
-docs/security/fleet-audit-2026-Q4/jolarca-control.yml,8384445a6eb758448cd92bae2339cb09eb57ec61879088cdd80764c0565ccbf6,2026-10-26
+docs/security/fleet-audit-2026-Q4/jolarca-control.yml,6deae75cc2860c1306fe4f6213e30efa4d196e8d66f3fb9d91fb21a08ea7962a,2026-10-26
 docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9ae8c43694991343c80,2026-10-15
 docs/security/key-custody.md,852524669f5e43be89ba03826b11d69351eec2ea20fc80a9367003d91e1541f1,2026-10-26
 docs/security/sast-mandatory-gate-2026-10-08.md,e4aa6f562a7a08295029ae2b8bcf5592b87447f9c2ce4fc09691ca5d2937625c,2026-10-15
