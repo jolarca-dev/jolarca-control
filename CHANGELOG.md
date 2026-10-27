@@ -32,6 +32,20 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 - Sequencing that the operator must respect: merge → **apply** → then merge consent #12 → graph builds
   → verify → restore. Merging #12 first changes nothing, because the apply is what edits the ruleset.
 
+### Added — 2026-10-27 (AGENTS.md §7: read a gate's exit code before anything else runs)
+
+- Caught while preparing the consent dependency-review exception: a sixteen-gate sweep printed `rc=0` for every gate, including
+  `hash_evidence.sh --check`, which was really exiting **1**. Cause is bash word expansion —
+  `printf '...' "$(echo "$c" | cut -c1-40)" "$?"` runs the substitution first, and the substitution
+  sets `$?`, so the reported number was `cut`'s status, not the gate's.
+- Proved in isolation rather than reasoned about: `false; printf 'rc=%s\n' "$(true; echo x)" "$?"`
+  prints `rc=0`; `false; rc=$?; echo $rc` prints `1`.
+- The rule now sits in §7 next to the two precedents it belongs with (§3's `make` exit-code collapse,
+  D-86's silenced recipes). Corrected in passing: an earlier claim in this session that the local
+  gates were green before PRs #105/#106 was based on that harness. It happened to be true — CI ran
+  the same gates independently and reported 9/9 success on both — but it was not evidence at the time
+  it was quoted, and the difference between those two statements is the whole content of §7.
+
 
 ### Fixed — 2026-10-27 (the off-host refusal fired *after* the archive was written)
 
