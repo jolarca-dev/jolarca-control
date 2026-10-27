@@ -10,6 +10,28 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (step 4: consent's ruleset gets a `pull_request` rule and its 7 declared contexts)
+
+- `rulesets.tf` moves from the inert adoption mirror to Step 6b 4b's stage-2 block, **extracted from
+  the runbook** rather than retyped (D-87 row (3)).
+- Measured effect, leaf by leaf from `terraform show -json`: **22 rule leaves added, 0 removed, 0
+  values changed** — `pull_request` (0 approvals, code-owner off, thread-resolution on,
+  dismiss-stale on, `allowed_merge_methods = ["squash"]`) and `required_status_checks` with all seven
+  of consent's declared contexts and `strict_required_status_checks_policy = true`. Stage 1
+  (`deletion`, `non_fast_forward`, `required_linear_history`) is restated verbatim, which is the point:
+  `rules` is `max_items = 1` and a full PUT, so omitting it would drop three push protections inside
+  the fix (D-87 row (5)).
+- Both knobs chosen, not inherited: `strict = true` matches `repos/jolarca-consent.yml` and cannot
+  deadlock a merge because `check_declared_contexts.py` proves all seven contexts producible
+  (`findings: []`, `skipped_empty_repos: []`); `update` stays unset so an emergency direct push remains
+  possible for a solo operator. `["squash"]` matches consent's live repo settings, not a narrowing.
+- **This cannot be applied by CI.** `check_plan_safety.sh` exits **1** naming the ruleset change —
+  refused in both directions by design (D-84) — so the apply is an explicit operator act (§5). The
+  CI credential is independently broken (D-56), so no merge reaches the backend either way.
+- Closes the exposure D-46 has carried since 2026-09-28: consent's `main` stops being directly
+  pushable, and `make drift`'s consent finding clears. dr and vendor stay red for their own reasons.
+
+
 ### Changed — 2026-10-27 (`rulesets.tf` lands: the adopted consent ruleset enters configuration, and the merge that lands it executes D-57 row 14)
 
 - `rulesets.tf` is added, byte-identical to the block `make adoption-block` extracts from Step 6b
