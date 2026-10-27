@@ -63,8 +63,22 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   as an append would **drop stage 1** (`non_fast_forward`, `deletion`, `required_linear_history`) in
   the very apply that adds stage 2 — a protection weakening landed inside a protection fix. Step 6b
   now carries the complete stage-2 block with stage 1 restated and all seven contexts spelled out.
-- The detector half is **PR #99, open and unmerged as this is written** — recorded here, not as
-  delivered. `drift_detect.py` asserted nothing about whether an active branch ruleset carries a
+- **`restrict_pushes` maps too, which replaces this entry's own "subsumed" claim.** Reading
+  `rules.update`'s provider description — "Only allow users with bypass permission to update
+  matching refs" — shows it is the legacy `restrict_pushes` semantic, so **all three of consent's
+  keys have a ruleset expression** and D-46 option A needs no dated deviation whatsoever. The
+  caveat is that `update = true` is a strengthening, not a mirror: consent's live ruleset does not
+  carry it, so putting it in the adoption block would break step 3's `no-op` proof and would also
+  mean no direct push to `main` is ever possible, including in an incident. Step 6b 4b now states
+  that as an explicit step-4 choice rather than an omission.
+- The detector half **landed while this entry was being written: PR #99 squashed into `main` at
+  `2ce3241`**, and the record was updated to say so instead of keeping the "open and unmerged as
+  this is written" phrasing past the merge. Verified against live state rather than the merge
+  banner: `drift_detect.py` now prints `protect-main: no pull_request rule (no PR is required on
+  main)` for consent and `INFO: … ruleset observation: … strict_required_status_checks_policy=false`
+  for dr and vendor, aggregate verdict still exit 1 with the same two repos in `weakened`; the
+  merged branch runs **321 passed** (316 + #99's 5).
+  `drift_detect.py` asserted nothing about whether an active branch ruleset carries a
   `pull_request` rule (D-84 residual (2)) *and* discarded every note it computed for a repo that
   cleared the context floor: a live `jolarca-dr` read found `strict_required_status_checks_policy
   =false` computed and printed nowhere. The two are coupled — asserting the rule without fixing the

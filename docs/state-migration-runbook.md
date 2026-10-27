@@ -733,12 +733,17 @@ resolved before a pull request can be merged" — that *is* `require_conversatio
 | `block_force_pushes: true` | `rules.non_fast_forward = true` | renamed |
 | `block_deletions: true` | `rules.deletion = true` | renamed |
 | `require_linear_history: true` | `rules.required_linear_history = true` | direct |
-| `restrict_pushes: true` | no attribute anywhere in the resource (0 hits) | **subsumed** |
+| `restrict_pushes: true` | `rules.update = true` — provider text: "Only allow users with bypass permission to update matching refs" | renamed — expressible |
 
-The single genuine gap is `restrict_pushes`, and a `pull_request` rule makes a direct push to `main`
-impossible, which is what the key asks for; that is reasoning rather than measurement, so record it as
-a mapping note on `repos/jolarca-consent.yml`, not as a lost control. The two fields that really are
-unmodelled are dr's and vendor's — see step 5, which stands.
+The last row was first written as "no attribute; subsumed by requiring a PR", which understated it:
+the provider's own description of `rules.update` is the legacy `restrict_pushes` semantic. So **all
+three keys map**, and residual (3)'s deviation is not needed at all. But note what setting it does:
+`update = true` is a **strengthening, not a mirror** — consent's live ruleset does not carry it, so it
+must stay out of step 1's adoption block (which has to plan to `no-op`) and belongs in step 4, where
+with `bypass_actors` empty it means nobody, including the sole owner, can push to `main` directly.
+That is the declared intent; the cost is that an emergency out-of-band push also becomes impossible,
+so choose it knowingly rather than inheriting it. The two fields that really are unmodelled are dr's
+and vendor's — see step 5, which stands.
 
 > **The hazard this block exists to prevent:** `rules` is `max_items = 1` — one block holding the
 > entire ruleset. An update PUTs what this block says and nothing else, so **stage 1 must be restated
@@ -769,6 +774,9 @@ resource "github_repository_ruleset" "jolarca_consent" {
     deletion                = true
     non_fast_forward        = true
     required_linear_history = true
+    # update = true is the `restrict_pushes` analogue. Deliberately NOT set here: it is a
+    # strengthening, not a mirror of live state, and adding it would break step 3's no-op proof.
+    # Set it in step 4 only if you accept that no direct push to main is possible, ever.
 
     # stage 2, the part that closes the direct-push hole
     pull_request {
@@ -817,11 +825,13 @@ empty would have made the pass vacuous. Consent is not empty (119 KB, 5 branches
 D-44 / D-47 did on `jolarca-identity`. `Verify Chain` is deliberately absent from the list: that
 workflow is schedule/`workflow_dispatch` only, so requiring it would be unsatisfiable (gate L-20).
 
-> Expect `make drift`'s wording to change once PR #99 merges (open, unmerged as this is
-> written — 2026-10-27): consent then also reports
-> `no pull_request rule (no PR is required on main)`, which is this bullet's defect named by
-> mechanism instead of inferred from a zero context count. Closing D-84's residual (2) in the
-> detector does **not** close the exposure; only this step 4 does.
+> **Measured 2026-10-27, after PR #99 squashed into `main` at `2ce3241`.** `drift_detect.py` on live
+> state now reports, for consent: `ruleset requires 0 status check(s), need >= 1; protect-main: no
+> required_status_checks rule; protect-main: no pull_request rule (no PR is required on main)` — the
+> third clause is the mechanism named instead of inferred. And for dr and vendor it prints
+> `INFO: … ruleset observation: protect-main: strict_required_status_checks_policy=false (not drift
+> under the declared baseline; reconcile when D-46 option A lands)` — the notes that used to be
+> computed and discarded. Aggregate verdict unchanged: **exit 1**, same two repos in `weakened`.
 
 **5. dr and vendor wait.** Their payloads carry `dismissal_restriction` and
 `require_extra_approval_for_unattributed_changes`, neither of which provider 6.13.0 models
