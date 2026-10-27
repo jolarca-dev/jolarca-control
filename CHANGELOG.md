@@ -10,6 +10,268 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (`jolarca-consent`'s `protect-main` ruleset is now under Terraform; D-46 option A executed for consent, inertly)
+
+- **This is a live state change, not a docs change.** The operator ran Step 6b steps 1–3: the adoption
+  block was extracted by `make adoption-block`, `terraform import
+  'github_repository_ruleset.main["jolarca-consent"]' 'jolarca-consent:24087580'` returned
+  `Import successful!`, and the remote state serial moved **15 → 16**. `terraform state list |
+  grep -c ruleset` went **0 → 1**; the state `id` at that address is the numeric `24087580`, not the
+  `repo:id` pair typed (the import-id ≠ state-id trap, as documented for `github_branch_protection`).
+- **Inertness proven two ways, not assumed.** Per-address the plan reads `no-op` — the mirror is
+  faithful — and against the live object `updated_at` still equals `created_at`
+  (`2026-09-28T02:07:06`), with `rules` unchanged and `bypass_actors: []`, so the import performed no
+  write to GitHub. Whole plan `0 to add, 1 to change, 0 to destroy`; `check_plan_safety.sh` exits **0**.
+- **What this does not fix:** consent still has no `pull_request` rule and no `required_status_checks`
+  rule, so `main` is still directly pushable. `make drift` still exits **1** naming
+  `no pull_request rule (no PR is required on main)`, and dr/vendor are unchanged: their status-check
+  attributes still enforce nothing (dr requires `[lint, gitleaks]` strict false; vendor an empty list).
+  Adoption made the object manageable; **step 4 is what makes it enforce**.
+- **New dependency created by landing it:** `rulesets.tf` is now an in-scope `*.tf` file, so the next
+  merge touching a trigger path will plan against an adopted ruleset (no-op, good) *and* carry D-57's
+  `jolarca-legal` template detach, which the brake does not refuse. Decide D-57 before that merge, not
+  inside it.
+- **Operational exposure measured and flagged:** the newest archived backup is
+  `terraform.tfstate.s14.20261015T180246Z.age` — **serial 14 against a workspace at 16** — and
+  `/opt/jolarca/backups` is on the same host as the working copy. A restore today would lose the
+  adoption plus twelve days. Run `BACKUP_DEST=… make backup` before step 4 changes state again (D-02).
+- Records updated to stop asserting the old state: `docs/state-migration-runbook.md` (Step 6b's
+  "Nothing in this section has been run" → an executed-status table), `AGENTS.md` §8 (0 → 1 ruleset
+  address; the "provider cannot express three keys" sentence corrected per D-87 row (6); "nothing there
+  has been run" → steps 1–3 run, step 4 not), `docs/drift-findings.md` (D-46 dated status; D-84
+  residual (1) struck through where it is now false; **D-88 retitled so the collision guard's
+  title-segment split does not truncate it** — the guard segments on the first em dash, and the
+  previous heading put one inside the title).
+- No agent-performed mutation: the import was the operator's, run under §5; no `apply`, no `state rm`/
+  `state mv`, no org PATCH, and `rulesets.tf` remains **untracked** — committing it is a separate,
+  reviewed `*.tf` change.
+
+### Added — 2026-10-27 (`make adoption-block`: Step 6b step 1 must not be transcribed by hand)
+
+Two hand-rolled replacements for the transcription both failed, one of them silently.
+
+- `scripts/extract_adoption_block.py`, `tests/test_extract_adoption_block.py` (**13 cases**, re-derived
+  from `--collect-only` each time it changed — it first claimed 13 by hand, measured 12, and returned
+  to 13 when the trigger-path warning test was added),
+  `Makefile` target `adoption-block`. This is D-87 row (8)'s remedy, and the row records why a
+  one-liner was not enough: a `python -c` raised `IndexError` because the fenced adoption block opens
+  with comments, and would anyway have disqualified it on the word `pull_request`, which the block's
+  own explanatory comment contains; an `awk` variant anchored on a line with an em dash emitted **zero
+  lines** and `terraform fmt -check` reported the empty file as **clean**. Both failures were caught
+  only by asserting counts rather than reading an exit code.
+- Selects by **block syntax** (an indented `name {`), not prose, and refuses to write unless exactly
+  one candidate is provably inert: one resource block, named `main`, a `for_each` containing
+  `"jolarca-consent"`, and no `pull_request` / `required_status_checks` / `bypass_actors` block. It
+  will not overwrite an existing `rulesets.tf`. Codes per §3: **0** unique inert adoption · **1**
+  refused · **2** could not verify — an absent fence is never a pass, which is the exact hole the awk
+  version fell into.
+- Step 1 of the runbook now gives the command instead of "land this file"; step 2 states the
+  prerequisite the operator just discovered the hard way: Terraform refuses to import into an address
+  the configuration does not declare (`resource address … does not exist in the configuration`), and
+  that refusal writes nothing — `state list | grep -c ruleset` stayed **0** and the state serial was
+  unchanged, so the failed attempt was safe but not a no-op proof.
+- Wiring follows D-80: new script ⇒ new fixture naming its subject (R1/R1b), and the fixture must run
+  while the script must be invoked by something executable (R2/R3) — the `Makefile` recipe is that
+  invocation, because a mention in prose is not one. `make lint`'s `gate-parity` step enforces it.
+- Blast radius: `scripts/**`, `tests/**` and `Makefile` are **not** in `apply.yml`'s push paths, so
+  merging this arms no apply (`check_apply_path_trigger.py`: 6 files, none matched). No `.tf` touched,
+  no Terraform mutation, no import. Suite **321 → 334**; `check_gate_parity.py` now counts **19** gate
+  scripts (was 18), which is the evidence the new script's fixture and invocation are wired, not just
+  claimed.
+- Caught by running it rather than by reading it: the first harness reported `pytest_rc=0` over **2
+  real failures** because the command was piped through `tail` — `tail`'s exit code, the §3 trap this
+  register already documents — and the failures were a genuine bug in the new script (`^resource "`
+  compiled without `re.M`, so it counted 0 resources in a block that starts with a comment). Both
+  numbers and the fix are in D-87's Verified row.
+- **A fourth metacharacter incident, this time `>` rather than a backtick.** While probing whether
+  `rulesets.tf` was gitignored, a message string containing `-> it would be picked up by git add -A`
+  sat inside a command substitution, so the shell treated `>` as a redirect and created a 55-byte file
+  named `it` in the governed tree. Untracked, absent from the registry, not part of the 46-file
+  evidence baseline — confirmed by `git ls-files it` → 0 and `git log --all -- it` → no commits — then
+  removed after inspection. Recorded in D-87 row (8)(c): the rule is not "no backticks in strings", it
+  is that **every** shell metacharacter in a message is code.
+
+### Fixed — 2026-10-27 (D-88 retracted: it duplicates D-57; the genuine delta is that the template line is now the plan's only change and the brake passes it)
+
+- **This entry opened as `### Found … no gate can see it`, and that framing was wrong.** D-57 (S1,
+  OPEN, blocks apply) already records the same `- template { owner = "journeyoflife-org", repository =
+  "jol-repo-template" }` line, already states that nothing in this repository declares a template
+  source, already names the `check_fleet_separation.sh` blind spot in nearly the same words — "a green
+  fleet audit does not establish that the live organization is separated" — and step 6's sign-off
+  packet already **decides** it: row 14, "REMOVE — ADR-0004 alignment". So the "three options for the
+  owner" I wrote were re-offering a decision the register had taken. Caught by `grep -rn
+  jol-repo-template docs/`, one keystroke, run *after* publishing the row. Third novelty claim this
+  session that failed against the register, after D-84 residual (2) and the D-46 capability sentence;
+  the shared cause is searching for expected phrasing instead of searching for the subject. D-88 now
+  states the retraction in its own heading and points at D-57 as the row to close.
+- What the re-measurement actually adds: the plan went `0 to add, 20 to change` → **`0 to add, 1 to
+  change`**, so this line is the sole pending change for the whole org; `check_plan_safety.sh` exits
+  **0** over it, so D-57's "blocks apply" now describes the human sign-off rather than the brake; and
+  `drift_detect.py` mentions `template` **0** times, a second blind gate beside fleet-separation.
+  Because there is no targeted-apply mechanism here, executing it **rides along with any apply**
+  performed for another reason — including the Step 6b adoption sequence — which is why it is called
+  out before step 2 rather than after step 4.
+- Measured on the tree while `rulesets.tf` existed un-imported, as a guard test rather than an
+  assumption: `terraform plan` → `1 to add, 1 to change, 0 to destroy`, and
+  `check_plan_safety.sh` exits **1** with three named refusals, one of which prints the import command
+  as its remedy. So the brake catches the late-import shape; the extract tool now says so on the line
+  after it writes the file, because the artifact it produces is an apply-trigger path.
+
+### Found — 2026-10-27 (D-88 originally: the plan's only remaining change is a mission-platform template reference in remote state)
+
+- Executing Step 6b step b meant running its step-3 plan rather than quoting it. Measured:
+  `terraform plan -input=false -no-color -out=tfplan` → **`Plan: 0 to add, 1 to change,
+  0 to destroy`**, identical with `-refresh=false`, and `check_plan_safety.sh` on the rendered file
+  exits **0**. The register's `0 to add, 20 to change` — cited as current in six governed lines, one
+  of them written by me an hour ago from D-84 rather than from the plan — is stale.
+- The one change is `github_repository.repo["jolarca-legal"]` dropping
+  `template { owner = "journeyoflife-org", repository = "jol-repo-template" }`. No config in this root
+  declares a `template` block (`grep -rn template *.tf repos/jolarca-legal.yml` → only `is_template`
+  and `license_template`), so a **foreign-estate provenance reference is held in remote state** on a
+  governed marketplace repo, which ADR-0004 and §5 exist to prevent.
+- Both gates built for this class are structurally blind: `check_fleet_separation.sh` matches org repo
+  **names** and the `repos/*.yml` allow-list against `jol-*` and never reads state or the API, and
+  `grep -c template scripts/drift_detect.py` → **0**. A green `make fleet-audit` therefore means no
+  foreign-estate link is written in a *file*, not that none exists. Recorded rather than fixed: a real
+  check needs negative controls (§7) and a fixture (D-80 R1/R3), so it is not a docs change.
+- Consequence to act on, stated plainly: `apply.yml:133` plans with refresh and the apply path runs
+  `-auto-approve`, so **the next merge touching a trigger path applies this detach unattended** —
+  the brake passes it because it is not a destroy, replace, visibility, protection or
+  security-feature change. Whether it changes anything live is **unknown**: the provider sends no
+  `template` on update, so it may be state-only, and that cannot be measured without doing the very
+  apply under discussion. Three options for the owner are in the register row; none is a bug fix.
+- Also recorded against me: the scratch harness that printed these numbers put `20 to change` inside
+  a **double-quoted** shell string, so the backticks executed (`line 13: 20: command not found`) —
+  the third instance of the bug D-84's own row documents, reproduced in this session. No file was
+  created and nothing was mutated, but it is the same mistake, and it is why the register keeps
+  writing it down.
+- Files: `docs/drift-findings.md` (**D-88** opened then retracted onto **D-57**, dated status on
+  D-57, dated correction to D-87 row (2) and its "Fixed here" cell),
+  `docs/state-migration-runbook.md` (Step 3 verdict rewritten to measured fact; Step 6's count line
+  marked superseded), this entry. `check_findings_register.py --cross-pr` exits 0 over **87**
+  parsed headings, D-88 unique, no dangling citations.
+
+### Fixed — 2026-10-27 (D-87: the staged D-46 adoption could not be executed as written)
+
+- `docs/state-migration-runbook.md` **Step 6b** — the "ready, staged" sequence for adopting
+  `jolarca-consent`'s undeclared `protect-main` ruleset (D-46 option A) — was audited rather than
+  re-used. Four defects, all reproducible offline; no Terraform command was run and no GitHub
+  state was touched.
+- The inertness proof could never pass. `check_plan_safety.sh <(terraform show -no-color tfplan)`
+  exits **2** every time: the gate requires a regular file (`[ ! -f "$PLAN" ]`) and process
+  substitution yields `/dev/fd/63`, so it prints `plan file not readable`. The identical bytes in a
+  real file exit **0** — measured both ways. The gate is correct (§3: an unreadable input is never
+  a pass; D-61 exists to refuse shapes it cannot parse); the runbook prescribed the one invocation
+  that cannot succeed **and told the operator to expect `exit 0`** — the dangerous combination,
+  because "not readable" reads as a tooling nuisance mid-procedure, not as a refusal.
+- That `expect exit 0` also hid a precondition: Step 6's unreconciled protection changes are still
+  open (`0 to add, 20 to change`, measured 2026-10-26) and since D-61 the gate refuses *every*
+  protection attribute change, so a whole-state plan exits **1** whatever the adoption does.
+  Demonstrated on synthetic input — one `~ dismiss_stale_reviews` line → 1, naming the line;
+  `0 to add, 0 to change, 0 to destroy` → 0. Step 3 now renders `tfplan` / `plan.txt`, passes the
+  real file, and judges inertness **per address** via
+  `terraform show -json | jq '.resource_changes[] | select(.type=="github_repository_ruleset") | {address, actions: .change.actions}'`,
+  expecting `["no-op"]` — machine-read, not grep-matched (§7: never infer coverage from an
+  aggregate exit).
+- The "ready to paste" HCL failed `terraform fmt -check` — **exit 3**, two misaligned `=` — so the
+  very PR Step 6b instructs the operator to open would have reddened `Terraform Format` and
+  `make lint` on first push. Re-aligned and verified **exit 0** by re-extracting the block from the
+  runbook itself rather than re-typing it.
+- Its filenames leaked: `tfplan6b` and `plan6b.txt` match no `.gitignore` entry (`git check-ignore`;
+  `tfplan` and `plan.txt` are exact names, `*.tfplan` needs the suffix), so a rendered plan — the
+  whole org inventory plus every repository's protection posture — would sit **untracked in a
+  public governed repo**, the same no-recovery-path hazard this session found in its own tree.
+- Provider capability re-derived from `terraform providers schema -json` for the pinned
+  `integrations/github` 6.13.0: consent's three live rules *are* modelled (boolean attributes of
+  `rules`) and `pull_request` / `required_status_checks` exist as nested blocks, so the mirror and
+  the step-4 tightening are both expressible. A whole-file `grep -c dismissal_restriction` returns
+  **1**, but the hit is on `github_branch_protection`, not on `github_repository_ruleset` — so
+  D-46's dr/vendor deferral stands, and Step 5 now says so explicitly, because an unscoped grep
+  will look like the refutation of a true claim.
+- **The same name-matching method produced a false inexpressibility claim, and it took a second
+  pass to catch it.** `github_repository_ruleset` exposes 52 attributes and **renames** several
+  concepts the registry spells differently: `require_conversation_resolution` is
+  `rules.pull_request.required_review_thread_resolution` (schema description: "All conversations on
+  code must be resolved before a pull request can be merged"), and `enforce_admins` is expressed by
+  the **absence** of a `bypass_actors` block — consent's live ruleset reports `bypass: []`. Grepping
+  the registry's spelling and reading 0 hits as "cannot express" is invalid; a 0-hit grep proves a
+  name is absent, never that a control is. Only `restrict_pushes` truly has no attribute, and a
+  `pull_request` rule makes a direct push impossible, so it is recorded as a mapping note. **Net
+  effect: D-46 option A needs no dated deviation for consent** — the "documented field mapping"
+  branch of D-84 residual (3) is now written out, in Step 6b 4b.
+- **`rules` is `max_items = 1`**, which makes step 4's wording dangerous: one block holds the entire
+  ruleset and an update PUTs the whole thing, so "extend the block with a `pull_request` rule" read
+  as an append would **drop stage 1** (`non_fast_forward`, `deletion`, `required_linear_history`) in
+  the very apply that adds stage 2 — a protection weakening landed inside a protection fix. Step 6b
+  now carries the complete stage-2 block with stage 1 restated and all seven contexts spelled out.
+- **`restrict_pushes` maps too, which replaces this entry's own "subsumed" claim.** Reading
+  `rules.update`'s provider description — "Only allow users with bypass permission to update
+  matching refs" — shows it is the legacy `restrict_pushes` semantic, so **all three of consent's
+  keys have a ruleset expression** and D-46 option A needs no dated deviation whatsoever. The
+  caveat is that `update = true` is a strengthening, not a mirror: consent's live ruleset does not
+  carry it, so putting it in the adoption block would break step 3's `no-op` proof and would also
+  mean no direct push to `main` is ever possible, including in an incident. Step 6b 4b now states
+  that as an explicit step-4 choice rather than an omission.
+- **The remedy for the `max_items = 1` hazard introduced a bigger one, and review caught it.** The
+  stage-2 block added to Step 6b declared `resource "github_repository_ruleset" "jolarca_consent"`,
+  while step 1 declares `"main"` with `for_each = toset(["jolarca-consent"])` and step 2 imports
+  `github_repository_ruleset.main["jolarca-consent"]`. Pasting the new block beside step 1 would
+  have produced **two declarations over one live ruleset**, and the plan would then want to create a
+  duplicate `protect-main` on a tier-1 GDPR repo next to the rule actually enforcing. `check_plan_safety.sh`
+  refuses that create in CI (D-84) — but step 4 is the one step the runbook says to apply **by
+  hand**, which is exactly where that brake is stepped around by design, so relying on the brake was
+  the wrong layer. 4b now uses the imported address, states "edit it, do not add a second resource",
+  and adds a pre-hand-apply guard: `terraform state list | grep -c ruleset` must be **1**, and any
+  `create` line in the per-address query means stop. The checker written to validate that block also
+  needed fixing: it flagged `for_each` as an unknown attribute because Terraform meta-arguments are
+  language syntax, not provider schema — a false positive on the correct HCL, now allowlisted.
+- The detector half **landed while this entry was being written: PR #99 squashed into `main` at
+  `2ce3241`**, and the record was updated to say so instead of keeping the "open and unmerged as
+  this is written" phrasing past the merge. Verified against live state rather than the merge
+  banner: `drift_detect.py` now prints `protect-main: no pull_request rule (no PR is required on
+  main)` for consent and `INFO: … ruleset observation: … strict_required_status_checks_policy=false`
+  for dr and vendor, aggregate verdict still exit 1 with the same two repos in `weakened`; the
+  merged branch runs **321 passed** (316 + #99's 5).
+  `drift_detect.py` asserted nothing about whether an active branch ruleset carries a
+  `pull_request` rule (D-84 residual (2)) *and* discarded every note it computed for a repo that
+  cleared the context floor: a live `jolarca-dr` read found `strict_required_status_checks_policy
+  =false` computed and printed nowhere. The two are coupled — asserting the rule without fixing the
+  discard would have produced a detection nothing could read, since a ruleset can carry enough
+  contexts while requiring no PR at all. 5 fixtures, proven red first (**4 failed / 29 passed**),
+  suite **316 → 321**; drift's live verdict is unchanged (exit 1; consent and vendor were already
+  findings) while consent now reports `no pull_request rule (no PR is required on main)`. `strict`
+  is surfaced as an *observation*, not a finding, because `policy/repo-defaults.yml` declares no
+  `strict` key and `test_protection_404_with_ruleset_requiring_contexts_is_not_drift` is a recorded
+  decision, not an oversight. A self-caught defect rode along: `ruleset_covers_branch` returned
+  `True` for a `target = "tag"` ruleset (no `ref_name`), which my new assertion would have turned
+  into a false finding — proven red, then guarded.
+- **Not closed:** consent's `main` is still directly pushable — this makes the remedy executable,
+  it does not execute it. `terraform import` / `state rm` remain the operator's (§5); step 4 is
+  refused by the brake by design and is applied by hand; and `repo_readiness_audit.py`'s `G-12c`
+  probe is still behind the empty-repository `return`.
+- **A claim this entry got wrong, corrected during its own review.** Step 4's precondition as
+  written told the operator to resolve consent's three ruleset-inexpressible declaration keys "or
+  `make drift` stays permanently red". That consequence was copied verbatim from D-84 residual (3)
+  and reproduced here **without testing it** — the exact failure mode §7 warns about, one edit after
+  writing a rule about it. Simulated against `drift_detect.py` using consent's own seven declared
+  contexts: the ruleset path never reads `restrict_pushes`, `require_conversation_resolution` or
+  per-rule `enforce_admins`; it compares required status checks, the `pull_request` rule,
+  `non_fast_forward` and `deletion`. Consent clears once step 4 adds **both** `pull_request` and
+  `required_status_checks` with ≥1 context — either alone still reports the other, and
+  `strict=false` after step 4 yields an observation, not a finding. So the keys are **not** a
+  prerequisite for step 4. What this bullet then said *in place of* that consequence was itself
+  wrong — it claimed an adopted ruleset "cannot carry" `restrict_pushes` **and**
+  `require_conversation_resolution`; see the two bullets above, `require_conversation_resolution`
+  is expressible under a renamed attribute. The gate that reads those registry keys,
+  `repo_readiness_audit.py`, is invoked by no workflow — so it cannot redden CI at all.
+  Both D-84 and D-87 now carry dated corrections rather than deleted claims, and each correction
+  names the method error that produced the wrong one.
+- Files: `docs/state-migration-runbook.md` (Step 6b), `docs/drift-findings.md` (**D-87** + dated
+  status on D-84 residual (2)), this entry. None is in `EVIDENCE_DIRS`, so no re-registration was
+  required — verified by `grep -c` against the registry returning **0**, not assumed.
+  `check_findings_register.py --cross-pr` exits 0 over **86** headings; `hash_evidence.sh --check`
+  46 files / 0 mismatches.
+
 ### Fixed — 2026-10-26 (D-85: three governed records asserted a freeze that existed on no branch; D-86: `make` cannot carry the exit-code convention)
 
 - Started repo 2 by reading its **committed** tree instead of this register. At
@@ -101,7 +363,11 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   6.13.0 can express the missing checks but does not model `dismissal_restriction` /
   `require_extra_approval_for_unattributed_changes` that are live in dr/vendor, and cannot
   express `restrict_pushes`, `require_conversation_resolution` or per-rule `enforce_admins` that
-  these repos declare. Import id read from provider source (`parseID2` splits on `:`):
+  these repos declare. **Corrected 2026-10-27, same entry, one day later: the last clause is wrong
+  in two places** — `require_conversation_resolution` is `required_review_thread_resolution` on a
+  ruleset and `enforce_admins` is the absence of `bypass_actors`; only `restrict_pushes` has no
+  attribute, and a `pull_request` rule subsumes it. See **Step 6b 4b** for the mapping.
+  Import id read from provider source (`parseID2` splits on `:`):
   `<repo>:<ruleset_id>`. Sequence, ready HCL and verification commands: `docs/state-migration-runbook.md`
   **Step 6b**; `terraform import` stays operator-run (§5). Option B (delete the rulesets) was
   rejected because CI has never reached the HCP workspace (D-82), so the unprotected window is

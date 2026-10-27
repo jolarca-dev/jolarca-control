@@ -2,7 +2,7 @@
 # Jolarca Control Plane — Makefile
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: help setup validate compliance context-parity context-baseline backup drift fleet-audit org-audit readiness \
+.PHONY: help setup validate compliance context-parity context-baseline backup adoption-block drift fleet-audit org-audit readiness \
         first-commit evidence-check evidence-register findings-check gate-parity secrets-inventory \
         apply-path-trigger \
         init fmt fmt-check lint tf-validate py-lint py-fmt-check py-type sh-lint yaml-lint \
@@ -173,6 +173,19 @@ context-baseline: ## policy/repo-defaults.yml required_checks must match the dec
 backup: ## Encrypted, decrypt-verified off-host backup of Terraform state
 	@test -n "$(BACKUP_DEST)" || { echo "usage: BACKUP_DEST=<off-host-dir> make backup"; exit 1; }
 	BACKUP_DEST=$(BACKUP_DEST) bash scripts/state_backup.sh
+
+# Step 6b step 1 of docs/state-migration-runbook.md. The instruction used to be "land this file only
+# in the PR that runs step 2", i.e. transcribe a protection object by hand — the friction D-87 row
+# (3) says trains humans to hand-write protection objects. Two scripted replacements for that failed
+# in structurally different ways before this target existed: a word filter dropped the adoption block
+# because its own comment mentions `pull_request`, and an awk variant emitted zero lines which
+# `terraform fmt -check` then reported as clean. So this extracts by BLOCK syntax, asserts the result
+# is inert, and refuses rather than write something an operator will import.
+#   make adoption-block                 # writes rulesets.tf (refuses if it already exists)
+#   make adoption-block OUT=/tmp/preview.tf
+#   0 one inert adoption · 1 refused (ambiguous, contaminated, or would overwrite) · 2 cannot verify
+adoption-block: ## Extract Step 6b's inert adoption block for terraform import
+	python3 scripts/extract_adoption_block.py --out $(if $(OUT),$(OUT),rulesets.tf)
 
 # Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
 # STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target
