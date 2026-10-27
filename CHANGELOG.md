@@ -10,6 +10,39 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Found — 2026-10-27 (D-88: the plan's only remaining change is a mission-platform template reference in remote state, and no gate can see it) **S2 · OPEN**
+
+- Executing Step 6b step b meant running its step-3 plan rather than quoting it. Measured:
+  `terraform plan -input=false -no-color -out=tfplan` → **`Plan: 0 to add, 1 to change,
+  0 to destroy`**, identical with `-refresh=false`, and `check_plan_safety.sh` on the rendered file
+  exits **0**. The register's `0 to add, 20 to change` — cited as current in six governed lines, one
+  of them written by me an hour ago from D-84 rather than from the plan — is stale.
+- The one change is `github_repository.repo["jolarca-legal"]` dropping
+  `template { owner = "journeyoflife-org", repository = "jol-repo-template" }`. No config in this root
+  declares a `template` block (`grep -rn template *.tf repos/jolarca-legal.yml` → only `is_template`
+  and `license_template`), so a **foreign-estate provenance reference is held in remote state** on a
+  governed marketplace repo, which ADR-0004 and §5 exist to prevent.
+- Both gates built for this class are structurally blind: `check_fleet_separation.sh` matches org repo
+  **names** and the `repos/*.yml` allow-list against `jol-*` and never reads state or the API, and
+  `grep -c template scripts/drift_detect.py` → **0**. A green `make fleet-audit` therefore means no
+  foreign-estate link is written in a *file*, not that none exists. Recorded rather than fixed: a real
+  check needs negative controls (§7) and a fixture (D-80 R1/R3), so it is not a docs change.
+- Consequence to act on, stated plainly: `apply.yml:133` plans with refresh and the apply path runs
+  `-auto-approve`, so **the next merge touching a trigger path applies this detach unattended** —
+  the brake passes it because it is not a destroy, replace, visibility, protection or
+  security-feature change. Whether it changes anything live is **unknown**: the provider sends no
+  `template` on update, so it may be state-only, and that cannot be measured without doing the very
+  apply under discussion. Three options for the owner are in the register row; none is a bug fix.
+- Also recorded against me: the scratch harness that printed these numbers put `20 to change` inside
+  a **double-quoted** shell string, so the backticks executed (`line 13: 20: command not found`) —
+  the third instance of the bug D-84's own row documents, reproduced in this session. No file was
+  created and nothing was mutated, but it is the same mistake, and it is why the register keeps
+  writing it down.
+- Files: `docs/drift-findings.md` (**D-88** + dated correction to D-87 row (2) and its "Fixed here"
+  cell), `docs/state-migration-runbook.md` (Step 3 verdict rewritten to measured fact; Step 6's count
+  line marked superseded), this entry. `check_findings_register.py --cross-pr` exits 0 over **87**
+  headings, D-88 unique, no dangling citations.
+
 ### Fixed — 2026-10-27 (D-87: the staged D-46 adoption could not be executed as written)
 
 - `docs/state-migration-runbook.md` **Step 6b** — the "ready, staged" sequence for adopting

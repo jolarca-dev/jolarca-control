@@ -444,6 +444,10 @@ whose live rules lack a push restriction while policy demands one (`jolarca-docs
 **D-66**, deliberately not tightened as a side effect of fixing the deletions.
 
 Re-measured after #72 and that exclusion: `Plan: 0 to add, 20 to change, 0 to destroy`.
+> **Superseded 2026-10-27:** the same command now reports `0 to add, 1 to change, 0 to destroy`.
+> Step 6's protection residue was reconciled in between; the single remaining change is the
+> `jolarca-legal` template detach tracked as **D-88**, not a protection line. Read the count from a
+> fresh plan before acting on any number in this file — including the one in this note.
 `check_plan_safety.sh` on the `-no-color` text exits **1**, naming 8 in-place
 `github_branch_protection` updates — four adding `required_status_checks` (`jolarca-data`,
 `-identity`, `-legal`, `-security`), three setting `required_linear_history` /
@@ -638,17 +642,27 @@ terraform show -json tfplan | jq '.resource_changes[]
   | select(.type=="github_repository_ruleset") | {address, actions: .change.actions}'
 ```
 
-Read the two verdicts separately. They answer different questions, and the first one is
-**expected to refuse** on this tree today.
+Read the two verdicts separately. They answer different questions.
 
-* `check_plan_safety.sh` exits **1** here regardless of the adoption, because Step 6's
-  unreconciled branch-protection changes are still open (`0 to add, 20 to change`, measured
-  2026-10-26) and since D-61 the gate refuses *every* protection attribute change in either
-  direction. Demonstrated on synthetic input rather than inferred: a plan carrying one
-  `~ dismiss_stale_reviews` line exits 1 and names that line, while a plan of
-  `0 to add, 0 to change, 0 to destroy` exits 0. Do not read the refusal as "the adoption is
-  unsafe", and do not read it as passed either — reconcile Step 6's table first, or judge the
-  ruleset on its own address below.
+* `check_plan_safety.sh` **exits 0 on this tree today** (measured 2026-10-27 against a real
+  refreshing plan: `Plan: 0 to add, 1 to change, 0 to destroy`, and the same verdict with
+  `-refresh=false`). It is not refusing the adoption, and it is not refusing Step 6's residue —
+  because there is no longer any protection residue to refuse. See **D-88** for what the one
+  remaining change is, and why a clean exit here should not be read as "nothing pending": the gate
+  refuses destroy / replace / visibility / protection-layer / security-feature disables, and the
+  pending change is none of those, so an unattended merge on a trigger path would apply it.
+  Demonstrated on synthetic input rather than inferred: a plan carrying one `~ dismiss_stale_reviews`
+  line exits **1** and names that line; an empty plan exits **0**.
+
+> **Corrected 2026-10-27, one commit after it was written.** This bullet previously stated the gate
+> "exits **1** here regardless of the adoption, because Step 6's unreconciled branch-protection
+> changes are still open (`0 to add, 20 to change`, measured 2026-10-26)" and labelled the refusal
+> *expected today*. That figure was inherited from D-84/D-61 rows and repeated without re-running the
+> plan; the live tree now reports **1 change, not 20**, and the brake passes. The structural point
+> stands — an aggregate exit cannot distinguish "the adoption is inert" from "the plan is clean", so
+> read the per-address query below — but the operational advice ("expect a refusal, reconcile Step 6
+> first") was stale, and stale is not the same as wrong only in direction: it would have told the
+> operator to go reconcile 19 already-reconciled lines.
 * The per-address query is the real inertness proof, and it is machine-read rather than
   grep-matched for exactly that reason (AGENTS.md §7: never infer coverage from an aggregate
   exit). Expect `actions: ["no-op"]`. Any `update` or `create` means the config does not mirror
