@@ -10,6 +10,43 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-10-27 (`make adoption-block`: Step 6b step 1 must not be transcribed by hand)
+
+Two hand-rolled replacements for the transcription both failed, one of them silently.
+
+- `scripts/extract_adoption_block.py`, `tests/test_extract_adoption_block.py` (**12 cases**, counted
+  from the runner — the first draft of this entry said 13 and was corrected by `pytest -q`),
+  `Makefile` target `adoption-block`. This is D-87 row (8)'s remedy, and the row records why a
+  one-liner was not enough: a `python -c` raised `IndexError` because the fenced adoption block opens
+  with comments, and would anyway have disqualified it on the word `pull_request`, which the block's
+  own explanatory comment contains; an `awk` variant anchored on a line with an em dash emitted **zero
+  lines** and `terraform fmt -check` reported the empty file as **clean**. Both failures were caught
+  only by asserting counts rather than reading an exit code.
+- Selects by **block syntax** (an indented `name {`), not prose, and refuses to write unless exactly
+  one candidate is provably inert: one resource block, named `main`, a `for_each` containing
+  `"jolarca-consent"`, and no `pull_request` / `required_status_checks` / `bypass_actors` block. It
+  will not overwrite an existing `rulesets.tf`. Codes per §3: **0** unique inert adoption · **1**
+  refused · **2** could not verify — an absent fence is never a pass, which is the exact hole the awk
+  version fell into.
+- Step 1 of the runbook now gives the command instead of "land this file"; step 2 states the
+  prerequisite the operator just discovered the hard way: Terraform refuses to import into an address
+  the configuration does not declare (`resource address … does not exist in the configuration`), and
+  that refusal writes nothing — `state list | grep -c ruleset` stayed **0** and the state serial was
+  unchanged, so the failed attempt was safe but not a no-op proof.
+- Wiring follows D-80: new script ⇒ new fixture naming its subject (R1/R1b), and the fixture must run
+  while the script must be invoked by something executable (R2/R3) — the `Makefile` recipe is that
+  invocation, because a mention in prose is not one. `make lint`'s `gate-parity` step enforces it.
+- Blast radius: `scripts/**`, `tests/**` and `Makefile` are **not** in `apply.yml`'s push paths, so
+  merging this arms no apply (`check_apply_path_trigger.py`: 6 files, none matched). No `.tf` touched,
+  no Terraform mutation, no import. Suite **321 → 333**; `check_gate_parity.py` now counts **19** gate
+  scripts (was 18), which is the evidence the new script's fixture and invocation are wired, not just
+  claimed.
+- Caught by running it rather than by reading it: the first harness reported `pytest_rc=0` over **2
+  real failures** because the command was piped through `tail` — `tail`'s exit code, the §3 trap this
+  register already documents — and the failures were a genuine bug in the new script (`^resource "`
+  compiled without `re.M`, so it counted 0 resources in a block that starts with a comment). Both
+  numbers and the fix are in D-87's Verified row.
+
 ### Found — 2026-10-27 (D-88: the plan's only remaining change is a mission-platform template reference in remote state, and no gate can see it) **S2 · OPEN**
 
 - Executing Step 6b step b meant running its step-3 plan rather than quoting it. Measured:

@@ -585,6 +585,35 @@ here rather than committed as `rulesets.tf` deliberately: a declared-but-unimpor
 makes the plan want to **create a second ruleset beside the one in force**, and a `.tf`
 merge arms `apply.yml`. Land this file only in the PR that runs step 2 immediately after.
 
+Do not transcribe the block, and do not build a one-liner to pull it out. Extract it, vetted:
+
+```bash
+make adoption-block            # writes rulesets.tf, or refuses
+# equivalent, and what the target runs:
+python3 scripts/extract_adoption_block.py --out rulesets.tf
+python3 scripts/extract_adoption_block.py --check           # select and vet, write nothing
+```
+
+`scripts/extract_adoption_block.py` picks the fence by **block syntax** and asserts before writing:
+exactly one resource block, resource named `main`, a `for_each` containing `"jolarca-consent"`, and
+**no** `pull_request` / `required_status_checks` / `bypass_actors` block. Exit codes follow §3 —
+`0` a unique inert adoption, `1` refused, `2` could not verify — and it will not overwrite an
+existing `rulesets.tf`.
+
+> **Why this is a script and not a grep or a `python -c` (measured on 2026-10-27, twice).** The first
+> replacement was `python -c "...startswith('resource \"github_repository_ruleset\"')... and
+> 'pull_request' not in x"`. It raised `IndexError` — the fence opens with comment lines, so nothing
+> started with the header — and even had it matched, the adoption block's own comment says
+> *"Deliberately absent, because live lacks them: pull_request and required_status_checks"*, so a
+> **word** filter rejects the one block it must accept. The operator then ran step 2 against no config
+> at all and got `Error: resource address "github_repository_ruleset.main[\"jolarca-consent\"]" does
+> not exist in the configuration` — which is Terraform refusing safely, not a defect. An `awk`
+> variant was worse in the instructive way: it matched nothing because the anchor line contains an
+> em dash, emitted **zero lines**, and `terraform fmt -check` on the empty file exited **0**. A green
+> format check over no content is not evidence; that is why the target asserts counts, not exits.
+> Fixtures: `tests/test_extract_adoption_block.py`, including the prose-vs-structure case as a
+> named regression (D-80).
+
 ```hcl
 # rulesets.tf — D-46 option A, consent first.
 # Mirrors live content measured 2026-10-26; changes NOTHING about what GitHub enforces.
@@ -620,6 +649,12 @@ resource "github_repository_ruleset" "main" {
 **2. Import (operator-run).** The provider's importer calls `parseID2`, which splits on
 `:` — so the id is `<repo>:<ruleset_id>`, and the **numeric** ruleset id from the list call,
 not the name (the `…/rulesets/protect-main` form returns HTTP 404).
+
+> **Step 1 must be finished before this can run at all.** Terraform refuses to import into an
+> address the configuration does not declare: `resource address … does not exist in the
+> configuration` (measured 2026-10-27). Nothing is written when it refuses, and
+> `terraform state list | grep -c ruleset` stays `0` — so a failed step 2 is safe, but it is
+> not a no-op proof. Run `make adoption-block` first and confirm it exits `0`.
 
 ```bash
 cd /opt/jolarca/repos/jolarca-control
