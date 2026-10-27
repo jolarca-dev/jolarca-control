@@ -161,6 +161,21 @@ def test_vet_rejects_a_missing_for_each_because_the_import_address_dependson_it(
     assert any("for_each" in p for p in ex.vet(no_each))
 
 
+def test_write_warns_that_the_artifact_is_an_apply_trigger_path(
+    tmp_path: pathlib.Path, capsys
+) -> None:
+    """The file this tool produces is `*.tf`, i.e. an `apply.yml` trigger path. Committing it before
+    the import is a production apply whose plan wants to create a duplicate ruleset -- measured on
+    2026-10-27 as `1 to add, 1 to change` with check_plan_safety.sh refusing it. The tool must say so
+    at the moment it writes, not only in a runbook paragraph the operator may have scrolled past."""
+    rb = write_runbook(tmp_path, ADOPTION)
+    out = tmp_path / "rulesets.tf"
+    assert ex.main(["--runbook", str(rb), "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "WARNING" in printed and "trigger" in printed.lower()
+    assert "import" in printed
+
+
 @pytest.mark.parametrize("rule", ["bypass_actors", "required_status_checks"])
 def test_each_rule_shape_is_treated_as_mutation(rule: str) -> None:
     injected = ADOPTION.replace(

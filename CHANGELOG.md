@@ -14,8 +14,9 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 Two hand-rolled replacements for the transcription both failed, one of them silently.
 
-- `scripts/extract_adoption_block.py`, `tests/test_extract_adoption_block.py` (**12 cases**, counted
-  from the runner — the first draft of this entry said 13 and was corrected by `pytest -q`),
+- `scripts/extract_adoption_block.py`, `tests/test_extract_adoption_block.py` (**13 cases**, re-derived
+  from `--collect-only` each time it changed — it first claimed 13 by hand, measured 12, and returned
+  to 13 when the trigger-path warning test was added),
   `Makefile` target `adoption-block`. This is D-87 row (8)'s remedy, and the row records why a
   one-liner was not enough: a `python -c` raised `IndexError` because the fenced adoption block opens
   with comments, and would anyway have disqualified it on the word `pull_request`, which the block's
@@ -38,7 +39,7 @@ Two hand-rolled replacements for the transcription both failed, one of them sile
   invocation, because a mention in prose is not one. `make lint`'s `gate-parity` step enforces it.
 - Blast radius: `scripts/**`, `tests/**` and `Makefile` are **not** in `apply.yml`'s push paths, so
   merging this arms no apply (`check_apply_path_trigger.py`: 6 files, none matched). No `.tf` touched,
-  no Terraform mutation, no import. Suite **321 → 333**; `check_gate_parity.py` now counts **19** gate
+  no Terraform mutation, no import. Suite **321 → 334**; `check_gate_parity.py` now counts **19** gate
   scripts (was 18), which is the evidence the new script's fixture and invocation are wired, not just
   claimed.
 - Caught by running it rather than by reading it: the first harness reported `pytest_rc=0` over **2
@@ -46,8 +47,41 @@ Two hand-rolled replacements for the transcription both failed, one of them sile
   register already documents — and the failures were a genuine bug in the new script (`^resource "`
   compiled without `re.M`, so it counted 0 resources in a block that starts with a comment). Both
   numbers and the fix are in D-87's Verified row.
+- **A fourth metacharacter incident, this time `>` rather than a backtick.** While probing whether
+  `rulesets.tf` was gitignored, a message string containing `-> it would be picked up by git add -A`
+  sat inside a command substitution, so the shell treated `>` as a redirect and created a 55-byte file
+  named `it` in the governed tree. Untracked, absent from the registry, not part of the 46-file
+  evidence baseline — confirmed by `git ls-files it` → 0 and `git log --all -- it` → no commits — then
+  removed after inspection. Recorded in D-87 row (8)(c): the rule is not "no backticks in strings", it
+  is that **every** shell metacharacter in a message is code.
 
-### Found — 2026-10-27 (D-88: the plan's only remaining change is a mission-platform template reference in remote state, and no gate can see it) **S2 · OPEN**
+### Fixed — 2026-10-27 (D-88 retracted: it duplicates D-57; the genuine delta is that the template line is now the plan's only change and the brake passes it)
+
+- **This entry opened as `### Found … no gate can see it`, and that framing was wrong.** D-57 (S1,
+  OPEN, blocks apply) already records the same `- template { owner = "journeyoflife-org", repository =
+  "jol-repo-template" }` line, already states that nothing in this repository declares a template
+  source, already names the `check_fleet_separation.sh` blind spot in nearly the same words — "a green
+  fleet audit does not establish that the live organization is separated" — and step 6's sign-off
+  packet already **decides** it: row 14, "REMOVE — ADR-0004 alignment". So the "three options for the
+  owner" I wrote were re-offering a decision the register had taken. Caught by `grep -rn
+  jol-repo-template docs/`, one keystroke, run *after* publishing the row. Third novelty claim this
+  session that failed against the register, after D-84 residual (2) and the D-46 capability sentence;
+  the shared cause is searching for expected phrasing instead of searching for the subject. D-88 now
+  states the retraction in its own heading and points at D-57 as the row to close.
+- What the re-measurement actually adds: the plan went `0 to add, 20 to change` → **`0 to add, 1 to
+  change`**, so this line is the sole pending change for the whole org; `check_plan_safety.sh` exits
+  **0** over it, so D-57's "blocks apply" now describes the human sign-off rather than the brake; and
+  `drift_detect.py` mentions `template` **0** times, a second blind gate beside fleet-separation.
+  Because there is no targeted-apply mechanism here, executing it **rides along with any apply**
+  performed for another reason — including the Step 6b adoption sequence — which is why it is called
+  out before step 2 rather than after step 4.
+- Measured on the tree while `rulesets.tf` existed un-imported, as a guard test rather than an
+  assumption: `terraform plan` → `1 to add, 1 to change, 0 to destroy`, and
+  `check_plan_safety.sh` exits **1** with three named refusals, one of which prints the import command
+  as its remedy. So the brake catches the late-import shape; the extract tool now says so on the line
+  after it writes the file, because the artifact it produces is an apply-trigger path.
+
+### Found — 2026-10-27 (D-88 originally: the plan's only remaining change is a mission-platform template reference in remote state)
 
 - Executing Step 6b step b meant running its step-3 plan rather than quoting it. Measured:
   `terraform plan -input=false -no-color -out=tfplan` → **`Plan: 0 to add, 1 to change,
@@ -75,10 +109,11 @@ Two hand-rolled replacements for the transcription both failed, one of them sile
   the third instance of the bug D-84's own row documents, reproduced in this session. No file was
   created and nothing was mutated, but it is the same mistake, and it is why the register keeps
   writing it down.
-- Files: `docs/drift-findings.md` (**D-88** + dated correction to D-87 row (2) and its "Fixed here"
-  cell), `docs/state-migration-runbook.md` (Step 3 verdict rewritten to measured fact; Step 6's count
-  line marked superseded), this entry. `check_findings_register.py --cross-pr` exits 0 over **87**
-  headings, D-88 unique, no dangling citations.
+- Files: `docs/drift-findings.md` (**D-88** opened then retracted onto **D-57**, dated status on
+  D-57, dated correction to D-87 row (2) and its "Fixed here" cell),
+  `docs/state-migration-runbook.md` (Step 3 verdict rewritten to measured fact; Step 6's count line
+  marked superseded), this entry. `check_findings_register.py --cross-pr` exits 0 over **87**
+  parsed headings, D-88 unique, no dangling citations.
 
 ### Fixed — 2026-10-27 (D-87: the staged D-46 adoption could not be executed as written)
 

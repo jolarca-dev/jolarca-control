@@ -130,6 +130,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     out.write_text(body, encoding="utf-8")
     print(f"wrote {out}")
+    # The artifact this tool produces is a `*.tf` file, and `apply.yml` triggers on `*.tf`. Committing
+    # it BEFORE the import is therefore a production apply whose plan wants to CREATE a duplicate
+    # ruleset beside the live one. Measured 2026-10-27: with the file present and no import the plan
+    # reads `1 to add, 1 to change` and check_plan_safety.sh exits 1 naming the create -- the brake
+    # holds, but the merge is already the act. Say it out loud instead of relying on the reader to
+    # have read step 1's warning paragraph.
+    print(
+        "WARNING: rulesets.tf is an apply-trigger path (*.tf). Import it (step 2) BEFORE committing, "
+        "or delete it: a declared-but-unimported ruleset plans a create beside the live one (D-46)."
+    )
     print(
         "next: terraform import -input=false "
         "'github_repository_ruleset.main[\"jolarca-consent\"]' 'jolarca-consent:24087580'"

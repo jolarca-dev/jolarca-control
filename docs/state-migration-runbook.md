@@ -656,15 +656,45 @@ not the name (the `…/rulesets/protect-main` form returns HTTP 404).
 > `terraform state list | grep -c ruleset` stays `0` — so a failed step 2 is safe, but it is
 > not a no-op proof. Run `make adoption-block` first and confirm it exits `0`.
 
+> **And do not commit `rulesets.tf` before the import has succeeded.** It is a `*.tf` file, which is an
+> `apply.yml` trigger path, so the merge *is* the apply decision; measured 2026-10-27 with the file
+> present and un-imported, the plan reads `1 to add, 1 to change, 0 to destroy` and
+> `check_plan_safety.sh` exits **1** naming the ruleset create (its own `why` text prints this import
+> command as the remedy). The brake holds, but the safe order is: extract → import → verify inert →
+> then commit the file in the PR. Also note the plan at that point carries one other line, the
+> `jolarca-legal` template detach (D-57, packet row 14, already decided REMOVE) — with no targeted-apply
+> mechanism in this root, it rides along with whatever apply you run, so treat a whole-state apply here
+> as approving both lines, not just the adoption.
+
 ```bash
 cd /opt/jolarca/repos/jolarca-control
-terraform init -input=false
+# 2a. Prove this CLI can reach the workspace BEFORE an irreversible import. `init` is the whole
+# proof — it needs a valid token AND an existing org/workspace — and its code must be read
+# un-piped (§3). Measured here 2026-10-27: init_rc=0, and a following plan exited 0.
+terraform init -input=false >/tmp/tfc-init.txt 2>&1; echo "init_rc=$?"
+# Anything but 0: read /tmp/tfc-init.txt and stop. Do not run step 2's import on an unproven token.
 terraform import -input=false \
   'github_repository_ruleset.main["jolarca-consent"]' 'jolarca-consent:24087580'
 # Import ID ≠ state ID again (D-56's sibling trap): state `id` becomes 24087580, and
 # `terraform state show` prints the numeric ruleset id, not the pair you typed.
 terraform state list | grep -c ruleset   # expect 1
 ```
+
+> **The credential probe that cannot work, recorded so nobody re-runs it.** `terraform cloud login
+> -token-only` is not a command. This CLI is v1.16.1 and `terraform -help` lists no `cloud`
+> subcommand, so it prints `Terraform has no command named "cloud"` and exits **1** — measured
+> un-piped. Piped as `terraform cloud login -token-only 2>&1 | tail -2; echo "rc=$?"` the same
+> failure reported `rc=0`, because `$?` was `tail`'s: §3's trap sitting in a *diagnostic* rather than
+> in a gate, which is the worse place for it, since a green probe reading invites the operator to run
+> step 2. Two follow-ons from that same transcript: a plan summary cannot be read with `| tail -5`
+> (`Plan:` is followed by five lines in the no-`-out` form — blank, rule, blank, two note lines — and
+> by six with `-out`, so the filter always prints the note instead of the verdict), and `terraform
+> login` is not this host's path at all: the CLI config is a manually configured
+> `credentials { token = … }` block in `~/.terraformrc` (one block, mode 0600, measured 2026-10-27),
+> the shape a prior attempt on this host found `terraform login` refuses to overwrite
+> (`Credentials for … are manually configured`) — not re-run here, because a login attempt opens an
+> OAuth flow. `init`'s exit code is the only discriminator needed, and it says nothing about CI: the
+> workspace's runs are all `Triggered via CLI` (D-82), and `TFC_TOKEN` is still broken (D-77/D-56).
 
 **3. Prove the adoption is inert before doing anything else.**
 
@@ -784,6 +814,7 @@ resolved before a pull request can be merged" — that *is* `require_conversatio
 | `require_code_owner_reviews: false` | `require_code_owner_review = false` | renamed |
 | `dismiss_stale_reviews: true` | `dismiss_stale_reviews_on_push = true` | renamed |
 | `require_last_push_approval: false` | `require_last_push_approval = false` | direct |
+| `settings.allow_merge_commit: false` + `allow_squash_merge: true` + `allow_rebase_merge: false` | `rules.pull_request.allowed_merge_methods = ["squash"]` — three repo booleans collapse into one list | **reshaped, and from a different block** |
 | `require_conversation_resolution: true` | `required_review_thread_resolution = true` | **renamed — expressible** |
 | `enforce_admins: true` | declare **no** `bypass_actors` block (live `bypass: []`) | **by absence — expressible** |
 | `block_force_pushes: true` | `rules.non_fast_forward = true` | renamed |
@@ -800,6 +831,41 @@ with `bypass_actors` empty it means nobody, including the sole owner, can push t
 That is the declared intent; the cost is that an emergency out-of-band push also becomes impossible,
 so choose it knowingly rather than inheriting it. The two fields that really are unmodelled are dr's
 and vendor's — see step 5, which stands.
+
+The merge-method row was the one this table was missing, and the gap produced a wrong block. The
+first draft of 4b stated `allowed_merge_methods = ["merge", "squash", "rebase"]`. Nobody took that
+decision: it is GitHub's permissive default spelled out, so the artifact *looked* chosen while
+inheriting the widest value the API offers — the exact failure the note above names for `strict`. The
+row was absent because the registry keeps merge methods under `settings:`
+(`repos/jolarca-consent.yml:35-37`), not under `branch_protection:`, and the table was built by
+walking `branch_protection`. Where the value came from is visible: `jolarca-vendor`'s live ruleset
+allows merge/squash/rebase (D-46's measured read, `docs/drift-findings.md` D-46 interim row), so it was
+transcribed from the wrong repo — the class row (8) is about.
+
+Consent declares squash-only twice over — `repos/jolarca-consent.yml:35-37`
+(`allow_merge_commit: false`, `allow_squash_merge: true`, `allow_rebase_merge: false`) and
+`policy/repo-defaults.yml:34-36` ("squash-only keeps a linear, auditable history") — and live agrees:
+`gh api repos/jolarca-dev/jolarca-consent` measured 2026-10-27 returns exactly those three values.
+Why it matters, and why nothing would have caught it:
+
+- `"merge"` contradicts `required_linear_history = true` four lines above it in the same `rules`
+  block. A merge commit is by definition non-linear, so the block requests a method the same ruleset
+  will refuse to merge.
+- Whether GitHub intersects a ruleset's merge list with the repository settings or lets the ruleset
+  win for matching branches is **not measured here**, and the fix does not depend on it: under the
+  permissive reading the block widens consent's merge posture past its own declaration, and under the
+  restrictive reading it states a control that is not in force — which §6 forbids publishing either
+  way. What is measured is that the value disagreed with the declaration.
+- `grep -c merge_method scripts/drift_detect.py` → **0**, so no drift verdict covers it. The pre-apply
+  brake does name it (`check_plan_safety.sh:194` includes `allowed_merge_methods` in the refused
+  ruleset vocabulary) — but step 4 is the one step this runbook says to apply **by hand**, which is
+  precisely where that brake is stepped around by design. So the artifact had to be right.
+
+`restrict_pushes` stays a live decision after this correction, not a mapped one: the table gives its
+expression (`rules.update`), the block still omits it, and so consent's declared `restrict_pushes:
+true` remains unimplemented after step 4 in the same shape D-66 records for six legacy rules. Land it
+knowingly or record the deviation — do not let a passing `make drift` read as "consent's declarations
+are enforced", because drift never looks at that key.
 
 > **The hazard this block exists to prevent:** `rules` is `max_items = 1` — one block holding the
 > entire ruleset. An update PUTs what this block says and nothing else, so **stage 1 must be restated
@@ -846,7 +912,7 @@ resource "github_repository_ruleset" "main" {
       require_last_push_approval        = false
       dismiss_stale_reviews_on_push     = true
       required_review_thread_resolution = true
-      allowed_merge_methods             = ["merge", "squash", "rebase"]
+      allowed_merge_methods             = ["squash"] # consent's settings, not vendor's live list
     }
 
     required_status_checks {
