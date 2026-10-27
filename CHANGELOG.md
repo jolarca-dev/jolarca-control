@@ -25,14 +25,31 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   `github_repository.repo["jolarca-legal"]`: `before.template = [{owner: "journeyoflife-org",
   repository: "jol-repo-template", include_all_branches: false}]` → `after.template = []`. That is
   **D-57 packet row 14**, decided "REMOVE — ADR-0004 alignment" and never executed, and there is no
-  targeted-apply mechanism in this root — so merging this PR applies it under `-auto-approve`, after
-  the 30-minute wait timer, with no reviewer. The brake does **not** stop it (`check_plan_safety.sh`
-  exits **0**: a template provenance change is not a destroy, replace, visibility, protection or
-  security-feature change).
-- Stated plainly because it is the decision that matters: **merging this PR is the act that detaches a
-  mission-platform template reference from a PCI-scoped marketplace repo.** The direction is the one the
-  register already chose; the sign-off box in step 6's table is the operator's to tick, and the runbook
-  now names this branch as the execution vehicle so the audit trail says which merge did it.
+  targeted-apply mechanism in this root — so this PR is the vehicle for it, and the merge starts the
+  apply job with `-auto-approve` after the 30-minute wait, with no reviewer. Whether that job reaches
+  the backend is a separate question answered two bullets below (it does not, today). The brake does
+  **not** stop it (`check_plan_safety.sh` exits **0**: a template provenance change is not a destroy,
+  replace, visibility, protection or security-feature change).
+- Stated plainly because it is the decision that matters: **this PR is the vehicle for D-57 row 14.**
+  The direction is the one the register already chose; the sign-off box in step 6's table is the
+  operator's to tick, and the runbook now names this branch as the execution vehicle so the audit trail
+  says which merge did it.
+- **Corrected the same day, against my own two bullets above: "the merge WILL start a production
+  apply" is true of the JOB, not of the apply.** Measured on this PR's own `Validate & Plan` run
+  (`40562611887`), the job dies at `Terraform Init` with
+  `Error: Failed to read organization "jolarca-dev" at host app.terraform.io … unauthorized` on
+  `main.tf:28` — the D-56 / D-77 credential gap, still open. So merging this lands the file and
+  changes **no live object**: it is `UNSTABLE` (all four required contexts green; the red check is
+  `Validate & Plan`, deliberately non-required), the apply job starts, and it fails before reaching
+  the backend. Every `apply.yml` run in the log agrees — `cancelled`/`failure`, none successful, newest
+  2026-10-17.
+- Which is a warning, not reassurance. **The thing standing between a trigger-path merge and an
+  unreviewed `terraform apply -auto-approve` is a broken token.** The moment D-56 is repaired, whatever
+  the accumulated plans say will apply automatically — including D-57 row 14 and anything merged in
+  between. AGENTS.md §8 already states this order ("once the token is repaired the refusal gate is what
+  has to stop it"), and `check_plan_safety.sh` does exit **0** on this plan, so for D-57 the refusal
+  gate is not what stops it either. Repair the token deliberately, with the pending diff read first —
+  not as an incidental fix.
 - `check_apply_path_trigger.py` on this branch reports **NOTICE — a human changed apply-path files; the
   merge WILL start a production apply** (exit 0 for a human author, by D-81's design). That is expected
   here, not a green light: watch the pending window and cancel with `gh run cancel <id> --force`.
