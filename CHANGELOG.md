@@ -10,6 +10,52 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (`rulesets.tf` lands: the adopted consent ruleset enters configuration, and the merge that lands it executes D-57 row 14)
+
+- `rulesets.tf` is added, byte-identical to the block `make adoption-block` extracts from Step 6b
+  (resource `github_repository_ruleset.main`, `for_each = toset(["jolarca-consent"])`). It was extracted
+  rather than retyped, then `terraform fmt -check -recursive` **exit 0** and `terraform validate`
+  **exit 0** with the file in the tree.
+- **The adoption half is inert and proven per-address**: `terraform plan` on this branch reports
+  `no-op` for `github_repository_ruleset.main["jolarca-consent"]`. The state already holds it
+  (imported 2026-10-27, serial 16, covered by the decrypt-verified archive
+  `terraform.tfstate.s16.20261027T181509Z.age`, SHA-256 round trip matched).
+- **But this is the first trigger-path merge since the adoption, and it is not inert as a whole.**
+  The same plan reads `0 to add, 1 to change, 0 to destroy`, and the one change is
+  `github_repository.repo["jolarca-legal"]`: `before.template = [{owner: "journeyoflife-org",
+  repository: "jol-repo-template", include_all_branches: false}]` → `after.template = []`. That is
+  **D-57 packet row 14**, decided "REMOVE — ADR-0004 alignment" and never executed, and there is no
+  targeted-apply mechanism in this root — so this PR is the vehicle for it, and the merge starts the
+  apply job with `-auto-approve` after the 30-minute wait, with no reviewer. Whether that job reaches
+  the backend is a separate question answered two bullets below (it does not, today). The brake does
+  **not** stop it (`check_plan_safety.sh` exits **0**: a template provenance change is not a destroy,
+  replace, visibility, protection or security-feature change).
+- Stated plainly because it is the decision that matters: **this PR is the vehicle for D-57 row 14.**
+  The direction is the one the register already chose; the sign-off box in step 6's table is the
+  operator's to tick, and the runbook now names this branch as the execution vehicle so the audit trail
+  says which merge did it.
+- **Corrected the same day, against my own two bullets above: "the merge WILL start a production
+  apply" is true of the JOB, not of the apply.** Measured on this PR's own `Validate & Plan` run
+  (`40562611887`), the job dies at `Terraform Init` with
+  `Error: Failed to read organization "jolarca-dev" at host app.terraform.io … unauthorized` on
+  `main.tf:28` — the D-56 / D-77 credential gap, still open. So merging this lands the file and
+  changes **no live object**: it is `UNSTABLE` (all four required contexts green; the red check is
+  `Validate & Plan`, deliberately non-required), the apply job starts, and it fails before reaching
+  the backend. Every `apply.yml` run in the log agrees — `cancelled`/`failure`, none successful, newest
+  2026-10-17.
+- Which is a warning, not reassurance. **The thing standing between a trigger-path merge and an
+  unreviewed `terraform apply -auto-approve` is a broken token.** The moment D-56 is repaired, whatever
+  the accumulated plans say will apply automatically — including D-57 row 14 and anything merged in
+  between. AGENTS.md §8 already states this order ("once the token is repaired the refusal gate is what
+  has to stop it"), and `check_plan_safety.sh` does exit **0** on this plan, so for D-57 the refusal
+  gate is not what stops it either. Repair the token deliberately, with the pending diff read first —
+  not as an incidental fix.
+- `check_apply_path_trigger.py` on this branch reports **NOTICE — a human changed apply-path files; the
+  merge WILL start a production apply** (exit 0 for a human author, by D-81's design). That is expected
+  here, not a green light: watch the pending window and cancel with `gh run cancel <id> --force`.
+- Files: `rulesets.tf` (new), `docs/state-migration-runbook.md` (one line naming the execution vehicle
+  at step 6's table), this entry. No protection rule content changes; `strict` and `update` remain
+  unset, which is step 4 and a separate reviewed PR.
 ### Changed — 2026-10-27 (`jolarca-consent`'s `protect-main` ruleset is now under Terraform; D-46 option A executed for consent, inertly)
 
 - **This is a live state change, not a docs change.** The operator ran Step 6b steps 1–3: the adoption
