@@ -10,6 +10,36 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (`rulesets.tf` lands: the adopted consent ruleset enters configuration, and the merge that lands it executes D-57 row 14)
+
+- `rulesets.tf` is added, byte-identical to the block `make adoption-block` extracts from Step 6b
+  (resource `github_repository_ruleset.main`, `for_each = toset(["jolarca-consent"])`). It was extracted
+  rather than retyped, then `terraform fmt -check -recursive` **exit 0** and `terraform validate`
+  **exit 0** with the file in the tree.
+- **The adoption half is inert and proven per-address**: `terraform plan` on this branch reports
+  `no-op` for `github_repository_ruleset.main["jolarca-consent"]`. The state already holds it
+  (imported 2026-10-27, serial 16, covered by the decrypt-verified archive
+  `terraform.tfstate.s16.20261027T181509Z.age`, SHA-256 round trip matched).
+- **But this is the first trigger-path merge since the adoption, and it is not inert as a whole.**
+  The same plan reads `0 to add, 1 to change, 0 to destroy`, and the one change is
+  `github_repository.repo["jolarca-legal"]`: `before.template = [{owner: "journeyoflife-org",
+  repository: "jol-repo-template", include_all_branches: false}]` → `after.template = []`. That is
+  **D-57 packet row 14**, decided "REMOVE — ADR-0004 alignment" and never executed, and there is no
+  targeted-apply mechanism in this root — so merging this PR applies it under `-auto-approve`, after
+  the 30-minute wait timer, with no reviewer. The brake does **not** stop it (`check_plan_safety.sh`
+  exits **0**: a template provenance change is not a destroy, replace, visibility, protection or
+  security-feature change).
+- Stated plainly because it is the decision that matters: **merging this PR is the act that detaches a
+  mission-platform template reference from a PCI-scoped marketplace repo.** The direction is the one the
+  register already chose; the sign-off box in step 6's table is the operator's to tick, and the runbook
+  now names this branch as the execution vehicle so the audit trail says which merge did it.
+- `check_apply_path_trigger.py` on this branch reports **NOTICE — a human changed apply-path files; the
+  merge WILL start a production apply** (exit 0 for a human author, by D-81's design). That is expected
+  here, not a green light: watch the pending window and cancel with `gh run cancel <id> --force`.
+- Files: `rulesets.tf` (new), `docs/state-migration-runbook.md` (one line naming the execution vehicle
+  at step 6's table), this entry. No protection rule content changes; `strict` and `update` remain
+  unset, which is step 4 and a separate reviewed PR.
+
 ### Fixed — 2026-10-26 (D-85: three governed records asserted a freeze that existed on no branch; D-86: `make` cannot carry the exit-code convention)
 
 - Started repo 2 by reading its **committed** tree instead of this register. At
