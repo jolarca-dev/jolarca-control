@@ -31,6 +31,14 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   proving nothing.
 - shellcheck clean; gate-parity, findings-register, evidence (46/0), yamllint, terraform fmt and
   validate, pytest all exit 0. No state change, no apply, no new trigger-path file.
+- **Corrected after CI caught the author:** PR #105's `Regression Tests` failed on the runner with
+  `fixture-devices-are-actually-different dest_dev=66305 same_fs_dev=66305 repo_dev=66305` — the new
+  off-host cases had assumed `$TMP` sits on a different filesystem than the workspace, true on this
+  dev box and false on `ubuntu-latest`. The script was right (it correctly refused under
+  `STATE_BACKUP_REQUIRE_OFF_HOST=1`); the fixture asserted a host property instead of measuring one.
+  It now probes `/dev/shm`, `/run`, `/tmp` for a device that differs from the repo's and asserts the
+  `off_host=yes` branch only where one exists, with a loud `SKIP` otherwise. Verified 16/0 on this
+  host **and** in a simulated runner tree whose device equals `/tmp`'s.
 
 
 ### Changed — 2026-10-27 (D-90 half-closed for free: gitleaks CLI passes in CI, and a rule so this cannot recur)
