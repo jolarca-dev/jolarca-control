@@ -10,6 +10,51 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (step 4 executed by the operator; config now catches the live ruleset)
+
+- **Consent's direct-push exposure is closed.** Measured on GitHub, not from the apply output: ruleset
+  `24087580` `updated_at 2026-10-27T20:53:08`, `rules` = `deletion`, `non_fast_forward`,
+  `required_linear_history`, **`pull_request`**, **`required_status_checks`**; the PR rule carries 0
+  approvals, code-owner off, dismiss-stale on, thread-resolution on, `allowed_merge_methods:
+  ["squash"]`; the checks rule carries all seven declared contexts with
+  `strict_required_status_checks_policy = true`; `bypass_actors: []`. Stage 1 survived the PUT, because
+  `rules` is one full-PUT block and stage 1 was restated (D-87 row (5)). `drift_detect.py` no longer
+  reports consent; only `jolarca-vendor` remains in `weakened`.
+- **`rulesets.tf` moves to the stage-2 block it just adopted**, extracted from Step 6b 4b rather than
+  retyped. Until this commit `main` declared three rules while live had five, so **the next apply of
+  `main` would have reverted the protection** — the same `max_items = 1` semantics that made the fix
+  safe made the divergence dangerous.
+- D-57 row 14 executed as a rider: `jolarca-legal`'s `template {journeyoflife-org /
+  jol-repo-template}` detach was applied (state serial 16 → 17, backed up as
+  `terraform.tfstate.s17.20261027T185757Z.age`, decrypt round trip verified) — **but the attribute is
+  still in state and still in every plan**, for the write-only reason in the last bullet. Whether the
+  provenance changed server-side is *not observable*: `is_template = false` is real, and the API
+  simply has no template-provenance field, so an earlier `template_repository_url: null` reading here
+  was a jq fallback on a missing key, not a measurement. The register rows that called row 14
+  "pending" are corrected in `docs/drift-findings.md`, not silently reticked.
+- **Cost of enforcing, measured after the fact:** consent's `Gitleaks (secret scanning)` and
+  `Dependency review` fail **on `main`** (since 2026-10-15), so requiring them blocks every PR merge
+  there. Cause of each is a configuration gap, not a finding: the Action needs a paid
+  `GITLEAKS_LICENSE` (`gh secret list` → none) and the Dependency graph is off. Free fixes, in
+  consent's own repo: run the gitleaks **CLI** as this repo already does
+  (`compliance-scan.yml:214-220`, pinned version, checksum verified — better than this repo's own
+  unchecked `curl | tar`), and enable the dependency graph. The `pull_request` rule is not relaxed.
+- Newly live and not sent by us: `require_extra_approval_for_unattributed_changes: true`, GitHub's
+  default for a field provider 6.13.0 omits (D-46). Untested against `required_approving_review_count
+  = 0` and D-60's `verified: false, bad_email` commit identity — recorded as a risk to probe, not as a
+  conclusion.
+- Verification, and one claim in this entry that was wrong before it was committed: `terraform plan`
+  after the change is **`0 to add, 1 to change, 0 to destroy`**, not "No changes". The ruleset **did**
+  converge — `terraform show -json` reports *no non-`no-op` ruleset change* — so the revert hazard is
+  closed. The surviving line is `github_repository.repo["jolarca-legal"]`'s `template` block, and the
+  reason is a provider artifact, not an unfinished apply: `template` is a **create-time, write-only**
+  attribute (schema text: "Whether **the new repository should include** all the branches from the
+  template repository"), GitHub exposes no provenance field to read, and the provider's Read never
+  clears it — so `terraform state show` still prints the block after a `Modifications complete`, and
+  `-refresh-only` reports "No changes". **The plan can never converge on that resource.** Remaining
+  local gates all exit 0; suite 334 passed.
+
+
 ### Changed — 2026-10-27 (`rulesets.tf` lands: the adopted consent ruleset enters configuration, and the merge that lands it executes D-57 row 14)
 
 - `rulesets.tf` is added, byte-identical to the block `make adoption-block` extracts from Step 6b
