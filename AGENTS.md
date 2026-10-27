@@ -354,22 +354,27 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   (24087580), `jolarca-dr` (24136490) and `jolarca-vendor` (24138288) each run an
   active `protect-main` ruleset created out-of-band on 2026-09-28; the legacy
   `…/branches/main/protection` endpoint returns HTTP 404 for all three while
-  `.protected` is `true`, and `terraform state list` holds **0** ruleset addresses
-  (D-46). Re-measured 2026-10-26: **consent's ruleset has no `pull_request` rule
-  and no `required_status_checks` rule at all** — so its 7 declared contexts in
-  `repos/jolarca-consent.yml` are enforced by nothing and `main` is directly
+  `.protected` is `true`. **Status 2026-10-27: `jolarca-consent` is now adopted** — Step 6b steps
+  1–3 were executed by the operator, `terraform state list` holds **1** ruleset address
+  (`github_repository_ruleset.main["jolarca-consent"]`, state `id` 24087580) and the remote state
+  serial moved **15 → 16**; the adoption was inert, proven per-address (`no-op`) and against the live
+  object (`updated_at` still equals `created_at`, so the import wrote nothing to GitHub). `jolarca-dr`
+  and `jolarca-vendor` remain unmanaged. Re-measured 2026-10-26 and unchanged by the adoption:
+  **consent's ruleset has no `pull_request` rule and no `required_status_checks` rule at all** — so its
+  7 declared contexts in `repos/jolarca-consent.yml` are enforced by nothing and `main` is directly
   pushable — while vendor's status-checks rule carries an **empty** context list.
-  Do not read `.protected=true` here as enforcement. The decision is now recorded
-  as option **A** (adopt the rulesets as `github_repository_ruleset`, consent
-  first): the sequence, the ready HCL and the exact `terraform import` ids
-  (`<repo>:<ruleset_id>` — the importer's `parseID2` splits on `:`) are in
-  `docs/state-migration-runbook.md` **Step 6b**, and nothing there has been run:
-  §5 reserves `import`/`state rm`/`state mv` to the operator. The prerequisite —
-  the pre-apply gate could not see rulesets — is closed by D-84. Note also that
-  provider 6.13.0 cannot express three keys these repos declare
-  (`restrict_pushes`, `require_conversation_resolution`, per-rule
-  `enforce_admins`), and does not model two fields that are live in dr/vendor
-  (`dismissal_restriction`, `require_extra_approval_for_unattributed_changes`).
+  Do not read `.protected=true` here as enforcement. The decision is recorded as option **A** (adopt
+  the rulesets as `github_repository_ruleset`, consent first): the sequence, the HCL and the exact
+  `terraform import` ids (`<repo>:<ruleset_id>` — the importer's `parseID2` splits on `:`) are in
+  `docs/state-migration-runbook.md` **Step 6b**; **steps 1–3 have run, step 4 has not**, and §5 still
+  reserves `import`/`state rm`/`state mv` to the operator. The prerequisite — the pre-apply gate could
+  not see rulesets — is closed by D-84. **Corrected 2026-10-27 (D-87 row (6)):** provider 6.13.0 DOES
+  express the three keys this bullet said it could not — `restrict_pushes` is `rules.update`,
+  `require_conversation_resolution` is `rules.pull_request.required_review_thread_resolution`, and
+  `enforce_admins` is the *absence* of a `bypass_actors` block; the claim came from grepping the
+  registry's spelling into a provider that renames the concepts. What genuinely is not modelled: the
+  two fields live in dr/vendor (`dismissal_restriction`, `require_extra_approval_for_unattributed_changes`),
+  which is why those two adoptions are deferred.
 - **A 404 from the branch-protection endpoint means nothing on its own.**
   Measured twice on 2026-10-15 with the same token and the same path:
   `gh api repos/jolarca-dev/jolarca-control/branches/main/protection` answered

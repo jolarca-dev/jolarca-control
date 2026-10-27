@@ -574,9 +574,33 @@ on 2026-10-26 in favour of **option A — adopt the rulesets into Terraform**, w
 first. The measured case for it is in `docs/drift-findings.md` D-46's decision packet, and
 the prerequisite (the pre-apply gate could not see rulesets at all) is closed by D-84.
 
-**Nothing in this section has been run.** Steps 2 and 3 are `terraform import`, which
+**Steps 1–3 have now been run — 2026-10-27, by the operator.** Steps 2 and 3 are `terraform import`, which
 AGENTS.md §5 reserves to the operator, and step 4 changes live protection, which
 `scripts/check_plan_safety.sh` now refuses by design.
+
+Measured outcome of that execution, kept here because it is the proof the adoption was inert:
+
+| what | result |
+|---|---|
+| `terraform import … 'jolarca-consent:24087580'` | `Import successful!` |
+| `terraform state list \| grep -c ruleset` | **1** (was 0) |
+| remote state serial | **15 → 16** |
+| state `id` at that address | `24087580` — numeric, not the pair typed (import-id ≠ state-id) |
+| per-address plan action | **`no-op`** — the mirror is faithful |
+| whole plan | `0 to add, 1 to change, 0 to destroy`; the 1 is D-57's `template` line, not the adoption |
+| `check_plan_safety.sh plan.txt` | **exit 0** |
+| live ruleset `updated_at` | `2026-09-28T02:07:06.207`, **equal to `created_at`** → the import wrote nothing to GitHub |
+| live `rules` / `bypass_actors` | still `deletion, non_fast_forward, required_linear_history` / `[]` |
+
+**What is still NOT done is step 4**, so consent's `main` remains directly pushable: adoption made the
+object manageable, it did not make it enforce a pull request. `make drift` still exits **1** naming
+`no pull_request rule (no PR is required on main)` — the correct verdict, unchanged by the adoption.
+
+> **A consequence of landing this in state: the off-host backup is now two serials behind.**
+> `/opt/jolarca/backups/terraform.tfstate.s14.20261015T180246Z.age` is the newest archived copy and it
+> covers **serial 14**; the workspace is at **16**. Restoring it would lose the adoption and every
+> change since 2026-10-15, and that directory lives on the same host as the working copy (D-02's open
+> half). Run `BACKUP_DEST=… make backup` before adding step 4 to the state, not after.
 
 **1. Declare the resource with no intent to change it.** The HCL below mirrors consent's
 live ruleset *exactly* (measured 2026-10-26 from `gh api repos/jolarca-dev/jolarca-consent/rulesets/24087580`),

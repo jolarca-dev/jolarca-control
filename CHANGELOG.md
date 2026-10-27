@@ -10,6 +10,42 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (`jolarca-consent`'s `protect-main` ruleset is now under Terraform; D-46 option A executed for consent, inertly)
+
+- **This is a live state change, not a docs change.** The operator ran Step 6b steps 1–3: the adoption
+  block was extracted by `make adoption-block`, `terraform import
+  'github_repository_ruleset.main["jolarca-consent"]' 'jolarca-consent:24087580'` returned
+  `Import successful!`, and the remote state serial moved **15 → 16**. `terraform state list |
+  grep -c ruleset` went **0 → 1**; the state `id` at that address is the numeric `24087580`, not the
+  `repo:id` pair typed (the import-id ≠ state-id trap, as documented for `github_branch_protection`).
+- **Inertness proven two ways, not assumed.** Per-address the plan reads `no-op` — the mirror is
+  faithful — and against the live object `updated_at` still equals `created_at`
+  (`2026-09-28T02:07:06`), with `rules` unchanged and `bypass_actors: []`, so the import performed no
+  write to GitHub. Whole plan `0 to add, 1 to change, 0 to destroy`; `check_plan_safety.sh` exits **0**.
+- **What this does not fix:** consent still has no `pull_request` rule and no `required_status_checks`
+  rule, so `main` is still directly pushable. `make drift` still exits **1** naming
+  `no pull_request rule (no PR is required on main)`, and dr/vendor are unchanged: their status-check
+  attributes still enforce nothing (dr requires `[lint, gitleaks]` strict false; vendor an empty list).
+  Adoption made the object manageable; **step 4 is what makes it enforce**.
+- **New dependency created by landing it:** `rulesets.tf` is now an in-scope `*.tf` file, so the next
+  merge touching a trigger path will plan against an adopted ruleset (no-op, good) *and* carry D-57's
+  `jolarca-legal` template detach, which the brake does not refuse. Decide D-57 before that merge, not
+  inside it.
+- **Operational exposure measured and flagged:** the newest archived backup is
+  `terraform.tfstate.s14.20261015T180246Z.age` — **serial 14 against a workspace at 16** — and
+  `/opt/jolarca/backups` is on the same host as the working copy. A restore today would lose the
+  adoption plus twelve days. Run `BACKUP_DEST=… make backup` before step 4 changes state again (D-02).
+- Records updated to stop asserting the old state: `docs/state-migration-runbook.md` (Step 6b's
+  "Nothing in this section has been run" → an executed-status table), `AGENTS.md` §8 (0 → 1 ruleset
+  address; the "provider cannot express three keys" sentence corrected per D-87 row (6); "nothing there
+  has been run" → steps 1–3 run, step 4 not), `docs/drift-findings.md` (D-46 dated status; D-84
+  residual (1) struck through where it is now false; **D-88 retitled so the collision guard's
+  title-segment split does not truncate it** — the guard segments on the first em dash, and the
+  previous heading put one inside the title).
+- No agent-performed mutation: the import was the operator's, run under §5; no `apply`, no `state rm`/
+  `state mv`, no org PATCH, and `rulesets.tf` remains **untracked** — committing it is a separate,
+  reviewed `*.tf` change.
+
 ### Added — 2026-10-27 (`make adoption-block`: Step 6b step 1 must not be transcribed by hand)
 
 Two hand-rolled replacements for the transcription both failed, one of them silently.
