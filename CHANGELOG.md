@@ -10,6 +10,29 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (D-91: `Dependency review` suspended on consent under a dated exception, because it could never pass)
+
+- Measured, not inferred: consent's `main` has **no** `requirements.txt` (only `pyproject.toml`, which
+  dependency-review-action cannot resolve), `GET /dependency-graph/sbom` exits 1 on `main` **and** on
+  the PR head, and `Dependency review` is `failure` on all six open consent PRs. The manifest that
+  would build the graph lives only on the branch the requirement blocks, and `main` is protected, so
+  there is no third door. This is a required-but-unsatisfiable check — the A-01/D-44/D-47 class — and
+  it was created by this session one day after writing the AGENTS.md §7 rule that forbids it. D-90's
+  row records the recurrence; D-91 is the finding.
+- **A correction to my own earlier advice:** "tick the Dependency graph, then `sbom_rc=0`" rested on a
+  false discriminator. The 404 also occurs with the toggle on and nothing indexed, so it proves
+  nothing, and the box-ticking could not have unblocked anything.
+- Suspend the one context in `rulesets.tf` **and** `repos/jolarca-consent.yml` together (one file only
+  would make `drift_detect.py` report a change that did not happen), under a new
+  `policy/compliance-gates.yml` exception: `expires 2027-01-25`, exit trigger = re-add once the
+  context has been **observed passing**.
+- Not weakened: `pull_request` (so consent's `main` stays un-pushable and D-46 stays closed), the
+  other six contexts, `strict = true`, and `bypass_actors = []` — no admin bypass was added to fix a
+  queue.
+- Sequencing that the operator must respect: merge → **apply** → then merge consent #12 → graph builds
+  → verify → restore. Merging #12 first changes nothing, because the apply is what edits the ruleset.
+
+
 ### Fixed — 2026-10-27 (the off-host refusal fired *after* the archive was written)
 
 - Found by re-reading my own change the day it merged. `STATE_BACKUP_REQUIRE_OFF_HOST=1` computed
