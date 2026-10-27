@@ -143,6 +143,29 @@ fi
 # is not off-host is the claim D-02 was opened for.
 expect 1 require-off-host-refuses-same-fs BACKUP_DEST="$SAME_FS" STATE_BACKUP_REQUIRE_OFF_HOST=1
 
+# The refusal must PRECEDE the write. Asserting only the exit code would have passed on
+# the first version of this script, which encrypted, wrote the archive, and only then
+# refused — leaving a backup in the directory it had just declared unacceptable.
+STRICT_FS="$(mktemp -d -p "$REPO_ROOT" .state-backup-strict-XXXXXX)"
+strict_out="$(env -i PATH="$PATH" HOME="$TMP/fakehome" \
+  STATE_FILE="$GOOD" BACKUP_DEST="$STRICT_FS" STATE_BACKUP_PUBKEY="$PUB" \
+  STATE_BACKUP_KEY="$KEYS/id" BACKUP_LOG="$STRICT_FS/log.tsv" \
+  STATE_BACKUP_REQUIRE_OFF_HOST=1 TF_CLI_CONFIG_FILE="$TMP/no-such-file" TFC_TOKEN="" \
+  bash "$BACKUP" 2>&1)"
+strict_rc=$?
+# find, not ls: the filenames are generated and shellcheck is right that ls splits them.
+strict_contents="$(find "$STRICT_FS" -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null)"
+if [ "$strict_rc" -eq 1 ] && [ -z "$strict_contents" ]; then
+  printf 'ok   %-34s exit=1, destination left empty\n' "refuses-before-writing-anything"
+  pass=$((pass + 1))
+else
+  printf 'FAIL %-34s exit=%s contents=[%s]\n' "refuses-before-writing-anything" "$strict_rc" \
+    "$strict_contents"
+  printf '     output: %s\n' "$(printf '%s' "$strict_out" | tr '\n' ' ' | cut -c1-180)"
+  fail=$((fail + 1))
+fi
+rm -rf "$STRICT_FS"
+
 if [ -n "$OTHER_DEST" ]; then
   # And the flag must not manufacture a refusal when the device genuinely differs.
   expect 0 require-off-host-passes-different-fs BACKUP_DEST="$OTHER_DEST" STATE_BACKUP_REQUIRE_OFF_HOST=1
