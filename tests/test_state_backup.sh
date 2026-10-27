@@ -99,6 +99,54 @@ expect 2 no-token-no-local-state STATE_FILE="$TMP/absent.json" \
 # Skipping verification is allowed only as a non-passing outcome.
 expect 2 skip-verify-is-not-a-pass STATE_BACKUP_SKIP_VERIFY=1
 
+# ── Off-host probe (D-02: the destination was always on the same disk) ───────
+# The cases above write to $TMP (under /tmp, a different filesystem from this repo),
+# so they exercise off_host=yes implicitly. What must be pinned down is the failure
+# that actually happened: a destination that LOOKS off-host by path but is the same
+# device. That is reproduced here by putting the destination inside REPO_ROOT.
+SAME_FS="$(mktemp -d -p "$REPO_ROOT" .state-backup-fs-XXXXXX)"
+trap 'rm -rf "$SAME_FS"' EXIT
+
+expect 0 same-filesystem-still-backs-up BACKUP_DEST="$SAME_FS"
+PROBE="$SAME_FS/backup-probes.tsv"
+if [ -f "$PROBE" ] && awk -F'\t' 'NR==2 && $6=="no"' "$PROBE" | grep -q .; then
+  printf 'ok   %-34s\n' "probe-records-off-host-no"
+  pass=$((pass + 1))
+else
+  printf 'FAIL %-34s expected an off_host=no row in %s\n' "probe-records-off-host-no" "$PROBE"
+  fail=$((fail + 1))
+fi
+
+# Refusing is opt-in, but when opted in it must actually refuse: a green backup that
+# is not off-host is the claim D-02 was opened for.
+expect 1 require-off-host-refuses-same-fs BACKUP_DEST="$SAME_FS" STATE_BACKUP_REQUIRE_OFF_HOST=1
+
+# And the flag must not manufacture a refusal when the device genuinely differs.
+expect 0 require-off-host-passes-different-fs BACKUP_DEST="$DEST" STATE_BACKUP_REQUIRE_OFF_HOST=1
+if awk -F'\t' 'NR==2 && $6=="yes"' "$DEST/backup-probes.tsv" | grep -q .; then
+  printf 'ok   %-34s\n' "probe-records-off-host-yes"
+  pass=$((pass + 1))
+else
+  printf 'FAIL %-34s expected an off_host=yes row for %s\n' "probe-records-off-host-yes" "$DEST"
+  fail=$((fail + 1))
+fi
+
+# The device comparison, asserted directly rather than inferred from the script's
+# own arithmetic: if these two were ever the same device, the case above would be
+# testing nothing.
+DEST_DEV="$(stat -c%d "$DEST" 2>/dev/null || stat -f%d "$DEST")"
+REPO_DEV="$(stat -c%d "$REPO_ROOT" 2>/dev/null || stat -f%d "$REPO_ROOT")"
+SAME_DEV="$(stat -c%d "$SAME_FS" 2>/dev/null || stat -f%d "$SAME_FS")"
+if [ -n "$DEST_DEV" ] && [ "$DEST_DEV" != "$REPO_DEV" ] && [ "$SAME_DEV" = "$REPO_DEV" ]; then
+  printf 'ok   %-34s\n' "fixture-devices-are-actually-different"
+  pass=$((pass + 1))
+else
+  printf 'FAIL %-34s dest_dev=%s same_fs_dev=%s repo_dev=%s — the off-host cases prove nothing\n' \
+    "fixture-devices-are-actually-different" "$DEST_DEV" "$SAME_DEV" "$REPO_DEV"
+  fail=$((fail + 1))
+fi
+rm -rf "$SAME_FS"
+
 echo
 echo "state-backup tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
