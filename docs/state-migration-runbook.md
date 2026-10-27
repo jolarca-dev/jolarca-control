@@ -601,8 +601,8 @@ resource "github_repository_ruleset" "main" {
   }
 
   rules {
-    deletion             = true
-    non_fast_forward     = true
+    deletion                = true
+    non_fast_forward        = true
     required_linear_history = true
     # Deliberately absent, because live lacks them: pull_request and
     # required_status_checks. Adding them is step 4, a separate reviewed change.
@@ -630,15 +630,45 @@ terraform state list | grep -c ruleset   # expect 1
 **3. Prove the adoption is inert before doing anything else.**
 
 ```bash
-terraform plan -input=false -no-color -out=tfplan6b
-bash scripts/check_plan_safety.sh <(terraform show -no-color tfplan6b)   # expect exit 0
-terraform show -no-color tfplan6b | grep -A3 'github_repository_ruleset'  # expect: no change block
+cd /opt/jolarca/repos/jolarca-control
+terraform plan -input=false -no-color -out=tfplan
+terraform show -no-color tfplan > plan.txt
+bash scripts/check_plan_safety.sh plan.txt
+terraform show -json tfplan | jq '.resource_changes[]
+  | select(.type=="github_repository_ruleset") | {address, actions: .change.actions}'
 ```
 
+Read the two verdicts separately. They answer different questions, and the first one is
+**expected to refuse** on this tree today.
+
+* `check_plan_safety.sh` exits **1** here regardless of the adoption, because Step 6's
+  unreconciled branch-protection changes are still open (`0 to add, 20 to change`, measured
+  2026-10-26) and since D-61 the gate refuses *every* protection attribute change in either
+  direction. Demonstrated on synthetic input rather than inferred: a plan carrying one
+  `~ dismiss_stale_reviews` line exits 1 and names that line, while a plan of
+  `0 to add, 0 to change, 0 to destroy` exits 0. Do not read the refusal as "the adoption is
+  unsafe", and do not read it as passed either — reconcile Step 6's table first, or judge the
+  ruleset on its own address below.
+* The per-address query is the real inertness proof, and it is machine-read rather than
+  grep-matched for exactly that reason (AGENTS.md §7: never infer coverage from an aggregate
+  exit). Expect `actions: ["no-op"]`. Any `update` or `create` means the config does not mirror
+  live content, and applying it would rewrite a protection object this root has just adopted —
+  **stop**.
+
+Two traps made this step unexecutable as written; both are measured, see D-87:
+
+1. `bash scripts/check_plan_safety.sh <(terraform show -no-color tfplan)` **always exits 2**.
+   The gate requires a regular file (`[ ! -f "$PLAN" ]`), and process substitution yields
+   `/dev/fd/63`, so it prints `plan file not readable` — *could not verify*, which §3 forbids
+   reading as a pass. The identical bytes in a real file exit 0. Hence `> plan.txt` above, which
+   is also what `apply.yml` itself does.
+2. Use `tfplan` and `plan.txt`, not `tfplan6b` or `plan6b.txt`. `git check-ignore` matches
+   `tfplan` and `plan.txt` exactly and matches neither alternative (`*.tfplan` needs the suffix),
+   so an alternative name lands **untracked in a public governed repo** — and a rendered plan
+   discloses the whole org inventory plus every repository's protection posture.
+
 `-no-color` is not optional (D-61's fourth correction: ANSI bytes defeat every pattern in
-that gate, which is why the script now exits 2 on coloured input). If the plan shows *any*
-change on the ruleset address, stop: the config does not mirror live content, and applying
-it would rewrite a protection object this root has just adopted.
+that gate, which is why the script now exits 2 on coloured input).
 
 **4. Then, and only then, close the actual gap** — consent declares 7 required contexts and
 nothing enforces them; its ruleset also has **no `pull_request` rule**, so `main` is directly
@@ -653,6 +683,12 @@ and (b) the three inexpressible declaration keys (`restrict_pushes`,
 `policy/compliance-gates.yml#exceptions.active`, so `make drift` stops reporting a permanent
 false red.
 
+> Expect `make drift`'s wording to change once PR #99 merges (open, unmerged as this is
+> written — 2026-10-27): consent then also reports
+> `no pull_request rule (no PR is required on main)`, which is this bullet's defect named by
+> mechanism instead of inferred from a zero context count. Closing D-84's residual (2) in the
+> detector does **not** close the exposure; only this step 4 does.
+
 **5. dr and vendor wait.** Their payloads carry `dismissal_restriction` and
 `require_extra_approval_for_unattributed_changes`, neither of which provider 6.13.0 models
 (`grep -c` over `resource_github_repository_ruleset.go` at tag v6.13.0 → 0). An update PUTs
@@ -661,6 +697,16 @@ are at their defaults today, so the expected delta is nil — but that is an inf
 measurement, and this runbook does not accept inference as a reason to touch protection.
 Revisit after a provider bump models the fields, or after the defaults are accepted in
 writing.
+
+> Scope this claim before re-checking it. Re-measured 2026-10-27 against
+> `terraform providers schema -json` for the pinned `integrations/github` 6.13.0: a whole-file
+> `grep -c dismissal_restriction` returns **1**, and that hit is on
+> `github_branch_protection` — **not** on `github_repository_ruleset`, which does not model it
+> (`jq` scoped to that resource returns `false`). The claim above is correct; a future
+> unscoped grep will appear to refute it and will be wrong. Consent's three live rules
+> (`deletion`, `non_fast_forward`, `required_linear_history`) *are* modelled, as boolean
+> attributes of the `rules` block, and `pull_request` / `required_status_checks` are modelled as
+> nested blocks — so step 1's mirror and step 4's tightening are both expressible today.
 
 ---
 

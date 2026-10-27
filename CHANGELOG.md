@@ -10,6 +10,68 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-27 (D-87: the staged D-46 adoption could not be executed as written)
+
+- `docs/state-migration-runbook.md` **Step 6b** — the "ready, staged" sequence for adopting
+  `jolarca-consent`'s undeclared `protect-main` ruleset (D-46 option A) — was audited rather than
+  re-used. Four defects, all reproducible offline; no Terraform command was run and no GitHub
+  state was touched.
+- The inertness proof could never pass. `check_plan_safety.sh <(terraform show -no-color tfplan)`
+  exits **2** every time: the gate requires a regular file (`[ ! -f "$PLAN" ]`) and process
+  substitution yields `/dev/fd/63`, so it prints `plan file not readable`. The identical bytes in a
+  real file exit **0** — measured both ways. The gate is correct (§3: an unreadable input is never
+  a pass; D-61 exists to refuse shapes it cannot parse); the runbook prescribed the one invocation
+  that cannot succeed **and told the operator to expect `exit 0`** — the dangerous combination,
+  because "not readable" reads as a tooling nuisance mid-procedure, not as a refusal.
+- That `expect exit 0` also hid a precondition: Step 6's unreconciled protection changes are still
+  open (`0 to add, 20 to change`, measured 2026-10-26) and since D-61 the gate refuses *every*
+  protection attribute change, so a whole-state plan exits **1** whatever the adoption does.
+  Demonstrated on synthetic input — one `~ dismiss_stale_reviews` line → 1, naming the line;
+  `0 to add, 0 to change, 0 to destroy` → 0. Step 3 now renders `tfplan` / `plan.txt`, passes the
+  real file, and judges inertness **per address** via
+  `terraform show -json | jq '.resource_changes[] | select(.type=="github_repository_ruleset") | {address, actions: .change.actions}'`,
+  expecting `["no-op"]` — machine-read, not grep-matched (§7: never infer coverage from an
+  aggregate exit).
+- The "ready to paste" HCL failed `terraform fmt -check` — **exit 3**, two misaligned `=` — so the
+  very PR Step 6b instructs the operator to open would have reddened `Terraform Format` and
+  `make lint` on first push. Re-aligned and verified **exit 0** by re-extracting the block from the
+  runbook itself rather than re-typing it.
+- Its filenames leaked: `tfplan6b` and `plan6b.txt` match no `.gitignore` entry (`git check-ignore`;
+  `tfplan` and `plan.txt` are exact names, `*.tfplan` needs the suffix), so a rendered plan — the
+  whole org inventory plus every repository's protection posture — would sit **untracked in a
+  public governed repo**, the same no-recovery-path hazard this session found in its own tree.
+- Provider capability re-derived from `terraform providers schema -json` for the pinned
+  `integrations/github` 6.13.0: consent's three live rules *are* modelled (boolean attributes of
+  `rules`) and `pull_request` / `required_status_checks` exist as nested blocks, so the mirror and
+  the step-4 tightening are both expressible. A whole-file `grep -c dismissal_restriction` returns
+  **1**, but the hit is on `github_branch_protection`, not on `github_repository_ruleset` — so
+  D-46's dr/vendor deferral stands, and Step 5 now says so explicitly, because an unscoped grep
+  will look like the refutation of a true claim.
+- The detector half is **PR #99, open and unmerged as this is written** — recorded here, not as
+  delivered. `drift_detect.py` asserted nothing about whether an active branch ruleset carries a
+  `pull_request` rule (D-84 residual (2)) *and* discarded every note it computed for a repo that
+  cleared the context floor: a live `jolarca-dr` read found `strict_required_status_checks_policy
+  =false` computed and printed nowhere. The two are coupled — asserting the rule without fixing the
+  discard would have produced a detection nothing could read, since a ruleset can carry enough
+  contexts while requiring no PR at all. 5 fixtures, proven red first (**4 failed / 29 passed**),
+  suite **316 → 321**; drift's live verdict is unchanged (exit 1; consent and vendor were already
+  findings) while consent now reports `no pull_request rule (no PR is required on main)`. `strict`
+  is surfaced as an *observation*, not a finding, because `policy/repo-defaults.yml` declares no
+  `strict` key and `test_protection_404_with_ruleset_requiring_contexts_is_not_drift` is a recorded
+  decision, not an oversight. A self-caught defect rode along: `ruleset_covers_branch` returned
+  `True` for a `target = "tag"` ruleset (no `ref_name`), which my new assertion would have turned
+  into a false finding — proven red, then guarded.
+- **Not closed:** consent's `main` is still directly pushable — this makes the remedy executable,
+  it does not execute it. `terraform import` / `state rm` remain the operator's (§5); step 4 is
+  refused by the brake by design and is applied by hand; `repo_readiness_audit.py`'s `G-12c` probe
+  is still behind the empty-repository `return`; and consent's three ruleset-inexpressible
+  declaration keys still need dropping or a dated deviation, or `make drift` stays permanently red.
+- Files: `docs/state-migration-runbook.md` (Step 6b), `docs/drift-findings.md` (**D-87** + dated
+  status on D-84 residual (2)), this entry. None is in `EVIDENCE_DIRS`, so no re-registration was
+  required — verified by `grep -c` against the registry returning **0**, not assumed.
+  `check_findings_register.py --cross-pr` exits 0 over **86** headings; `hash_evidence.sh --check`
+  46 files / 0 mismatches.
+
 ### Fixed — 2026-10-26 (D-85: three governed records asserted a freeze that existed on no branch; D-86: `make` cannot carry the exit-code convention)
 
 - Started repo 2 by reading its **committed** tree instead of this register. At
