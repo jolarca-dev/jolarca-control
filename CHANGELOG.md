@@ -63,9 +63,24 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   into a false finding — proven red, then guarded.
 - **Not closed:** consent's `main` is still directly pushable — this makes the remedy executable,
   it does not execute it. `terraform import` / `state rm` remain the operator's (§5); step 4 is
-  refused by the brake by design and is applied by hand; `repo_readiness_audit.py`'s `G-12c` probe
-  is still behind the empty-repository `return`; and consent's three ruleset-inexpressible
-  declaration keys still need dropping or a dated deviation, or `make drift` stays permanently red.
+  refused by the brake by design and is applied by hand; and `repo_readiness_audit.py`'s `G-12c`
+  probe is still behind the empty-repository `return`.
+- **A claim this entry got wrong, corrected during its own review.** Step 4's precondition as
+  written told the operator to resolve consent's three ruleset-inexpressible declaration keys "or
+  `make drift` stays permanently red". That consequence was copied verbatim from D-84 residual (3)
+  and reproduced here **without testing it** — the exact failure mode §7 warns about, one edit after
+  writing a rule about it. Simulated against `drift_detect.py` using consent's own seven declared
+  contexts: the ruleset path never reads `restrict_pushes`, `require_conversation_resolution` or
+  per-rule `enforce_admins`; it compares required status checks, the `pull_request` rule,
+  `non_fast_forward` and `deletion`. Consent clears once step 4 adds **both** `pull_request` and
+  `required_status_checks` with ≥1 context — either alone still reports the other, and
+  `strict=false` after step 4 yields an observation, not a finding. So the keys are **not** a
+  prerequisite for step 4. The decision is still owed, for D-40's reason instead: the registry plus
+  `policy/repo-defaults.yml:71-78` declare `restrict_pushes: true` and
+  `require_conversation_resolution: true` as fleet baseline, which an adopted ruleset cannot carry,
+  so an attestation reading `repos/jolarca-consent.yml` overstates enforcement. The gate that does
+  read them, `repo_readiness_audit.py`, is invoked by no workflow — so it cannot redden CI at all.
+  Both D-84 and D-87 now carry a dated correction rather than a deleted claim.
 - Files: `docs/state-migration-runbook.md` (Step 6b), `docs/drift-findings.md` (**D-87** + dated
   status on D-84 residual (2)), this entry. None is in `EVIDENCE_DIRS`, so no re-registration was
   required — verified by `grep -c` against the registry returning **0**, not assumed.

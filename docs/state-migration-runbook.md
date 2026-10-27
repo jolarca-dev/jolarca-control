@@ -680,8 +680,35 @@ PR in that repo — the D-44/D-47 deadlock class, already paid for once on `jola
 and (b) the three inexpressible declaration keys (`restrict_pushes`,
 `require_conversation_resolution`, per-rule `enforce_admins`) are either dropped from
 `repos/jolarca-consent.yml` or recorded as a dated deviation in
-`policy/compliance-gates.yml#exceptions.active`, so `make drift` stops reporting a permanent
-false red.
+`policy/compliance-gates.yml#exceptions.active`.
+
+> **Corrected 2026-10-27 (D-87).** This text used to end "…so `make drift` stops reporting a
+> permanent false red", copied from D-84's residual list. That consequence is **false**, and the
+> claim was reproduced in D-87 before it was checked. Simulated against the gate with consent's own
+> seven declared contexts: `drift_detect.py`'s ruleset path never reads those three keys — it
+> compares required status checks, the `pull_request` rule, `non_fast_forward` and `deletion`. What
+> actually holds consent red is two issues, and **both** must be cleared:
+>
+> | ruleset content | gate verdict |
+> |---|---|
+> | today: three push rules only | `no required_status_checks rule` **+** `no pull_request rule` |
+> | + `pull_request`, still no status-checks rule | still `no required_status_checks rule` |
+> | + status checks only, still no `pull_request` rule | still `no pull_request rule` |
+> | + both, with ≥1 context | **no issues** — consent leaves the finding set |
+>
+> So (b) is **not** a prerequisite for step 4; they are independent. The decision is still owed, for
+> the reason D-40 names rather than this one: `policy/repo-defaults.yml` declares `restrict_pushes:
+> true` and `require_conversation_resolution: true` as fleet baseline (lines 71-78) while an adopted
+> repository ruleset cannot carry them, so an attestation that reads `repos/jolarca-consent.yml`
+> overstates enforcement. The gate that reads those keys is `scripts/repo_readiness_audit.py`
+> (around :1549-:1731), and **no workflow invokes it** — the only matches under `.github/workflows/`
+> are comment lines — so it cannot redden CI and is not a required context.
+>
+> Decide `strict` explicitly too. A step 4 landing with
+> `strict_required_status_checks_policy=false` yields an **observation**, not a finding, even though
+> `repos/jolarca-consent.yml` declares `strict: true` — drift compares ruleset contexts only against
+> `minimum_required_contexts`, never against the repository's own declaration. Inheriting GitHub's
+> default here is not the same as choosing it.
 
 > Expect `make drift`'s wording to change once PR #99 merges (open, unmerged as this is
 > written — 2026-10-27): consent then also reports
