@@ -10,6 +10,22 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (D-90 evidence: consent's two blocking contexts fail on `main` itself, and the graph needs a manifest)
+
+- `gh workflow run security.yml --repo jolarca-dev/jolarca-consent --ref main` → run `40568417936`,
+  `completed/failure`, **both** `Gitleaks (secret scanning)` and `Dependency review` red. Not a PR
+  problem: the repository cannot produce a green required context today, so every PR there is blocked.
+- `Dependency review` has a second cause than the settings toggle: `GET …/dependency-graph/sbom` is
+  **404** and consent's tree carries **only `pyproject.toml`** — no `requirements.txt`, no lockfile.
+  The action needs a resolvable manifest, so the fix is a committed pinned manifest.
+- The command I first handed over for the dispatch was wrong (`-f ref=main` → HTTP 422). The workflow
+  declares `workflow_dispatch:` with no inputs; `--ref` is the flag. Same class as the vacuous
+  `until` loop and `python scripts/state_backup.sh` earlier today: an interface asserted from memory
+  instead of from `--help`.
+- State is unchanged at **serial 17**, matching `terraform.tfstate.s17.20261027T185757Z.age`;
+  `main` is `f409402` with `rulesets.tf` at stage 2, so config, state and live agree for consent.
+
+
 ### Changed — 2026-10-27 (step 4 executed by the operator; config now catches the live ruleset)
 
 - **Consent's direct-push exposure is closed.** Measured on GitHub, not from the apply output: ruleset
