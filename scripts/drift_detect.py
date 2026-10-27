@@ -260,6 +260,17 @@ def ruleset_covers_branch(detail: dict[str, Any], branch: str) -> bool:
     GitHub's include list uses ``~DEFAULT_BRANCH`` for the default branch and ``refs/heads/<name>`` or
     globs for the rest; an empty or absent include list means all branches. Exclusions always win.
     """
+    # A ruleset whose target is ``tag`` scopes itself with ``conditions.tag_name`` and carries no
+    # ``ref_name`` at all, so it used to fall through to the ``return True`` below and be credited
+    # with covering a branch it cannot enforce. Found while adding the pull_request assertion, which
+    # turned that false coverage into a false FINDING rather than merely a discarded note.
+    # An absent target is deliberately left to the ref-name logic: summary and detail payloads
+    # disagree about whether it is present, and refusing on absence would manufacture a new false
+    # red instead of correcting this one.
+    target = detail.get("target")
+    if target is not None and str(target) != "branch":
+        return False
+
     cond = detail.get("conditions")
     ref = cond.get("ref_name") if isinstance(cond, dict) else None
     if not isinstance(ref, dict):

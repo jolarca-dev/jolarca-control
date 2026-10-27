@@ -892,3 +892,30 @@ def test_ruleset_attribute_limits_text_matches_what_the_code_now_asserts() -> No
     text = dd.RULESET_ATTRIBUTE_LIMITS
     assert "pull_request" in text, text
     assert "not expressible by this API" not in text, text
+
+
+def test_tag_targeted_ruleset_is_not_branch_coverage(monkeypatch: Any) -> None:
+    """A ruleset with `target: tag` guards refs/heads/* nothing, and must not be read as if it did.
+
+    Found while reviewing the change that added the `pull_request` assertion, which widened the
+    blast radius of this path: `ruleset_covers_branch` falls through to `return True` whenever
+    `conditions.ref_name` is absent, and a tag ruleset expresses its scope in `tag_name` instead.
+    Counting one as covering `main` reports the branch protected by the very object that does not
+    protect it -- the false clean the function was written to prevent, reached by a different door.
+    """
+    tag_ruleset = {
+        "name": "protect-release-tags",
+        "enforcement": "active",
+        "target": "tag",
+        "conditions": {"tag_name": {"exclude": [], "include": ["v*"]}},
+        "rules": [{"type": "deletion"}],
+    }
+    assert not dd.ruleset_covers_branch(tag_ruleset, "main"), (
+        "a tag ruleset does not cover a branch"
+    )
+
+    _patch_ruleset(monkeypatch, tag_ruleset, ruleset_id=777)
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert "r" in bp["missing"], "only a tag ruleset means main is unguarded"
+    assert bp["weakened"] == [], "it must not be credited with ruleset protection it does not exert"
+    assert unverified == []
