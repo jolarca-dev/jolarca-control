@@ -10,6 +10,63 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-26 (D-85: three governed records asserted a freeze that existed on no branch; D-86: `make` cannot carry the exit-code convention)
+
+- Started repo 2 by reading its **committed** tree instead of this register. At
+  `jolarca-infrastructure` `8f02d17` (public `origin/main`) `variable "org"` still
+  defaults to `journeyoflife-org` in root and module, `module "github_org"` is live,
+  the environment has no committed `terraform.tfvars`, `git grep -n lifecycle HEAD --
+  environments/production modules/github-org` returns nothing, `git log --all -S
+  "FROZEN — DO NOT PLAN OR APPLY"` returns **0 commits**, and
+  `variables.tf.bak.20260831-2306` is still tracked — while D-06 said "Fix applied …
+  see working-tree diff", D-13 said "`prevent_destroy = true` on every
+  `github_repository` … Resolved", and the migration runbook said "COMPLETE
+  (2026-10-10)". The fix was real and uncommitted: 9 dirty entries, +133/−98.
+- Not hypothetical: that repo's `terraform.yml` runs a `plan` job on every
+  `pull_request` touching `terraform/**`, and runs `39925547516` / `39925560368`
+  (2026-10-23) **succeeded**, posting `Plan: 16 to add, 0 to change, 0 to destroy` on
+  public PRs while the default named the mission-platform org. `apply` is gated to
+  `workflow_dispatch`, which is the only reason nothing was written.
+- Landed the freeze as `jolarca-infrastructure` **PR #49** (`2eab214` moves the
+  on-disk change into history verbatim; `693ec82` adds the `.github/CODEOWNERS` that
+  repo's required `compliance` context demands — the only fleet repo missing it, which
+  is the mechanism that made every PR there fail with `enforce_admins = true` removing
+  the bypass, i.e. nothing could merge since 2026-08-31). Both GPG-signed; `ci`,
+  `security` and `compliance` now **pass**, `apply` **skipping**, PR **open**. No
+  Terraform command was run in that root by this change.
+- `docs/state-migration-runbook.md` step 1 rewritten to verify the committed tree
+  (`git show origin/main:…`, `git grep … origin/main`) — its own acceptance check had
+  been grepping a working tree, which is why it printed "expected" for a month — plus a
+  note on reading `grep` exits and a caveat beside the "COMPLETE" status line: the
+  legacy state is serial **37** with one live address
+  (`github_repository_file.security_md`, `instances: 0`) and 8 stale copies on one host.
+- D-06 and D-13 carry dated correction rows; the original text is kept, not deleted.
+- D-86: `repo_readiness_audit.py --repo jolarca-data` exits **1** while
+  `make readiness REPO=jolarca-data` exits **2**; a synthetic `@exit 1` target also
+  gives 2, so GNU make cannot convey `1` and no `make <gate>` distinguishes findings
+  from "could not verify". The `readiness` and `first-commit` recipes also sent stdout
+  to `/dev/null`, discarding the detail while the stderr table survived — verified: the
+  same target now prints 7849 bytes where it printed 85. AGENTS.md §2/§3 now state that
+  the three-valued code lives on the script and evidence collection must call it
+  directly; no script's own exit codes were altered to suit the wrapper.
+- AGENTS.md §5's rationale for the no-apply boundary was stale ("state is owned by
+  `jolarca-infrastructure` until the migration runbook completes"); the rule is kept and
+  re-justified. §7 gains the rule that a fix claim must be verified against the artifact
+  that carries it.
+- Audit records: FA-control-14 flipped to `implemented` with a top-level
+  `fixes_landed_pr97` block (PR #97 → `main` = `a720789`; fresh clone: 29 plan-gate
+  fixtures, 18 gate scripts, 83 headings, 46/0 evidence, 316 tests, gitleaks clean, no
+  `Terraform Apply` run — fourth consecutive merge with nothing armed). Added
+  **FA-control-15** (S1) and **FA-control-16** (S2); control plane 16 controls,
+  fleet totals re-derived by parse: **39 findings (1 S0 / 17 S1 / 19 S2 / 2 S3)**.
+- `index.md`'s header claimed PR #85 was `OPEN, mergeStateStatus=BEHIND`; it is
+  **CLOSED**, and the baseline row now reads `a720789`.
+- Two of this session's own measurements were wrong in the direction that made a true
+  claim look false — a repo-wide `prevent_destroy`/`FROZEN` grep that matched
+  `modules/state-bucket` and bucket-name prose, and `grep -c "gh api -X PATCH"`
+  returning 0 while f-strings emit four PATCH remediations. Recorded in method note 1
+  rather than quietly re-run.
+
 ### Fixed — 2026-10-26 (D-84: the pre-apply brake could not see rulesets, and D-46's decision is now recorded)
 
 - `scripts/check_plan_safety.sh` refused branch-protection creates and every protection

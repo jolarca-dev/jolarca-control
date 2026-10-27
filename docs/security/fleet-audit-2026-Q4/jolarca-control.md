@@ -524,6 +524,96 @@ table in `index.md`:
 Regression surface on `main`: 316 pytest tests, five shell fixtures at 25/19/19/13/10, gate parity
 18 scripts, evidence 46 files / 0 mismatches, gitleaks clean over 2.25 MB of history.
 
+## The register asserted a fix that was on no branch (D-85, D-86)
+
+The next planned step was to start repo 2 by running `make readiness
+REPO=jolarca-infrastructure` and filling in the audit template. That step was
+rejected before execution, and the rejection is the finding: the instrument would
+have produced a tidy verdict over a repository whose committed tree did not contain
+the safety controls this register says were applied on 2026-09-25.
+
+The method was the one D-84 records — do not read a claim, read the artifact the
+claim names. A fresh clone of `jolarca-dev/jolarca-infrastructure` at `8f02d17`
+(`origin/main`, public) gives `variable "org"` default `journeyoflife-org` in
+`terraform/environments/production/variables.tf:79` and
+`terraform/modules/github-org/variables.tf:4`; `provider "github" { owner = var.org }`
+and `module "github_org"` are live, declaring `github_repository.repos`,
+`github_repository_vulnerability_alerts.repos` and `branch-protection.tf`; there is no
+committed `terraform.tfvars` for that environment, so the default is what a plan uses;
+`git grep -n lifecycle HEAD -- terraform/environments/production terraform/modules/github-org`
+returns nothing — the four committed `prevent_destroy` are all in
+`modules/state-bucket`, on GCS/KMS objects — and every committed `FROZEN` match is
+about bucket *names*, not a plan/apply banner. `git log --all -S "FROZEN — DO NOT PLAN
+OR APPLY"` returns **0 commits**, and the last commit touching that module is
+`0f5e34a` on **2026-08-31**, a month before the date the fixes claim. Meanwhile
+`docs/drift-findings.md` D-06 said "Fix applied … See `jolarca-infrastructure`
+**working-tree diff**", D-13 said "Control in place: `prevent_destroy = true` on every
+`github_repository`" and "Resolved — dual ownership eliminated", and
+`docs/state-migration-runbook.md` said "**Status:** COMPLETE (2026-10-10)" while its own
+step 1 instructed the reader to "Land this as a signed PR **before** step 2 so the
+freeze is in git history, not just on disk". All four step-1 expectations fail at HEAD.
+
+The fix was real. It was nine uncommitted entries, +133/−98, on one workstation:
+the banner, `prevent_destroy` in three files, `default = "jolarca-dev"` twice, the
+`.bak` deletion and the superseded guard header. That is FA-cross-07's class — a
+verdict that depends on how the input was rendered, here on which tree was read —
+recurring inside the change register a SOC 2 CC8.1 / ISO 27001 A.8.32 auditor would
+use to decide what to test. It is worse than the gap it hides, because a correct
+record of an unclosed gap is actionable.
+
+**It was not hypothetical, and the mechanism of the delay was not negligence.**
+That repo's `terraform.yml` runs a `plan` job on every `pull_request` touching
+`terraform/**` (`terraform init -backend=false && terraform plan -lock=false`,
+`TF_GITHUB_TOKEN_READONLY`). Runs `39925547516` and `39925560368` (2026-10-23,
+Dependabot, both **success**) posted `Plan: 16 to add, 0 to change, 0 to destroy` as
+comments on public PRs, with the mission-platform org as the target. `apply` is
+`if: github.event_name == 'workflow_dispatch'` — the only thing that kept it a read.
+And the reason no PR had landed the freeze since `0f5e34a`: required contexts are
+`ci, security, compliance` with `enforce_admins = true`, and `compliance-check.yml`
+demands seven governance files. `jolarca-infrastructure` is the **only** fleet repo
+without `.github/CODEOWNERS` (10 of 11 others have one), so the required `compliance`
+context failed on every PR, Dependabot's included, and the admin bypass that would
+normally rescue a repo like that was switched off. Welded shut, which from outside is
+indistinguishable from abandoned.
+
+Landed as infra **PR #49**: `2eab214` moves the on-disk freeze into history verbatim —
+no re-authoring, no new decisions — and `693ec82` adds the missing `.github/CODEOWNERS`
+with the identical entry `jolarca-control` publishes (`require_code_owner_reviews` is
+false as declared and as live, so it adds no review burden and only clears the
+file-existence check). Both signed (`%G?` = `G`); that repo's own pre-commit ran
+`terraform fmt`, `terraform validate`, `tflint` and Checkov, all offline. After the
+second commit `ci`, `security` and `compliance` all read **pass** and `apply` reads
+**skipping**. **No Terraform command was run by this change and none was run in that
+root** — but the honest caveat is that CI's plan job fires on any PR touching
+`terraform/**`, so a plan against the corrected default did run as part of the PR.
+It is open, not merged; the freeze is not in `main` until the operator merges it.
+
+D-86 is the quieter half of the same episode. `repo_readiness_audit.py --repo
+jolarca-data` exits **1**; `make readiness REPO=jolarca-data` exits **2** — and a
+synthetic Makefile target that runs `exit 1` also makes make exit **2**, so this is
+GNU make's contract, not a bug in a recipe: no `make <gate>` can ever carry §3's
+three-valued code. Eleven scripts here do implement that code. Two targets
+(`readiness`, `first-commit`) additionally ended in `>/dev/null`, and because these
+scripts put their one-line table on stderr and their detail on stdout, what survived
+looked like a terse gate rather than a muzzled one (85 and 128 bytes of make echoing
+its own recipe, versus 373 and 808 bytes of table). The recipes no longer discard
+stdout — verified: the same command now yields 7849 bytes of detail — and AGENTS.md §2
+and §3 now say the three-valued code lives on the script, so evidence collection calls
+the script. No script's own codes were changed to suit the wrapper; that would invert
+the convention §3 exists to protect.
+
+Two of my own measurements were wrong on the way here and are recorded rather than
+quietly re-run. A repo-wide `grep -rc prevent_destroy` returned non-zero counts and
+`FROZEN` returned three, which read as a refutation of the report I was validating —
+but they were `modules/state-bucket`'s GCS guards and bucket-name prose, and the
+scoping `git grep` against the GitHub path was the measurement that mattered. A
+`grep -c "gh api -X PATCH"` over `repo_readiness_audit.py` returned **0**, which read
+as a refutation of the claim that the gate emits §5-forbidden remediations; the
+f-strings build those strings with `{ORG}` in the middle, so the literal never
+appears, and `grep -n PATCH` found all four sites including `-F private=` — a
+visibility flip. Same lesson as D-85, applied to myself: a zero from a pattern is a
+claim about the pattern.
+
 ## Method notes
 
 1. Three of my own probes were wrong and are recorded as wrong: a `sed`-based script↔test comparison
@@ -538,6 +628,17 @@ Regression surface on `main`: 316 pytest tests, five shell fixtures at 25/19/19/
    raw) and repaired in `403ad80` before the merge. Corollary for any session on this host: when a
    command prints nothing, that is an *unread* result, not a measurement — re-issue it through a file
    and read the file back, and prefer calling the program that owns the pattern over emulating it.
+   Validating another session's report on 2026-10-26 produced a fifth and sixth instance, both of
+   which pointed the wrong way — they made a true claim look false. A repo-wide `grep -rc
+   prevent_destroy` and `grep -rn FROZEN` returned counts that appeared to refute "the guard is
+   absent": the hits were `modules/state-bucket`'s GCS/KMS guards and prose about frozen *bucket
+   names*, not the GitHub path the claim was about, and the scoping `git grep … -- <two paths>` was the
+   measurement that settled it. Then `grep -c "gh api -X PATCH"` over `repo_readiness_audit.py`
+   returned **0**, appearing to refute "the gate emits forbidden PATCH remediations"; the strings are
+   f-strings interpolating `{ORG}` between `api` and `-X`, so the literal never occurs, and `grep -n
+   PATCH` found all four sites, one of which flips visibility. Both errors are the same shape as D-22:
+   a pattern's zero-count is a claim about the pattern, not about the file. Countermeasure used here:
+   before reporting any absence, run the looser pattern and read the matching lines.
 2. The "missing secret" finding was killed by measuring environment- and org-scoped secrets before
    asserting. Scope the namespace before claiming absence.
 3. FA-control-01 was found by *experiment*, which cost one `mkdir` in `/tmp` and destroyed nothing in
@@ -563,9 +664,9 @@ Regression surface on `main`: 316 pytest tests, five shell fixtures at 25/19/19/
    longer attests it (FA-control-10's root fix: register only what git tracks).
 7. **How `index.md`'s totals are derived** (so a reader reproduces them rather than trusting the
    prose). The severity cells are parsed from the registers, never hand-added. Current parse after
-   D-81/D-82/D-83/D-84: `jolarca-control.yml` **14** controls (6 S1 / 7 S2 / 1 S3) → index totals
-   **37 findings (1 S0 / 16 S1 incl. the latent one / 18 S2 / 2 S3)**. Re-run the block below; if it
-   disagrees with the table, the table is wrong.
+   D-81/D-82/D-83/D-84/D-85/D-86: `jolarca-control.yml` **16** controls (7 S1 / 8 S2 / 1 S3) → index
+   totals **39 findings (1 S0 / 17 S1 incl. the latent one / 19 S2 / 2 S3)**. Re-run the block below; if
+   it disagrees with the table, the table is wrong.
 
    ```bash
    .venv/bin/python - <<'PY'
@@ -585,4 +686,8 @@ Regression surface on `main`: 316 pytest tests, five shell fixtures at 25/19/19/
    naive `Counter` will not merge it into `S1`; and a register counts *controls*, so a control
    whose defect was fixed but not yet merged stays in the total — the status field, not the count,
    carries that distinction (FA-control-05/11 read `implemented-pending-merge` in the PR and
-   `implemented` with a `fixes_landed_pr91` block once `4e0c22b` shipped).
+   `implemented` with a `fixes_landed_pr91` block once `4e0c22b` shipped). A third reading of the
+   same rule was needed on 2026-10-26: FA-control-15 is graded **S1 while the fix is merged-ready
+   but unmerged**, because the register's own claim — not the missing `prevent_destroy` — is what an
+   auditor reads; the record stays honest about the distinction rather than lowering the severity to
+   match the merge state.
