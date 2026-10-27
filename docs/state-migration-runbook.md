@@ -696,19 +696,126 @@ and (b) the three inexpressible declaration keys (`restrict_pushes`,
 > | + status checks only, still no `pull_request` rule | still `no pull_request rule` |
 > | + both, with ≥1 context | **no issues** — consent leaves the finding set |
 >
-> So (b) is **not** a prerequisite for step 4; they are independent. The decision is still owed, for
-> the reason D-40 names rather than this one: `policy/repo-defaults.yml` declares `restrict_pushes:
-> true` and `require_conversation_resolution: true` as fleet baseline (lines 71-78) while an adopted
-> repository ruleset cannot carry them, so an attestation that reads `repos/jolarca-consent.yml`
-> overstates enforcement. The gate that reads those keys is `scripts/repo_readiness_audit.py`
-> (around :1549-:1731), and **no workflow invokes it** — the only matches under `.github/workflows/`
-> are comment lines — so it cannot redden CI and is not a required context.
+> So (b) is **not** a prerequisite for step 4; they are independent. And the reason this note first
+> gave for owing that decision was itself wrong: it claimed an adopted ruleset "cannot carry"
+> `restrict_pushes` **or** `require_conversation_resolution`. Only the first is true. See the mapping
+> below — `require_conversation_resolution` is expressible under a different name. The gate that reads
+> those registry keys is `scripts/repo_readiness_audit.py` (around :1549-:1731), and **no workflow
+> invokes it** — the only matches under `.github/workflows/` are comment lines — so it cannot redden
+> CI and is not a required context.
 >
 > Decide `strict` explicitly too. A step 4 landing with
 > `strict_required_status_checks_policy=false` yields an **observation**, not a finding, even though
 > `repos/jolarca-consent.yml` declares `strict: true` — drift compares ruleset contexts only against
 > `minimum_required_contexts`, never against the repository's own declaration. Inheriting GitHub's
 > default here is not the same as choosing it.
+
+**4b. The concrete stage-2 block, and the mapping D-46 residual (3) asked for.**
+Residual (3) said option A needs "either a documented field mapping or a dated deviation" because
+provider 6.13.0 "cannot express" three of consent's declared keys. Measured against
+`terraform providers schema -json`, that list is wrong in two places, and the method that produced it
+is the lesson: it searched for the **registry's spelling** inside a provider that **renames** the same
+concepts. `github_repository_ruleset` exposes 52 attributes; among them are
+`required_review_thread_resolution` (whose own description reads "All conversations on code must be
+resolved before a pull request can be merged" — that *is* `require_conversation_resolution`) and
+`bypass_actors`. So consent needs **no deviation**; it needs this table:
+
+| `repos/jolarca-consent.yml` declares | ruleset expression (6.13.0) | status |
+|---|---|---|
+| `required_status_checks.contexts` (7) | `rules.required_status_checks.required_check { context = … }` | direct |
+| `required_status_checks.strict: true` | `strict_required_status_checks_policy = true` | renamed |
+| `required_approving_review_count: 0` | `rules.pull_request.required_approving_review_count = 0` | direct |
+| `require_code_owner_reviews: false` | `require_code_owner_review = false` | renamed |
+| `dismiss_stale_reviews: true` | `dismiss_stale_reviews_on_push = true` | renamed |
+| `require_last_push_approval: false` | `require_last_push_approval = false` | direct |
+| `require_conversation_resolution: true` | `required_review_thread_resolution = true` | **renamed — expressible** |
+| `enforce_admins: true` | declare **no** `bypass_actors` block (live `bypass: []`) | **by absence — expressible** |
+| `block_force_pushes: true` | `rules.non_fast_forward = true` | renamed |
+| `block_deletions: true` | `rules.deletion = true` | renamed |
+| `require_linear_history: true` | `rules.required_linear_history = true` | direct |
+| `restrict_pushes: true` | no attribute anywhere in the resource (0 hits) | **subsumed** |
+
+The single genuine gap is `restrict_pushes`, and a `pull_request` rule makes a direct push to `main`
+impossible, which is what the key asks for; that is reasoning rather than measurement, so record it as
+a mapping note on `repos/jolarca-consent.yml`, not as a lost control. The two fields that really are
+unmodelled are dr's and vendor's — see step 5, which stands.
+
+> **The hazard this block exists to prevent:** `rules` is `max_items = 1` — one block holding the
+> entire ruleset. An update PUTs what this block says and nothing else, so **stage 1 must be restated
+> or step 4 removes it while adding stage 2.** A run that drops `non_fast_forward` or `deletion` is a
+> protection weakening landed inside a protection fix, and `check_plan_safety.sh` refuses it in both
+> directions for exactly that reason.
+
+```hcl
+resource "github_repository_ruleset" "jolarca_consent" {
+  name        = "protect-main"
+  repository  = "jolarca-consent"
+  target      = "branch"
+  enforcement = "active"
+
+  # No bypass_actors block: consent's live ruleset reports `bypass: []`, and absence is how a
+  # ruleset enforces on admins. Adding `actor_type = "OrganizationAdmin"` would silently
+  # un-protect main for every owner while looking like an improvement.
+
+  conditions {
+    ref_name {
+      include = ["~DEFAULT_BRANCH"]
+      exclude = []
+    }
+  }
+
+  rules {
+    # stage 1, restated verbatim from the live payload — omit any of these and the PUT drops it
+    deletion                = true
+    non_fast_forward        = true
+    required_linear_history = true
+
+    # stage 2, the part that closes the direct-push hole
+    pull_request {
+      required_approving_review_count   = 0
+      require_code_owner_review         = false
+      require_last_push_approval        = false
+      dismiss_stale_reviews_on_push     = true
+      required_review_thread_resolution = true
+      allowed_merge_methods             = ["merge", "squash", "rebase"]
+    }
+
+    required_status_checks {
+      strict_required_status_checks_policy = true
+
+      required_check {
+        context = "Lint (ruff)"
+      }
+      required_check {
+        context = "Type check (mypy)"
+      }
+      required_check {
+        context = "Test (pytest)"
+      }
+      required_check {
+        context = "Repository smoke-check"
+      }
+      required_check {
+        context = "Gitleaks (secret scanning)"
+      }
+      required_check {
+        context = "Dependency review"
+      }
+      required_check {
+        context = "CodeQL (python)"
+      }
+    }
+  }
+}
+```
+
+All seven contexts above are the ones `repos/jolarca-consent.yml` declares, and
+`scripts/check_declared_contexts.py` was run against them before this block was written: **exit 0,
+`findings: []`, `skipped_empty_repos: []`** — the empty last list matters, because a repo skipped as
+empty would have made the pass vacuous. Consent is not empty (119 KB, 5 branches, `ci.yml`
+`codeql.yml` `integrity.yml` `security.yml`), so requiring all seven cannot deadlock a merge the way
+D-44 / D-47 did on `jolarca-identity`. `Verify Chain` is deliberately absent from the list: that
+workflow is schedule/`workflow_dispatch` only, so requiring it would be unsatisfiable (gate L-20).
 
 > Expect `make drift`'s wording to change once PR #99 merges (open, unmerged as this is
 > written — 2026-10-27): consent then also reports

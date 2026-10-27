@@ -47,6 +47,22 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   **1**, but the hit is on `github_branch_protection`, not on `github_repository_ruleset` — so
   D-46's dr/vendor deferral stands, and Step 5 now says so explicitly, because an unscoped grep
   will look like the refutation of a true claim.
+- **The same name-matching method produced a false inexpressibility claim, and it took a second
+  pass to catch it.** `github_repository_ruleset` exposes 52 attributes and **renames** several
+  concepts the registry spells differently: `require_conversation_resolution` is
+  `rules.pull_request.required_review_thread_resolution` (schema description: "All conversations on
+  code must be resolved before a pull request can be merged"), and `enforce_admins` is expressed by
+  the **absence** of a `bypass_actors` block — consent's live ruleset reports `bypass: []`. Grepping
+  the registry's spelling and reading 0 hits as "cannot express" is invalid; a 0-hit grep proves a
+  name is absent, never that a control is. Only `restrict_pushes` truly has no attribute, and a
+  `pull_request` rule makes a direct push impossible, so it is recorded as a mapping note. **Net
+  effect: D-46 option A needs no dated deviation for consent** — the "documented field mapping"
+  branch of D-84 residual (3) is now written out, in Step 6b 4b.
+- **`rules` is `max_items = 1`**, which makes step 4's wording dangerous: one block holds the entire
+  ruleset and an update PUTs the whole thing, so "extend the block with a `pull_request` rule" read
+  as an append would **drop stage 1** (`non_fast_forward`, `deletion`, `required_linear_history`) in
+  the very apply that adds stage 2 — a protection weakening landed inside a protection fix. Step 6b
+  now carries the complete stage-2 block with stage 1 restated and all seven contexts spelled out.
 - The detector half is **PR #99, open and unmerged as this is written** — recorded here, not as
   delivered. `drift_detect.py` asserted nothing about whether an active branch ruleset carries a
   `pull_request` rule (D-84 residual (2)) *and* discarded every note it computed for a repo that
@@ -75,12 +91,13 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   `non_fast_forward` and `deletion`. Consent clears once step 4 adds **both** `pull_request` and
   `required_status_checks` with ≥1 context — either alone still reports the other, and
   `strict=false` after step 4 yields an observation, not a finding. So the keys are **not** a
-  prerequisite for step 4. The decision is still owed, for D-40's reason instead: the registry plus
-  `policy/repo-defaults.yml:71-78` declare `restrict_pushes: true` and
-  `require_conversation_resolution: true` as fleet baseline, which an adopted ruleset cannot carry,
-  so an attestation reading `repos/jolarca-consent.yml` overstates enforcement. The gate that does
-  read them, `repo_readiness_audit.py`, is invoked by no workflow — so it cannot redden CI at all.
-  Both D-84 and D-87 now carry a dated correction rather than a deleted claim.
+  prerequisite for step 4. What this bullet then said *in place of* that consequence was itself
+  wrong — it claimed an adopted ruleset "cannot carry" `restrict_pushes` **and**
+  `require_conversation_resolution`; see the two bullets above, `require_conversation_resolution`
+  is expressible under a renamed attribute. The gate that reads those registry keys,
+  `repo_readiness_audit.py`, is invoked by no workflow — so it cannot redden CI at all.
+  Both D-84 and D-87 now carry dated corrections rather than deleted claims, and each correction
+  names the method error that produced the wrong one.
 - Files: `docs/state-migration-runbook.md` (Step 6b), `docs/drift-findings.md` (**D-87** + dated
   status on D-84 residual (2)), this entry. None is in `EVIDENCE_DIRS`, so no re-registration was
   required — verified by `grep -c` against the registry returning **0**, not assumed.
@@ -178,7 +195,11 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   6.13.0 can express the missing checks but does not model `dismissal_restriction` /
   `require_extra_approval_for_unattributed_changes` that are live in dr/vendor, and cannot
   express `restrict_pushes`, `require_conversation_resolution` or per-rule `enforce_admins` that
-  these repos declare. Import id read from provider source (`parseID2` splits on `:`):
+  these repos declare. **Corrected 2026-10-27, same entry, one day later: the last clause is wrong
+  in two places** — `require_conversation_resolution` is `required_review_thread_resolution` on a
+  ruleset and `enforce_admins` is the absence of `bypass_actors`; only `restrict_pushes` has no
+  attribute, and a `pull_request` rule subsumes it. See **Step 6b 4b** for the mapping.
+  Import id read from provider source (`parseID2` splits on `:`):
   `<repo>:<ruleset_id>`. Sequence, ready HCL and verification commands: `docs/state-migration-runbook.md`
   **Step 6b**; `terraform import` stays operator-run (§5). Option B (delete the rulesets) was
   rejected because CI has never reached the HCP workspace (D-82), so the unprotected window is
