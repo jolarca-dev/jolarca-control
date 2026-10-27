@@ -34,6 +34,11 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 - Queue note: consent PR #2 bumps `gitleaks/gitleaks-action` 2.3.9 → 3.0.0. Once #12 merges that
   action is unreferenced, so **#2 must be closed, not merged** — merging it reinstalls the licensed
   Action and re-jams the repository it was opened to update.
+- Fleet scope measured, so the fix is sized correctly: `jolarca-consent` is the **only** repo requiring
+  `Dependency review`, and 7 of 17 have no dependency graph. No trim is needed for the other nine, and
+  no repo in the org holds a `GITLEAKS_LICENSE` (secrets exist only on `jolarca-control` and
+  `jolarca-infrastructure`), so the licensed Action was a fleet-wide liability rather than a consent
+  quirk — the CLI swap is the pattern any repo adopting a secret-scan context should copy.
 - D-89 stays open and decision-neutral: the §7 wording above does not presuppose whether the
   permanent `1 to change` on `jolarca-legal` is accepted or cleared by re-import. Both remain the
   operator's call; the fact (create-only attributes cannot converge) is recorded either way.
