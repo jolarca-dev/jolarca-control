@@ -222,6 +222,18 @@ Specific high-consequence edits:
   missing `.git` once skipped six filesystem checks and the entire secret sweep).
   Cross-check finding counts against an independent run.
 
+- **A required status check must be proven PASSING, not merely producible.**
+  `make context-parity` / `scripts/check_declared_contexts.py` answers one
+  question: does a PR-triggerable workflow emit a job with this name. It does not
+  answer whether that job can go green. Adding a context to a required list on the
+  strength of exit 0 is how `jolarca-consent` was wedged (D-90): two of its seven
+  declared contexts had been failing on its own `main` since 2026-10-15, so the
+  moment the ruleset required them, **no PR could merge** — including the PRs that
+  would have fixed them. Before requiring a context, read its recent history on the
+  default branch and require observed successes:
+  `gh run list --repo <r> --workflow <wf> --branch main --limit 5 --json conclusion`.
+  Emission is necessary; satisfiability is what you are actually enacting.
+
 ## 8. Controls that are NOT currently enforced
 
 Recorded so no agent assumes protection that does not exist. Verify live before
