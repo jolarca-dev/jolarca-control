@@ -12,7 +12,7 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ### Added — 2026-10-27 (AGENTS.md §7: read a gate's exit code before anything else runs)
 
-- Caught while shipping D-91: a sixteen-gate sweep printed `rc=0` for every gate, including
+- Caught while preparing the consent dependency-review exception: a sixteen-gate sweep printed `rc=0` for every gate, including
   `hash_evidence.sh --check`, which was really exiting **1**. Cause is bash word expansion —
   `printf '...' "$(echo "$c" | cut -c1-40)" "$?"` runs the substitution first, and the substitution
   sets `$?`, so the reported number was `cut`'s status, not the gate's.
