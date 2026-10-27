@@ -10,6 +10,40 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (D-90 half-closed for free: gitleaks CLI passes in CI, and a rule so this cannot recur)
+
+- consent PR #12 landed the license-free swap and it is **verified in CI, not just locally**: the
+  rerun of `40570141865` shows `Gitleaks (secret scanning)` → `success` in 7s. The paid *Action* was
+  the blocker; the free CLI performs the same scan, pinned to 8.30.1 and gated on a sha256 from the
+  release's own checksums asset, with a negative control that plants a runtime-assembled credential
+  and fails the job if gitleaks does **not** detect it.
+- `Dependency review` is still red and `GET /dependency-graph/sbom` is still **404** after the rerun,
+  so the free Dependency-graph toggle has not taken effect; all five open consent PRs remain
+  `BLOCKED`. Recorded as unresolved rather than assumed fixed.
+- **A correction against my own previous turn:** I asserted that enabling the graph "alone would not
+  have made the context pass". The job log shows the refusal is the feature flag
+  (`Dependency review is not supported on this repository`), so the toggle is the gate and the
+  committed `requirements.txt` is what stops the control being hollow. Third time this session a
+  cause was stated from inference while a log line was available.
+- New AGENTS.md §7 rule, which is the durable part: **a required status check must be proven
+  passing, not merely producible.** `check_declared_contexts.py` exiting 0 says a PR-triggerable
+  workflow emits the name; it says nothing about whether the job can go green. Read
+  `gh run list --repo <r> --workflow <wf> --branch main --limit 5 --json conclusion` and require
+  observed successes before adding a context to a required list. This is the D-44/D-47/A-01 deadlock
+  class, entered this time by me.
+- Queue note: consent PR #2 bumps `gitleaks/gitleaks-action` 2.3.9 → 3.0.0. Once #12 merges that
+  action is unreferenced, so **#2 must be closed, not merged** — merging it reinstalls the licensed
+  Action and re-jams the repository it was opened to update.
+- Fleet scope measured, so the fix is sized correctly: `jolarca-consent` is the **only** repo requiring
+  `Dependency review`, and 7 of 17 have no dependency graph. No trim is needed for the other nine, and
+  no repo in the org holds a `GITLEAKS_LICENSE` (secrets exist only on `jolarca-control` and
+  `jolarca-infrastructure`), so the licensed Action was a fleet-wide liability rather than a consent
+  quirk — the CLI swap is the pattern any repo adopting a secret-scan context should copy.
+- D-89 stays open and decision-neutral: the §7 wording above does not presuppose whether the
+  permanent `1 to change` on `jolarca-legal` is accepted or cleared by re-import. Both remain the
+  operator's call; the fact (create-only attributes cannot converge) is recorded either way.
+
+
 ### Changed — 2026-10-27 (D-90 evidence: consent's two blocking contexts fail on `main` itself, and the graph needs a manifest)
 
 - `gh workflow run security.yml --repo jolarca-dev/jolarca-consent --ref main` → run `40568417936`,
