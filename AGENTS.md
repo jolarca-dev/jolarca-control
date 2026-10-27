@@ -289,13 +289,23 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   `docs/backup-log.tsv` never existed while the register cited it as the D-02
   interim control. Fixed 2026-10-15: it now pulls the current state version from
   the backend, encrypts to `$BACKUP_DEST`, and **decrypts and compares the
-  SHA-256** before claiming anything (`make backup BACKUP_DEST=…`; 10 fixtures in
-  `tests/test_state_backup.sh`; skip the proof and it exits 2, never 0). Still
-  missing: **a schedule and a genuinely off-host destination.** The age identity
-  and `/opt/jolarca/backups/` both live on the machine holding the working copy,
-  so this is a verified export path, not a 3-2-1 copy, and it is only as current
-  as the last human who ran it. Do not delete an account, org or workspace, and
-  do not treat D-02 as closed.
+  SHA-256** before claiming anything (`make backup BACKUP_DEST=…`; 17 fixtures in
+  `tests/test_state_backup.sh`; skip the proof and it exits 2, never 0). Since
+  2026-10-27 "off-host" is **measured, not asserted**: the script compares
+  `stat -c%d` of `$BACKUP_DEST` against the repository, writes the verdict to
+  `backup-probes.tsv`, and `STATE_BACKUP_REQUIRE_OFF_HOST=1` turns a same-filesystem
+  destination into a refusal that fires **before** anything is written (an earlier
+  revision refused after the write, leaving an archive in the directory it had just
+  declared unacceptable). Measured: `/opt/jolarca/backups` is device **64513** — the
+  same ext4 volume as the working copy, so every archive ever taken there survives
+  operator error and nothing else — while `/mnt/jol-backup/jol-state-backup` is
+  device **2065** (`sdb1`, a separate physical disk), which is where the nightly job
+  points (`17 4 * * *`, installed 2026-10-27 with `REQUIRE_OFF_HOST=1`).
+  **What is still not true:** that scheduled run has not happened yet, so the cadence
+  is configured and unproven; the age identity still lives on the same machine as the
+  working copy; and a second disk inside one host survives volume loss, not host loss.
+  So this is a verified, scheduled, off-*volume* copy — **not** a 3-2-1 copy. Do not
+  delete an account, org or workspace, and do not treat D-02 as closed.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
   apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
   `*.tfvars` and itself, then runs `terraform apply -input=false -auto-approve

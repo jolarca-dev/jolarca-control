@@ -32,6 +32,23 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 - Sequencing that the operator must respect: merge → **apply** → then merge consent #12 → graph builds
   → verify → restore. Merging #12 first changes nothing, because the apply is what edits the ruleset.
 
+### Changed — 2026-10-27 (D-02's status text was stale the moment the destination question was answered)
+
+- AGENTS.md §8 said the backup was missing **"a schedule and a genuinely off-host destination."** Both
+  are now in place, so the sentence was no longer true — and a governance file describing a closed gap as
+  open is the same defect as describing an unapplied fix as applied, just pointing the other way.
+- Rewritten to the measured facts and nothing more: destination device 2065 (`sdb1`) vs the repository's
+  64513, `REQUIRE_OFF_HOST=1` refusing a same-filesystem destination **before** writing, the nightly
+  `17 4 * * *` entry installed 2026-10-27, 17 fixtures, and the manual path proven end to end (serial 17,
+  round-trip verified).
+- What is explicitly **not** claimed: that the schedule has run (it has not — the entry says
+  "configured and unproven" and gives the `grep -c 'BACKUP OK'` check), that key custody is separate (the
+  age identity is still on the same machine), or that one host with two disks is a second site. D-02 stays
+  PARTIALLY FIXED / S0.
+- The register keeps its earlier row rather than being rewritten over it, so the 2026-10-15 "fixed" claim
+  and today's measurement are both readable and dated.
+
+
 ### Added — 2026-10-27 (AGENTS.md §7: read a gate's exit code before anything else runs)
 
 - Caught while preparing the consent dependency-review exception: a sixteen-gate sweep printed `rc=0` for every gate, including
