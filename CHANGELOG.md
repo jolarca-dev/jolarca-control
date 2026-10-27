@@ -10,6 +10,28 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-27 (the off-host refusal fired *after* the archive was written)
+
+- Found by re-reading my own change the day it merged. `STATE_BACKUP_REQUIRE_OFF_HOST=1` computed
+  the verdict after the fetch, the encrypt and the write, so a destination it went on to refuse had
+  already received `terraform.tfstate.s*.age` **and** a `backup-probes.tsv` row attesting
+  `round_trip verified`. The tool created the false sense of safety it was declining to certify, and
+  a scheduled run pointed at the wrong directory would have quietly filled it with archives that
+  looked, from the log, like certified backups.
+- The probe now runs immediately after `BACKUP_DEST` is validated, before anything is read or
+  written. The probe *row* still lands only after the decrypt round trip, so a line in
+  `backup-probes.tsv` continues to mean "an archive exists here and it came back" — the two
+  decisions are separate on purpose: refuse early, attest late.
+- An unreadable device id under `REQUIRE_OFF_HOST=1` is **exit 2, not 1** (§3): the layout could not
+  be verified, which is a different fact from having verified it is wrong.
+- `tests/test_state_backup.sh`: 17 cases. The new `refuses-before-writing-anything` asserts the
+  destination is left **empty**, which is the part an exit-code check cannot see — proven red first:
+  against the pre-fix script it prints `FAIL ... exit=1 contents=[terraform.tfstate.s7...age
+  backup-probes.tsv]` (16 passed / 1 failed), and 17/0 after. Re-verified in a simulated runner tree
+  whose device equals `/tmp`'s, because that is the layout that broke the previous push.
+- shellcheck clean (it also caught an `ls`-based listing that would have mis-split generated names).
+
+
 ### Fixed — 2026-10-27 (D-02: `state_backup.sh` now measures whether the destination is off-host instead of asserting it)
 
 - The script's own header said `BACKUP_DEST` is an **off-host** directory, and it was never checked.

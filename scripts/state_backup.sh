@@ -79,6 +79,41 @@ command -v python3 >/dev/null 2>&1 || die "python3 is not installed"
 [ -n "$dest" ] || die "BACKUP_DEST is not set. Point it at an off-host directory."
 [ -d "$dest" ] || die "backup destination does not exist: $dest"
 
+# ── Off-host probe, BEFORE anything is written (D-02) ────────────────────────
+# Device ids, not paths: /opt/jolarca/backups and /opt/jolarca/repos/* are different
+# directories on the SAME ext4 filesystem — exactly the case a human eyeballing the
+# paths calls off-host. Measured 2026-10-27: dest_dev=64513 == repo_dev=64513, while
+# /mnt/jol-backup sits on dev 2065 (sdb1, a separate physical disk).
+# The order matters. The first version of this check ran after the encrypt and the
+# round trip, so a destination it went on to refuse had already received an archive —
+# the tool created the false sense of safety it was declining to certify.
+dev_of() {
+  stat -c%d "$1" 2>/dev/null || stat -f%d "$1" 2>/dev/null || echo ""
+}
+dest_dev="$(dev_of "$dest")"
+repo_dev="$(dev_of "$REPO_ROOT")"
+require_off="${STATE_BACKUP_REQUIRE_OFF_HOST:-0}"
+if [ -z "$dest_dev" ] || [ -z "$repo_dev" ]; then
+  off_host="unknown"
+elif [ "$dest_dev" = "$repo_dev" ]; then
+  off_host="no"
+else
+  off_host="yes"
+fi
+
+if [ "$off_host" != "yes" ]; then
+  echo "::warning::BACKUP_DEST is NOT off-host (off_host=$off_host, dest_dev=$dest_dev, " \
+       "repo_dev=$repo_dev). This copy survives operator error, not host loss (D-02)." >&2
+  if [ "$require_off" = "1" ]; then
+    if [ "$off_host" = "unknown" ]; then
+      unverifiable "STATE_BACKUP_REQUIRE_OFF_HOST=1 but the filesystem devices could not be " \
+        "read (dest_dev='$dest_dev' repo_dev='$repo_dev') — cannot certify off-host, not treating that as a pass"
+    fi
+    die "STATE_BACKUP_REQUIRE_OFF_HOST=1 and the destination is not on a different filesystem " \
+        "(off_host=$off_host) — refusing to write a backup where it cannot serve as a 3-2-1 copy"
+  fi
+fi
+
 pubkey="${STATE_BACKUP_PUBKEY:-}"
 if [ -z "$pubkey" ] && [ -f "$REPO_ROOT/.state-backup-pubkey.txt" ]; then
   pubkey="$(tr -d ' \t\r\n' < "$REPO_ROOT/.state-backup-pubkey.txt")"
@@ -217,24 +252,10 @@ if [ "$recovered_digest" != "$digest" ]; then
   die "round-trip FAILED: decrypted sha256 $recovered_digest != source $digest"
 fi
 
-# ── Off-host probe (D-02: "off-host" was a claim, never a measurement) ───────
-# Device ids, not paths: /opt/jolarca/backups and /opt/jolarca/repos/* are different
-# directories on the SAME ext4 filesystem, which is exactly the case a human eyeballing
-# the paths would call off-host. stat -c%d is GNU, stat -f%d is the BSD/macOS form.
-dev_of() {
-  stat -c%d "$1" 2>/dev/null || stat -f%d "$1" 2>/dev/null || echo ""
-}
-dest_dev="$(dev_of "$dest")"
-repo_dev="$(dev_of "$REPO_ROOT")"
-require_off="${STATE_BACKUP_REQUIRE_OFF_HOST:-0}"
-if [ -z "$dest_dev" ] || [ -z "$repo_dev" ]; then
-  off_host="unknown"
-elif [ "$dest_dev" = "$repo_dev" ]; then
-  off_host="no"
-else
-  off_host="yes"
-fi
-
+# ── Probe record (written only for a backup that was actually verified) ──────
+# The verdict itself is computed at the top, before any write; this row is the
+# evidence line, and it is deliberately appended only after the decrypt round trip
+# so a row in this file always means "an archive exists here and it came back".
 probe_log="${STATE_BACKUP_PROBE_LOG:-$dest/backup-probes.tsv}"
 if [ ! -f "$probe_log" ]; then
   printf 'timestamp\tdest\tdest_dev\trepo_root\trepo_dev\toff_host\tround_trip\n' > "$probe_log"
@@ -242,19 +263,8 @@ if [ ! -f "$probe_log" ]; then
 fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   "$timestamp" "$dest" "$dest_dev" "$REPO_ROOT" "$repo_dev" "$off_host" "verified" >> "$probe_log"
-
-if [ "$off_host" != "yes" ]; then
-  echo "::warning::BACKUP_DEST is NOT off-host (off_host=$off_host, dest_dev=$dest_dev, " \
-       "repo_dev=$repo_dev). This copy survives operator error, not host loss (D-02)." >&2
-  echo "  off-host:       $off_host  (dest_dev=$dest_dev repo_dev=$repo_dev)"
-  echo "  probe log:      $probe_log"
-  if [ "$require_off" = "1" ]; then
-    die "STATE_BACKUP_REQUIRE_OFF_HOST=1 but the destination is on the same filesystem " \
-        "as the repository (off_host=$off_host) — refusing to call this a 3-2-1 copy"
-  fi
-else
-  echo "  off-host:       yes  (dest_dev=$dest_dev != repo_dev=$repo_dev)"
-fi
+echo "  off-host:       $off_host  (dest_dev=$dest_dev repo_dev=$repo_dev)"
+echo "  probe log:      $probe_log"
 
 # ── Manifest (travels with the backups) ──────────────────────────────────────
 encrypted_size="$(stat -c%s "$encrypted_path" 2>/dev/null || stat -f%z "$encrypted_path")"
