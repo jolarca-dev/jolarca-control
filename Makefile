@@ -148,10 +148,18 @@ findings-check: ## Every `### D-nn` heading must be unique on main and across op
 	python3 scripts/check_findings_register.py --cross-pr
 
 readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
+	# No `>/dev/null` here: this script puts its one-line table on stderr and its
+	# detail (findings JSON when OUT= is omitted) on stdout, so redirecting stdout
+	# silently threw the findings away while leaving the table to imply the gate
+	# had simply been terse (D-86, measured 2026-10-26).
+	# NOTE: `make readiness` can never report §3's three-valued code — GNU make
+	# returns 2 for any failed recipe (proved: a `@exit 1` target also yields 2).
+	# Call `.venv/bin/python scripts/repo_readiness_audit.py …` directly when the
+	# difference between "findings" (1) and "could not verify" (2) matters.
 	python3 scripts/repo_readiness_audit.py \
 	  $(if $(REPO),--repo $(REPO)) \
 	  $(if $(OUT),--output $(OUT)) \
-	  $(if $(REPORT),--markdown $(REPORT)) >/dev/null
+	  $(if $(REPORT),--markdown $(REPORT))
 context-parity: ## Declared required status checks must be checks the repo can report
 	python3 scripts/check_declared_contexts.py
 
@@ -181,6 +189,9 @@ first-commit: ## Phase 3 gate: VERIFY→COMMIT→PUSH→REVIEW→MERGE→VERIFY 
 	  echo "usage: make first-commit REPO=<name> [STEP=A|B|C|D|E|F|all]"; \
 	  echo "       [MESSAGE=\"...\"] [ATTEST=\"...\"] [EVIDENCE=<path>] [STRICT=1]"; \
 	  echo "       [SNAPSHOT=1] [NO_LIVE=1]"; exit 2; }
+	# As in `readiness` above: stdout carries the machine-readable verdict, so it
+	# is no longer discarded, and a non-zero exit here is make's generic 2, not
+	# this script's 1-or-2 — invoke the script directly to read the real code (D-86).
 	python3 scripts/first_commit_pipeline.py \
 	  --repo $(REPO) \
 	  $(if $(STEP),--step $(STEP)) \
@@ -190,7 +201,7 @@ first-commit: ## Phase 3 gate: VERIFY→COMMIT→PUSH→REVIEW→MERGE→VERIFY 
 	  $(if $(EXPECTED_SHA),--expected-sha $(EXPECTED_SHA)) \
 	  $(if $(SNAPSHOT),--snapshot) \
 	  $(if $(STRICT),--strict) \
-	  $(if $(NO_LIVE),--no-live) >/dev/null
+	  $(if $(NO_LIVE),--no-live)
 
 # ── Terraform ────────────────────────────────────────────────────────────────
 init: ## Initialize Terraform

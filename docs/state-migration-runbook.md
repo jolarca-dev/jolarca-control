@@ -5,6 +5,13 @@ is live (35 resources at completion; **48** when re-measured 2026-10-15, executi
 mode `local`); `STATE_MIGRATION_COMPLETE=true` is set — which means the CI apply
 gate is **open**, not closed; `TFC_TOKEN`
 secret is configured. `jolarca-control` is authoritative.
+**Caveat added 2026-10-26 (D-85):** "COMPLETE" was true of *this* root's state and
+false of step 1's deliverable in the other root — the freeze existed only on one
+workstation until `jolarca-infrastructure` PR #49. The legacy root's local
+`terraform.tfstate` also does not report zero resources: serial **37** with one
+address, `github_repository_file.security_md` at `instances: 0`, plus 8 stale
+state copies in the same gitignored directory. Read "complete" as "the new root is
+authoritative", not as "the old root is inert".
 **Scope:** move ownership of the six `jolarca-dev` GitHub repositories, their
 branch-protection rules and the org health repo from
 `jolarca-infrastructure/terraform/environments/production` into this root.
@@ -72,23 +79,50 @@ on one laptop is not a control plane.
 
 ## Step 1 — Freeze the old root
 
-Already applied in the `jolarca-infrastructure` working tree as part of this
-change; verify before continuing:
+**Status correction (2026-10-26, D-85).** This step was written up as "already
+applied" and it was true of one workstation and false of the repository: at
+`8f02d17` (`jolarca-infrastructure` `origin/main`, public) `var.org` still
+defaulted to `journeyoflife-org` in both files, `module "github_org"` was live,
+there was no committed `terraform.tfvars` for that environment, `git grep -n
+lifecycle HEAD -- terraform/environments/production terraform/modules/github-org`
+returned nothing, and `git log --all -S "FROZEN — DO NOT PLAN OR APPLY"` returned
+zero commits. The check below could not have caught it, because every command in
+it greps the **working tree**. It now greps the committed tree.
+
+Applied in the working tree since 2026-09-25; landed as
+`jolarca-infrastructure` **PR #49** (`2eab214` + `693ec82`, the second commit
+adding the `.github/CODEOWNERS` that repo's required `compliance` context demands
+— it was the only fleet repo missing it, which is why nothing had merged there
+since 2026-08-31). Verify against git, not against this host:
 
 ```bash
 cd /opt/jolarca/repos/jolarca-infrastructure
-grep -n 'jolarca-dev' terraform/modules/github-org/variables.tf \
-                      terraform/environments/production/variables.tf   # D-06 fix
-grep -n 'prevent_destroy' terraform/modules/github-org/main.tf \
-                          terraform/modules/github-org/github-health-repo.tf
-grep -n 'FROZEN' terraform/modules/github-org/versions.tf
-ls terraform/modules/github-org/*.bak* 2>/dev/null && echo "D-12 NOT FIXED" || echo "D-12 fixed"
+git fetch origin main
+# Read the COMMITTED tree. `grep -n <path>` answers a question about one host.
+git show origin/main:terraform/modules/github-org/variables.tf \
+  | grep -n 'default' | grep -i org                                  # D-06 fix
+git show origin/main:terraform/environments/production/variables.tf \
+  | grep -n 'default' | grep -i org
+git show origin/main:terraform/modules/github-org/main.tf \
+  | grep -n 'prevent_destroy'
+git grep -n 'prevent_destroy' origin/main -- terraform/modules/github-org
+git grep -n 'FROZEN' origin/main -- terraform/modules/github-org/versions.tf
+git ls-tree origin/main terraform/modules/github-org/ | grep -c '\.bak'  # D-12: 0
 ```
+
+Reading the result: these are `grep` exits, so **no output plus exit 1 means the
+marker is absent from the committed tree** — that is a finding, not §3's `2`
+("could not verify"), which here would be a failed `git fetch` or a path git has
+never seen. Run against `origin/main` on 2026-10-26 the block printed
+`default     = "journeyoflife-org"` twice, nothing for `prevent_destroy`, and `1`
+for the `.bak` count: step 1 is satisfied on `fix/land-frozen-root-step1`, not on
+`main`, and this step is not closed until PR #49 merges.
 
 Expected: `org` defaults to `jolarca-dev`, `prevent_destroy = true` on both
 `github_repository` resources, a FROZEN banner in `versions.tf`, no `.bak`
 file. Land this as a signed PR **before** step 2 so the freeze is in git
-history, not just on disk.
+history, not just on disk — the sentence this runbook failed to obey for a
+month, and the reason D-85 exists.
 
 From this point until step 8: **no `terraform plan/apply/destroy` in the old
 root.** The `prevent_destroy` added in step 1 is the safety net if someone
