@@ -283,35 +283,53 @@ def ruleset_covers_branch(detail: dict[str, Any], branch: str) -> bool:
     return False
 
 
-def ruleset_protection_state(repo: str, branch: str = "main") -> tuple[str, list[str], list[str]]:
+def ruleset_protection_state(
+    repo: str, branch: str = "main"
+) -> tuple[str, list[str], list[str], list[str]]:
     """Describe protection the legacy endpoint cannot see.
 
-    Returns ``(verdict, contexts, issues)``. ``"active"`` means at least one ruleset is enforced AND
-    covers ``branch``; ``"none"`` means nothing enforceable covers it; ``"unreadable"`` means a probe
-    failed, which callers must file as unverifiable, never as agreement.
+    Returns ``(verdict, contexts, issues, observations)``. ``"active"`` means at least one ruleset is
+    enforced AND covers ``branch``; ``"none"`` means nothing enforceable covers it; ``"unreadable"``
+    means a probe failed, which callers must file as unverifiable, never as agreement.
 
-    Rulesets express a different attribute set from legacy protection. What is compared here: required
-    status checks, force-push blocking (``non_fast_forward``) and deletion blocking (``deletion``).
-    What is NOT comparable through this API and must not be implied: ``enforce_admins`` and
-    CODEOWNERS/review configuration. See ``ruleset_attribute_limits`` in the report.
+    Asserted as a finding: required status checks present, a ``pull_request`` rule present,
+    force-push blocking (``non_fast_forward``) and deletion blocking (``deletion``).
+
+    The ``pull_request`` assertion closes D-84's recorded residual (2). Its absence is not a weaker
+    review policy, it is no review gate at all: nothing requires a PR, so the branch accepts a direct
+    push. Measured 2026-10-27, ``jolarca-consent``'s ruleset ``24087580`` has exactly that hole (its
+    rules are deletion + non_fast_forward + required_linear_history), while ``jolarca-dr``
+    ``24136490`` and ``jolarca-vendor`` ``24138288`` each carry the rule.
+
+    Observed but never set as drift: ``strict_required_status_checks_policy``. The fleet baseline in
+    ``policy/repo-defaults.yml`` declares no ``strict`` key and the legacy comparison path does not
+    check it either, so promoting it here would invent a requirement the policy never stated -- the
+    decision ``test_protection_404_with_ruleset_requiring_contexts_is_not_drift`` encodes. It is still
+    returned, because a diagnostic that is computed and then dropped cannot be weighed by anyone.
     """
     status, body = try_get(f"repos/{ORG}/{repo}/rulesets")
     if status != 200 or not isinstance(body, list):
-        return "unreadable", [], [f"rulesets HTTP {status}"]
+        return "unreadable", [], [f"rulesets HTTP {status}"], []
     active = [r for r in body if isinstance(r, dict) and r.get("enforcement") == "active"]
     if not active:
-        return "none", [], []
+        return "none", [], [], []
 
     contexts: list[str] = []
     issues: list[str] = []
+    observations: list[str] = []
     covering = 0
     for ruleset in active:
         ruleset_id = ruleset.get("id")
         if ruleset_id is None:
-            return "unreadable", contexts, [f"active ruleset without id: {ruleset.get('name')!r}"]
+            return (
+                "unreadable",
+                contexts,
+                [f"active ruleset without id: {ruleset.get('name')!r}"],
+                [],
+            )
         detail_status, detail = try_get(f"repos/{ORG}/{repo}/rulesets/{ruleset_id}")
         if detail_status != 200 or not isinstance(detail, dict):
-            return "unreadable", contexts, [f"ruleset {ruleset_id} HTTP {detail_status}"]
+            return "unreadable", contexts, [f"ruleset {ruleset_id} HTTP {detail_status}"], []
         if not ruleset_covers_branch(detail, branch):
             continue
         covering += 1
@@ -322,21 +340,29 @@ def ruleset_protection_state(repo: str, branch: str = "main") -> tuple[str, list
         if not rule_present:
             issues.append(f"{name}: no required_status_checks rule")
         elif not strict:
-            issues.append(f"{name}: strict_required_status_checks_policy=false")
+            observations.append(f"{name}: strict_required_status_checks_policy=false")
+        if "pull_request" not in types:
+            issues.append(f"{name}: no pull_request rule (no PR is required on {branch})")
         if "non_fast_forward" not in types:
             issues.append(f"{name}: force pushes not blocked by ruleset")
         if "deletion" not in types:
             issues.append(f"{name}: branch deletion not blocked by ruleset")
 
     if covering == 0:
-        return "none", [], []
-    return "active", sorted(set(contexts)), issues
+        return "none", [], [], []
+    return "active", sorted(set(contexts)), issues, observations
 
 
 RULESET_ATTRIBUTE_LIMITS = (
-    "ruleset path compares required status checks, force-push blocking (non_fast_forward) and deletion "
-    "blocking (deletion); enforce_admins and CODEOWNERS/review attributes are not expressible by this "
-    "API and are therefore NOT verified for ruleset-protected repos"
+    "ruleset path asserts required status checks, the presence of a pull_request rule (its absence "
+    "means nothing requires a PR, so the branch accepts a direct push), force-push blocking "
+    "(non_fast_forward) and deletion blocking (deletion). It OBSERVES "
+    "strict_required_status_checks_policy without treating it as drift, because "
+    "policy/repo-defaults.yml declares no strict key and the legacy path does not check it either. "
+    "Not asserted: enforce_admins and the CODEOWNERS mapping, which a repository ruleset expresses "
+    "differently from the legacy attribute set rather than unreadably -- provider 6.13.0 additionally "
+    "omits dismissal_restriction and require_extra_approval_for_unattributed_changes that are live in "
+    "dr's and vendor's payloads (D-46)."
 )
 
 
@@ -374,6 +400,7 @@ def check_branch_protection(
     weakened: list[dict[str, Any]] = []
     plan_limited: list[str] = []
     ruleset_protected: list[str] = []
+    ruleset_observations: list[dict[str, Any]] = []
     hollow_rules: list[dict[str, Any]] = []
     unverifiable: list[str] = []
 
@@ -404,22 +431,29 @@ def check_branch_protection(
             plan_limited.append(repo)
             continue
         if status == 404:
-            verdict, rs_contexts, rs_notes = ruleset_protection_state(repo, branch)
+            verdict, rs_contexts, rs_notes, rs_obs = ruleset_protection_state(repo, branch)
+            if rs_obs:
+                ruleset_observations.append({"repo": repo, "notes": rs_obs})
             if verdict == "unreadable":
                 unverifiable.append(f"{repo}: {'; '.join(rs_notes) or 'rulesets unreadable'}")
             elif verdict == "none":
                 missing.append(repo)
-            elif len(rs_contexts) < min_contexts:
-                finding = {
-                    "repo": repo,
-                    "issues": [
+            elif len(rs_contexts) < min_contexts or rs_notes:
+                # `or rs_notes` is the whole change. A ruleset can satisfy the context floor while
+                # requiring no pull request at all, and the old `else` below filed that repo as
+                # protected and discarded the note it had just computed -- so asserting the rule
+                # without fixing this branch would have produced a detection that could never be
+                # read by anything (D-84 residual (2); consent measured 2026-10-27).
+                rule_issues: list[str] = []
+                if len(rs_contexts) < min_contexts:
+                    rule_issues.append(
                         (
                             f"ruleset requires {len(rs_contexts)} status check(s), "
                             f"need >= {min_contexts}"
                         ),
-                        *rs_notes,
-                    ],
-                }
+                    )
+                rule_issues.extend(rs_notes)
+                finding = {"repo": repo, "issues": rule_issues}
                 if repo in exempt:
                     hollow_rules.append(finding)
                 else:
@@ -486,6 +520,7 @@ def check_branch_protection(
             "weakened": weakened,
             "plan_limited": plan_limited,
             "ruleset_protected": ruleset_protected,
+            "ruleset_observations": ruleset_observations,
             "ruleset_attribute_limits": RULESET_ATTRIBUTE_LIMITS,
             "hollow_rules": hollow_rules,
             "required": required,
@@ -667,6 +702,18 @@ def render_issue_body(report: dict[str, Any]) -> str:
             lines.append(f"- `{item['repo']}`: {'; '.join(item['issues'])}")
         lines.append("")
 
+    observations = report["branch_protection"].get("ruleset_observations", [])
+    if observations:
+        lines.append("### Ruleset attributes observed but not treated as drift")
+        lines.append(
+            "Reported for the record. These do not set the verdict because "
+            "`policy/repo-defaults.yml` declares no `strict` requirement; they are listed so a "
+            "computed diagnostic cannot be silently discarded."
+        )
+        for item in observations:
+            lines.append(f"- `{item['repo']}`: {'; '.join(item['notes'])}")
+        lines.append("")
+
     if report["unexpected_admins"]:
         lines.append("### Unexpected administrators")
         lines.append(
@@ -736,6 +783,15 @@ def summarise(report: dict[str, Any]) -> list[str]:
         out.append(
             f"INFO: {name} has branch protection but attributes are unreadable "
             "(GitHub Free plan — private repos)"
+        )
+
+    # Surfaced rather than dropped: these were computed and then discarded whenever the repo passed
+    # the context floor. Informational by policy -- the declared baseline states no `strict` value --
+    # but an operator cannot weigh an observation the report never prints.
+    for item in bp.get("ruleset_observations", []):
+        out.append(
+            f"INFO: {item['repo']} ruleset observation: {'; '.join(item['notes'])} "
+            "(not drift under the declared baseline; reconcile when D-46 option A lands)"
         )
 
     for item in report["unexpected_admins"]:
