@@ -49,6 +49,15 @@
 #   STATE_BACKUP_KEY     age identity for the round trip; else
 #                        ~/.config/age/state-backup-key.txt
 #   STATE_BACKUP_SKIP_VERIFY  =1 skips the round trip → exits 2, never 0
+#   STATE_BACKUP_REQUIRE_OFF_HOST  =1 refuses (exit 1) when BACKUP_DEST shares a
+#                        filesystem with this repository. Off-host is the whole
+#                        point of D-02; a backup on the same disk is insurance
+#                        against operator error, not against host loss. Default 0
+#                        so backups keep happening while no second destination
+#                        exists — the probe is recorded either way.
+#   STATE_BACKUP_PROBE_LOG  default: $BACKUP_DEST/backup-probes.tsv (kept separate
+#                        from backup-log.tsv so that file's 7-column schema does
+#                        not silently change under existing readers)
 #   TFC_TOKEN         HCP API token; else the credentials block of
 #                     $TF_CLI_CONFIG_FILE or ~/.terraformrc
 #   STATE_BACKUP_API_BASE  default https://app.terraform.io/api/v2 (tests point
@@ -206,6 +215,45 @@ age -d -i "$identity" -o "$recovered" "$encrypted_path" 2>/dev/null \
 recovered_digest="$(sha256sum "$recovered" | cut -d' ' -f1)"
 if [ "$recovered_digest" != "$digest" ]; then
   die "round-trip FAILED: decrypted sha256 $recovered_digest != source $digest"
+fi
+
+# ── Off-host probe (D-02: "off-host" was a claim, never a measurement) ───────
+# Device ids, not paths: /opt/jolarca/backups and /opt/jolarca/repos/* are different
+# directories on the SAME ext4 filesystem, which is exactly the case a human eyeballing
+# the paths would call off-host. stat -c%d is GNU, stat -f%d is the BSD/macOS form.
+dev_of() {
+  stat -c%d "$1" 2>/dev/null || stat -f%d "$1" 2>/dev/null || echo ""
+}
+dest_dev="$(dev_of "$dest")"
+repo_dev="$(dev_of "$REPO_ROOT")"
+require_off="${STATE_BACKUP_REQUIRE_OFF_HOST:-0}"
+if [ -z "$dest_dev" ] || [ -z "$repo_dev" ]; then
+  off_host="unknown"
+elif [ "$dest_dev" = "$repo_dev" ]; then
+  off_host="no"
+else
+  off_host="yes"
+fi
+
+probe_log="${STATE_BACKUP_PROBE_LOG:-$dest/backup-probes.tsv}"
+if [ ! -f "$probe_log" ]; then
+  printf 'timestamp\tdest\tdest_dev\trepo_root\trepo_dev\toff_host\tround_trip\n' > "$probe_log"
+  chmod 600 "$probe_log" 2>/dev/null || true
+fi
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  "$timestamp" "$dest" "$dest_dev" "$REPO_ROOT" "$repo_dev" "$off_host" "verified" >> "$probe_log"
+
+if [ "$off_host" != "yes" ]; then
+  echo "::warning::BACKUP_DEST is NOT off-host (off_host=$off_host, dest_dev=$dest_dev, " \
+       "repo_dev=$repo_dev). This copy survives operator error, not host loss (D-02)." >&2
+  echo "  off-host:       $off_host  (dest_dev=$dest_dev repo_dev=$repo_dev)"
+  echo "  probe log:      $probe_log"
+  if [ "$require_off" = "1" ]; then
+    die "STATE_BACKUP_REQUIRE_OFF_HOST=1 but the destination is on the same filesystem " \
+        "as the repository (off_host=$off_host) — refusing to call this a 3-2-1 copy"
+  fi
+else
+  echo "  off-host:       yes  (dest_dev=$dest_dev != repo_dev=$repo_dev)"
 fi
 
 # ── Manifest (travels with the backups) ──────────────────────────────────────

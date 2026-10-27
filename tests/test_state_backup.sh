@@ -99,6 +99,69 @@ expect 2 no-token-no-local-state STATE_FILE="$TMP/absent.json" \
 # Skipping verification is allowed only as a non-passing outcome.
 expect 2 skip-verify-is-not-a-pass STATE_BACKUP_SKIP_VERIFY=1
 
+# ── Off-host probe (D-02: the destination was always on the same disk) ───────
+# Measured on a GitHub runner 2026-10-27: /tmp and the workspace are the SAME device
+# (66305), so an off-host case that assumes "$TMP is elsewhere" fails there while
+# passing on a dev box where /tmp is its own mount. The rule that broke was asserting
+# a device relationship instead of measuring one, so the layout is probed here and the
+# off_host=yes branch is only asserted where a genuinely different filesystem exists.
+REPO_DEV="$(stat -c%d "$REPO_ROOT" 2>/dev/null || stat -f%d "$REPO_ROOT")"
+SAME_FS="$(mktemp -d -p "$REPO_ROOT" .state-backup-fs-XXXXXX)"
+trap 'rm -rf "$SAME_FS"' EXIT
+SAME_DEV="$(stat -c%d "$SAME_FS" 2>/dev/null || stat -f%d "$SAME_FS")"
+
+OTHER_FS=""; OTHER_DEST=""
+for c in /dev/shm /run /tmp; do
+  d="$(stat -c%d "$c" 2>/dev/null || stat -f%d "$c" 2>/dev/null || echo "")"
+  if [ -n "$d" ] && [ "$d" != "$REPO_DEV" ] && [ -w "$c" ]; then
+    OTHER_FS="$c"; break
+  fi
+done
+[ -n "$OTHER_FS" ] && OTHER_DEST="$(mktemp -d -p "$OTHER_FS" jolarca-bkfix-XXXXXX)"
+
+# The meta-assertion that caught this bug: the same-device case is only meaningful if
+# the directory really is on the repo's device.
+if [ -n "$REPO_DEV" ] && [ "$SAME_DEV" = "$REPO_DEV" ]; then
+  printf 'ok   %-34s dev=%s\n' "same-device-dest-is-really-same" "$SAME_DEV"
+  pass=$((pass + 1))
+else
+  printf 'FAIL %-34s same_fs_dev=%s repo_dev=%s\n' "same-device-dest-is-really-same" "$SAME_DEV" "$REPO_DEV"
+  fail=$((fail + 1))
+fi
+
+expect 0 same-filesystem-still-backs-up BACKUP_DEST="$SAME_FS"
+PROBE="$SAME_FS/backup-probes.tsv"
+if [ -f "$PROBE" ] && awk -F'\t' 'NR==2 && $6=="no"' "$PROBE" | grep -q .; then
+  printf 'ok   %-34s\n' "probe-records-off-host-no"
+  pass=$((pass + 1))
+else
+  printf 'FAIL %-34s expected an off_host=no row in %s\n' "probe-records-off-host-no" "$PROBE"
+  fail=$((fail + 1))
+fi
+
+# Refusing is opt-in, but when opted in it must actually refuse: a green backup that
+# is not off-host is the claim D-02 was opened for.
+expect 1 require-off-host-refuses-same-fs BACKUP_DEST="$SAME_FS" STATE_BACKUP_REQUIRE_OFF_HOST=1
+
+if [ -n "$OTHER_DEST" ]; then
+  # And the flag must not manufacture a refusal when the device genuinely differs.
+  expect 0 require-off-host-passes-different-fs BACKUP_DEST="$OTHER_DEST" STATE_BACKUP_REQUIRE_OFF_HOST=1
+  if awk -F'\t' 'NR==2 && $6=="yes"' "$OTHER_DEST/backup-probes.tsv" 2>/dev/null | grep -q .; then
+    printf 'ok   %-34s\n' "probe-records-off-host-yes"
+    pass=$((pass + 1))
+  else
+    printf 'FAIL %-34s expected an off_host=yes row for %s\n' "probe-records-off-host-yes" "$OTHER_DEST"
+    fail=$((fail + 1))
+  fi
+  rm -rf "$OTHER_DEST"
+else
+  # Loud skip, never a silent pass: on a host where every candidate shares the repo's
+  # device, the off_host=yes branch is simply not observable here.
+  printf 'SKIP %-34s no candidate filesystem differs from dev=%s\n' \
+    "off-host-yes-branch-not-observable" "$REPO_DEV"
+fi
+rm -rf "$SAME_FS"
+
 echo
 echo "state-backup tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -10,6 +10,37 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-27 (D-02: `state_backup.sh` now measures whether the destination is off-host instead of asserting it)
+
+- The script's own header said `BACKUP_DEST` is an **off-host** directory, and it was never checked.
+  Measured on this host: `/opt/jolarca/repos/jolarca-control` and `/opt/jolarca/backups` are both
+  device **64513** on `/dev/mapper/vgopt-lv_jolarca` — different paths, same filesystem. So every
+  "off-host" backup taken so far, including the decrypt-proven `s16`/`s17` archives, is insurance
+  against operator error and **not** against host loss.
+- `scripts/state_backup.sh` now compares device ids (`stat -c%d`, BSD fallback) and records the
+  verdict in `$BACKUP_DEST/backup-probes.tsv` — a **separate** file, because `backup-log.tsv`'s
+  7-column schema is read positionally by the fixture and by anyone auditing an archive, and
+  silently widening it is how records rot.
+- `STATE_BACKUP_REQUIRE_OFF_HOST=1` turns the finding into a refusal (exit 1). Default is **0**:
+  making today's only destination fatal would stop backups happening at all, which is worse than a
+  loud warning. Flip it when a real second destination exists.
+- `tests/test_state_backup.sh`: 6 new cases, **proven red first** — against `origin/main`'s script
+  they print `FAIL require-off-host-refuses-same-fs want exit=1 got exit=0` plus both probe-record
+  failures (13 passed / 3 failed); with the change, **16 passed / 0 failed**. One case asserts the
+  fixtures' own devices differ, because a same-device test of an off-host gate would pass while
+  proving nothing.
+- shellcheck clean; gate-parity, findings-register, evidence (46/0), yamllint, terraform fmt and
+  validate, pytest all exit 0. No state change, no apply, no new trigger-path file.
+- **Corrected after CI caught the author:** PR #105's `Regression Tests` failed on the runner with
+  `fixture-devices-are-actually-different dest_dev=66305 same_fs_dev=66305 repo_dev=66305` — the new
+  off-host cases had assumed `$TMP` sits on a different filesystem than the workspace, true on this
+  dev box and false on `ubuntu-latest`. The script was right (it correctly refused under
+  `STATE_BACKUP_REQUIRE_OFF_HOST=1`); the fixture asserted a host property instead of measuring one.
+  It now probes `/dev/shm`, `/run`, `/tmp` for a device that differs from the repo's and asserts the
+  `off_host=yes` branch only where one exists, with a loud `SKIP` otherwise. Verified 16/0 on this
+  host **and** in a simulated runner tree whose device equals `/tmp`'s.
+
+
 ### Changed — 2026-10-27 (D-90 half-closed for free: gitleaks CLI passes in CI, and a rule so this cannot recur)
 
 - consent PR #12 landed the license-free swap and it is **verified in CI, not just locally**: the
