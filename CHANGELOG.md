@@ -71,6 +71,19 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   carry it, so putting it in the adoption block would break step 3's `no-op` proof and would also
   mean no direct push to `main` is ever possible, including in an incident. Step 6b 4b now states
   that as an explicit step-4 choice rather than an omission.
+- **The remedy for the `max_items = 1` hazard introduced a bigger one, and review caught it.** The
+  stage-2 block added to Step 6b declared `resource "github_repository_ruleset" "jolarca_consent"`,
+  while step 1 declares `"main"` with `for_each = toset(["jolarca-consent"])` and step 2 imports
+  `github_repository_ruleset.main["jolarca-consent"]`. Pasting the new block beside step 1 would
+  have produced **two declarations over one live ruleset**, and the plan would then want to create a
+  duplicate `protect-main` on a tier-1 GDPR repo next to the rule actually enforcing. `check_plan_safety.sh`
+  refuses that create in CI (D-84) — but step 4 is the one step the runbook says to apply **by
+  hand**, which is exactly where that brake is stepped around by design, so relying on the brake was
+  the wrong layer. 4b now uses the imported address, states "edit it, do not add a second resource",
+  and adds a pre-hand-apply guard: `terraform state list | grep -c ruleset` must be **1**, and any
+  `create` line in the per-address query means stop. The checker written to validate that block also
+  needed fixing: it flagged `for_each` as an unknown attribute because Terraform meta-arguments are
+  language syntax, not provider schema — a false positive on the correct HCL, now allowlisted.
 - The detector half **landed while this entry was being written: PR #99 squashed into `main` at
   `2ce3241`**, and the record was updated to say so instead of keeping the "open and unmerged as
   this is written" phrasing past the merge. Verified against live state rather than the merge

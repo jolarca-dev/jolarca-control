@@ -710,7 +710,14 @@ and (b) the three inexpressible declaration keys (`restrict_pushes`,
 > `minimum_required_contexts`, never against the repository's own declaration. Inheriting GitHub's
 > default here is not the same as choosing it.
 
-**4b. The concrete stage-2 block, and the mapping D-46 residual (3) asked for.**
+**4b. The stage-2 edit, and the mapping D-46 residual (3) asked for.**
+This is **the same block as step 1, edited in place** — same resource name, same `for_each`, same
+instance address `github_repository_ruleset.main["jolarca-consent"]`. It is not a new resource. A
+second declaration over the same live object (any name other than the imported address) makes the
+plan want to **create a duplicate `protect-main` ruleset beside the one in force**, and step 4 is
+exactly the step the runbook says to apply by hand — the one place where `check_plan_safety.sh`'s
+refusal of a ruleset create is deliberately stepped around. `terraform state list | grep -c ruleset`
+must read **1** before and after.
 Residual (3) said option A needs "either a documented field mapping or a dated deviation" because
 provider 6.13.0 "cannot express" three of consent's declared keys. Measured against
 `terraform providers schema -json`, that list is wrong in two places, and the method that produced it
@@ -752,9 +759,14 @@ and vendor's — see step 5, which stands.
 > directions for exactly that reason.
 
 ```hcl
-resource "github_repository_ruleset" "jolarca_consent" {
+# THE SAME BLOCK AS STEP 1 -- edit it, do not add a second resource.
+# Address after step 2 is github_repository_ruleset.main["jolarca-consent"];
+# a new name here would declare a SECOND ruleset over the same live object.
+resource "github_repository_ruleset" "main" {
+  for_each = toset(["jolarca-consent"])
+
+  repository  = each.value
   name        = "protect-main"
-  repository  = "jolarca-consent"
   target      = "branch"
   enforcement = "active"
 
@@ -822,8 +834,19 @@ All seven contexts above are the ones `repos/jolarca-consent.yml` declares, and
 `findings: []`, `skipped_empty_repos: []`** — the empty last list matters, because a repo skipped as
 empty would have made the pass vacuous. Consent is not empty (119 KB, 5 branches, `ci.yml`
 `codeql.yml` `integrity.yml` `security.yml`), so requiring all seven cannot deadlock a merge the way
-D-44 / D-47 did on `jolarca-identity`. `Verify Chain` is deliberately absent from the list: that
+D-44 / D-47 did on `jolarca-identity`. `Verify Chain` is deliberately ABSENT from the list: that
 workflow is schedule/`workflow_dispatch` only, so requiring it would be unsatisfiable (gate L-20).
+
+One guard worth running before any hand-apply of this block, because it is cheap and it is the
+failure mode a copy-paste invites:
+
+```bash
+terraform state list | grep -c ruleset          # must be exactly 1
+terraform plan -input=false -no-color -out=tfplan
+terraform show -json tfplan | jq -r '.resource_changes[]
+  | select(.type=="github_repository_ruleset") | "\(.change.actions|join(",")) \(.address)"'
+# any line reading `create` means a SECOND declaration exists -> stop, do not apply
+```
 
 > **Measured 2026-10-27, after PR #99 squashed into `main` at `2ce3241`.** `drift_detect.py` on live
 > state now reports, for consent: `ruleset requires 0 status check(s), need >= 1; protect-main: no
