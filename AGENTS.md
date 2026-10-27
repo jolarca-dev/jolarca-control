@@ -217,6 +217,16 @@ Specific high-consequence edits:
   `audit/`, `policy/`, `repos/`, `docs/runbooks/`, `docs/security/` are hashed
   into the committed `docs/evidence-registry.csv`; edit one and re-register in
   the same PR or `make evidence-check` fails.
+- **Read a gate's exit code before anything else runs.** Measured 2026-10-27: a loop of the form
+  `printf '  %-40s rc=%s\n' "$(echo "$c" | cut -c1-40)" "$?"` reports **0 for a failing gate**,
+  because bash expands the command substitution first and that substitution overwrites `$?`. A
+  sixteen-gate sweep written that way printed every gate green while `hash_evidence.sh --check` was
+  in fact exiting 1 — a false pass about evidence integrity, the exact class of thing §7 exists to
+  prevent. Capture `rc=$?` on the line immediately after the command, then report; never let a
+  substitution stand between the command and the read. This is the sibling of §3's "`make` collapses
+  any non-zero to 2" and of D-86's recipes that sent their detail to `/dev/null`: the failure was
+  real, the harness was the liar.
+
 - **Do not trust a correct verdict.** A gate can report the right aggregate
   answer while silently skipping whole check families (an early `return` on a
   missing `.git` once skipped six filesystem checks and the entire secret sweep).
