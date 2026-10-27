@@ -363,10 +363,19 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   **consent's ruleset has no `pull_request` rule and no `required_status_checks` rule at all** — so its
   7 declared contexts in `repos/jolarca-consent.yml` are enforced by nothing and `main` is directly
   pushable — while vendor's status-checks rule carries an **empty** context list.
-  Do not read `.protected=true` here as enforcement. The decision is recorded as option **A** (adopt
+  Do not read `.protected=true` here as enforcement. **Status later on 2026-10-27: Step 6b step 4 was
+  hand-applied and consent's hole is CLOSED** — live ruleset `24087580` now carries `pull_request` plus
+  `required_status_checks` with all seven contexts (`strict=true`, `bypass_actors: []`), and
+  `drift_detect` no longer reports consent. The cost is **D-90**: two of those seven contexts
+  (`Gitleaks (secret scanning)`, `Dependency review`) fail on consent's own `main`, so requiring them
+  blocks every PR in that repo until the causes are fixed **in consent** (run the gitleaks **CLI** —
+  free, as this repo does at `compliance-scan.yml:214-220` — and enable the Dependency graph). Do not
+  answer it by trimming the required list: that re-opens the hole. `rulesets.tf` on `main` is now
+  **stage 2**, matching live. The decision is recorded as option **A** (adopt
   the rulesets as `github_repository_ruleset`, consent first): the sequence, the HCL and the exact
   `terraform import` ids (`<repo>:<ruleset_id>` — the importer's `parseID2` splits on `:`) are in
-  `docs/state-migration-runbook.md` **Step 6b**; **steps 1–3 have run, step 4 has not**, and §5 still
+  `docs/state-migration-runbook.md` **Step 6b**; **steps 1–4 have run** (4 was applied by hand, since
+  the brake refuses ruleset edits by design), and §5 still
   reserves `import`/`state rm`/`state mv` to the operator. The prerequisite — the pre-apply gate could
   not see rulesets — is closed by D-84. **Corrected 2026-10-27 (D-87 row (6)):** provider 6.13.0 DOES
   express the three keys this bullet said it could not — `restrict_pushes` is `rules.update`,
