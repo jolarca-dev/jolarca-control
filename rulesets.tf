@@ -57,9 +57,18 @@ resource "github_repository_ruleset" "main" {
       required_check {
         context = "Gitleaks (secret scanning)"
       }
-      required_check {
-        context = "Dependency review"
-      }
+      # `Dependency review` is suspended for a bounded window under exception D-91
+      # (policy/compliance-gates.yml). It was made required by the stage-2 adoption on
+      # 2026-10-27 without ever having been observed passing -- the exact defect AGENTS.md §7
+      # records as D-90, written the same day by the same author.
+      # Why it cannot pass yet, measured: consent's main declares only pyproject.toml, which
+      # dependency-review-action cannot resolve, so `GET /dependency-graph/sbom` exits 1 on
+      # both main and the PR head, and the check fails on all six open PRs. The pinned
+      # manifest that would build the graph lives only on the branch this requirement
+      # blocks. That is a required-but-unsatisfiable check (the A-01/D-44/D-47 class), so the
+      # requirement has to come off for the fix to land, then go straight back on.
+      # `pull_request` and the other six contexts are untouched: the direct-push exposure
+      # closed in D-46 stays closed for the duration.
       required_check {
         context = "CodeQL (python)"
       }
