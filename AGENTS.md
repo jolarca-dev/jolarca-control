@@ -300,8 +300,13 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   same ext4 volume as the working copy, so every archive ever taken there survives
   operator error and nothing else — while `/mnt/jol-backup/jol-state-backup` is
   device **2065** (`sdb1`, a separate physical disk), and that is the destination.
-  **Read the schedule; do not trust this sentence to carry it.** It lives in
-  `~/.config/systemd/user/jolarca-state-backup.{service,timer}` — verify with
+  **Read the schedule; do not trust this sentence to carry it.** The source of truth is the
+  committed `systemd/jolarca-state-backup.{service,timer}`; `make backup-timer-install` copies it
+  into `~/.config/systemd/user/` and **diffs after copying**, so the running unit and the reviewed
+  unit cannot silently diverge. The installed copy is a build output on a third device (`/home`,
+  66319) that sits in no archive — which is exactly why the definition belongs in the repository:
+  measured 2026-10-28, zero tracked files mentioned the schedule and its only copy was one
+  hand-written file in a home directory. Inspect with `make backup-timer-status`, or directly:
   `systemctl --user list-timers --all | grep jolarca` and
   `journalctl --user -u jolarca-state-backup -n 20`. The history of this bullet is the
   reason for that instruction: a crontab entry installed 2026-10-27 was documented here

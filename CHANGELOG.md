@@ -10,6 +10,33 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-10-28 (the backup schedule becomes a governed artifact, not a home-directory file)
+
+- Measured before fixing: **zero tracked files** mentioned the nightly backup. Its only definition was
+  `~/.config/systemd/user/jolarca-state-backup.{service,timer}` on device **66319** (`/home`, 86% full)
+  — a third device relative to the repository (64513) and the backup disk (2065) — and no archive
+  contained it. One lost home directory would have destroyed the definition of the control that
+  protects the state, leaving a chat log as the only record. That is the D-85 class: a real fix that
+  lived on one machine.
+- `systemd/jolarca-state-backup.{service,timer}` are now committed with the reasoning in comments
+  (why `Persistent=true` replaced cron, and the `Linger=no` residual gap stated rather than hidden).
+  `make backup-timer-install` is the only supported install path and **diffs after copying**, so the
+  repo copy is the source of truth rather than a second description free to drift.
+- `tests/test_backup_unit.py`: 5 checks, **mutation-tested — six deliberate breakages (drop
+  `Persistent`, drop `REQUIRE_OFF_HOST`, bad `ExecStart` path, `Unit=` typo, same-disk `BACKUP_DEST`,
+  planted credential shape) were all detected, zero vacuous**, files restored byte-identically. They
+  assert the unit's own properties instead of comparing against the installed copy, because in CI that
+  copy does not exist and a check that passes on absent input is the vacuous-green pattern this
+  register exists to catch.
+- Two self-inflicted faults found on the way, recorded because both were near-misses: an appended
+  `.PHONY` name landed **after a trailing backslash**, breaking the line continuation so `make` failed
+  to parse the whole file (rc=2, `missing separator`) — and the first repair attempt aborted on its
+  own `AssertionError` without writing anything, which I nearly accepted because I had clipped the
+  evidence with `cut -c1-110` and the backslash sat past column 110. Also: the new files were created
+  while checked out on the **#107 branch**, and the `AGENTS.md` anchor did not exist there — caught by
+  reading the file instead of assuming the branch.
+
+
 ### Changed — 2026-10-28 (the backup schedule is now a pointer to the unit, because the sentence describing it went stale three times in 24 hours)
 
 - The crontab entry documented yesterday as "the nightly job" **never fired**. Measured: zero `CRON`

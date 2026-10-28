@@ -6,7 +6,7 @@
         first-commit evidence-check evidence-register findings-check gate-parity secrets-inventory \
         apply-path-trigger \
         init fmt fmt-check lint tf-validate py-lint py-fmt-check py-type sh-lint yaml-lint \
-        test plan apply list-repos count-repos clean
+        test plan apply list-repos count-repos clean backup-timer-install backup-timer-status
 
 .DEFAULT_GOAL := help
 
@@ -173,6 +173,26 @@ context-baseline: ## policy/repo-defaults.yml required_checks must match the dec
 backup: ## Encrypted, decrypt-verified off-host backup of Terraform state
 	@test -n "$(BACKUP_DEST)" || { echo "usage: BACKUP_DEST=<off-host-dir> make backup"; exit 1; }
 	BACKUP_DEST=$(BACKUP_DEST) bash scripts/state_backup.sh
+
+# The systemd units are committed, not hand-written into ~/.config: this target is the
+# only supported way to install them, so the running schedule and the reviewed schedule
+# cannot diverge. Before this existed the schedule lived only in one home directory.
+backup-timer-install: ## Install the nightly state-backup timer from the committed units
+	@install -d "$(HOME)/.config/systemd/user"
+	@for u in service timer; do \
+	  cp "systemd/jolarca-state-backup.$$u" "$(HOME)/.config/systemd/user/" && \
+	  diff -q "systemd/jolarca-state-backup.$$u" "$(HOME)/.config/systemd/user/jolarca-state-backup.$$u" >/dev/null || { echo "FAIL: $$u did not land byte-identically"; exit 1; }; \
+	done
+	systemctl --user daemon-reload
+	systemctl --user enable --now jolarca-state-backup.timer
+	@echo "installed. verify: systemctl --user list-timers | grep jolarca"
+	@test "$$(loginctl show-user $$(whoami) --property=Linger --value 2>/dev/null)" = "yes" \
+	  || echo "WARNING: Linger=no -- a user timer will not run after a reboot with no login. See systemd/jolarca-state-backup.timer."
+
+backup-timer-status: ## Show the backup timer, its next run and the last journal entries
+	systemctl --user list-timers --all | grep jolarca || echo "timer not installed"
+	-loginctl show-user $$(whoami) --property=Linger
+	-journalctl --user -u jolarca-state-backup -n 12 --no-pager
 
 # Step 6b step 1 of docs/state-migration-runbook.md. The instruction used to be "land this file only
 # in the PR that runs step 2", i.e. transcribe a protection object by hand — the friction D-87 row

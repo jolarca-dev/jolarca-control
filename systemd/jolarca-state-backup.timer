@@ -1,0 +1,25 @@
+[Unit]
+Description=Nightly jolarca-control state backup, with missed-run backfill
+Documentation=file:///opt/jolarca/repos/jolarca-control/AGENTS.md
+# Source of truth: install with `make backup-timer-install`. See the .service file
+# beside this one for why that matters.
+
+[Timer]
+OnCalendar=*-*-* 04:17:00
+# Persistent=true is the whole reason this replaced a crontab entry. The crontab line
+# installed 2026-10-27 never fired: the host was suspended across 04:17 on 2026-10-28
+# and user crontabs do not backfill (anacron covers only the system cron directories).
+# Measured by zero CRON syslog entries 04:00-06:00, a five-minute heartbeat gap
+# 00:25 -> 19:05, and "Stopped target suspend.target" on resume.
+Persistent=true
+Unit=jolarca-state-backup.service
+
+[Install]
+WantedBy=timers.target
+
+# RESIDUAL GAP, recorded rather than hidden: this is a USER timer, so it only runs while
+# the user's systemd manager exists. `loginctl show-user jol --property=Linger` measured
+# `no` on 2026-10-28, which means a reboot with nobody logged in runs nothing at all --
+# a different failure, not a smaller one. Close it with either
+#   sudo loginctl enable-linger jol
+# or by installing these two units under /etc/systemd/system with User=jol.
