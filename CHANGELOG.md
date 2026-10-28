@@ -10,6 +10,33 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-28 (the backup schedule is now a pointer to the unit, because the sentence describing it went stale three times in 24 hours)
+
+- The crontab entry documented yesterday as "the nightly job" **never fired**. Measured: zero `CRON`
+  syslog entries between 04:00 and 06:00 on 2026-10-28, the five-minute `health-check` heartbeat gap
+  running 00:25 → 19:05, and `Stopped target suspend.target` on resume — the host was suspended across
+  04:17, and user crontabs do not backfill.
+- **A recommended check that could not have found the failure:** AGENTS.md told the reader to "check
+  `uptime`" if the run looked missing. `uptime` reported "up 1 week 4 hours" the whole time, because it
+  measures *booted*, not *awake*. Corrected in the record rather than quietly dropped.
+- Replaced by `~/.config/systemd/user/jolarca-state-backup.{service,timer}` with `Persistent=true`, so a
+  missed window runs on resume. Verified **through systemd, not through a shell**:
+  `systemctl --user start` → `status=0/SUCCESS`, journal `off-host: yes (dest_dev=2065 repo_dev=64513)`
+  and `BACKUP OK (round-trip verified)`, archive `terraform.tfstate.s17.20261028T175728Z.age` plus a
+  matching `backup-probes.tsv` row. An earlier `env -i` test proved the *script* runs under cron's PATH;
+  it proved nothing about the unit file's own path resolution.
+- New residual gap, stated rather than glossed: a **user** timer needs a login session, so a reboot with
+  nobody logged in runs nothing until `loginctl show-user jol --property=Linger` says `yes`. Linger
+  measured `no` tonight.
+- Structural change to how this is documented: §8 no longer restates the schedule, it points at the unit
+  files and gives the two commands that read them. A sentence describing a control goes stale every time
+  the control changes; a pointer cannot. That is the third stale backup sentence in one day and the last
+  one intended.
+- Still not claimed: that any *scheduled* run has happened (only a manual one), that key custody is
+  separate (the age identity is on the same machine), or that one host with two disks is a second site.
+  D-02 stays PARTIALLY FIXED / S0.
+
+
 ### Fixed — 2026-10-27 (CHANGELOG anchor collisions: a merge driver for the file, and a guard for the driver)
 
 - Third collision of the same kind in one day: every PR inserts its `### ...` section directly after
