@@ -10,6 +10,28 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-27 (CHANGELOG anchor collisions: a merge driver for the file, and a guard for the driver)
+
+- Third collision of the same kind in one day: every PR inserts its `### ...` section directly after
+  `## [Unreleased]`, so two open PRs always conflict at that one line and the resolution is always
+  "keep both". #107 went `DIRTY` twice — once against #108, once against #109 — and each time the
+  merge had to be hand-resolved and hand-verified.
+- `.gitattributes` now declares `CHANGELOG.md merge=union`. **Proven in a scratch clone before
+  shipping:** without the driver, two branches adding sections at the anchor merge to exit 1 with a
+  conflict region; with it, exit 0 and both sections survive.
+- The driver's own failure mode was proven too, and it is the reason this is not shipped alone: union
+  never conflicts, so two branches editing the **same line** merge to exit 0 with **two**
+  `## [Unreleased]` headings. `tests/test_changelog_anchor.py` turns that quiet case red — exactly one
+  anchor, anchor is the first H2, no duplicated section headings, and the driver and the guard must be
+  declared or deleted together.
+- The guard caught its author immediately: the first version asserted the anchor was the file's first
+  heading *of any level*, which failed against the real file because it legitimately opens with
+  `# Changelog` plus prose. The expectation was corrected; the file was not.
+- Negative control run, not assumed: duplicating the anchor made the suite fail with
+  `found 2 ... merge=union kept both copies without ever reporting a conflict` (rc=1), and the file was
+  restored byte-identically afterwards.
+
+
 ### Changed — 2026-10-27 (D-02's status text was stale the moment the destination question was answered)
 
 - AGENTS.md §8 said the backup was missing **"a schedule and a genuinely off-host destination."** Both

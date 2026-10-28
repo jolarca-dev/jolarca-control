@@ -37,3 +37,13 @@
 
 # Lock files — commit but don't diff
 *.lock text
+
+# Anchor-collision steering for the changelog.
+# CHANGELOG.md is append-at-anchor: every PR inserts its "### ..." section directly after
+# "## [Unreleased]", so two open PRs always collide at that one line and the resolution is
+# always "keep both". Proven in a scratch clone 2026-10-27: without this driver the merge
+# exits 1 with a conflict region; with it, exit 0 and both sections survive.
+# The driver's own failure mode is that it never conflicts -- if two branches edit the SAME
+# line, union keeps both copies silently. tests/test_changelog_anchor.py is what makes that
+# loud instead of quiet; do not remove the test when removing this line, or vice versa.
+CHANGELOG.md merge=union
