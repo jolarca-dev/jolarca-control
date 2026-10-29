@@ -10,6 +10,36 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Corrected — 2026-10-29 (a false claim I wrote into D-92, and the config cleanup that exposed it)
+
+- **Retraction:** D-92's row said the dedicated GitHub key "authenticates to the same account under
+  `BatchMode` with no prompt, so pointing `Host github.com` at it is a verified, reversible cut." It is
+  not. Isolated with the config file out of the equation (`ssh -F /dev/null -i ... -o IdentitiesOnly=yes
+  -o BatchMode=yes`): **`Permission denied (publickey)`, exit 255 — the key is not registered on GitHub
+  at all.** The earlier "success" came from a config listing *both* `IdentityFile` entries, so
+  `id_ed25519` authenticated while the credit went to the other key, and the exit code I read was
+  `head`'s, not `ssh`'s, because the command was piped.
+- **Exit-code trap, second instance today:** `ssh -T git@github.com` returns **1 on success** (GitHub
+  refuses shell access after authenticating). A guard requiring `rc == 0` misjudges every real success as
+  a failure — which is exactly what my verify-then-restore did, and why it rolled back a config that was
+  in fact offering the right key.
+- **Config fixed properly:** the regex `
+Host github\.com
+` could not match the block starting at byte 0,
+  so the earlier cleanup deleted the wrong block and left both. Replaced with stanza parsing; the file now
+  has exactly **one** `github.com` block on the working key, the other six host stanzas verified
+  line-identical, and `git ls-remote` exits 0.
+- **Rollback bug owned:** `cp ~/.ssh/config.bak.* ~/.ssh/config` failed with "Not a directory" because the
+  glob matched two backups. A rollback that cannot run is not a rollback; name one file.
+- Both private keys now carry passphrases, measured: `ssh-keygen -y -P ''` returns **rc=255** for
+  `id_ed25519` (23:19:40) and for `jol_github_ed25519` (23:49:15). The earlier row saying the second was
+  "still bare" is kept and marked superseded rather than deleted, because the order of operations is
+  itself the finding.
+- Net security change tonight: two credentials that were offline-readable with no protection are now
+  passphrase-protected. Net **unchanged**: the blast-radius cut (GitHub off the hypervisor root key) is
+  blocked on registering the dedicated public key in GitHub's web UI — a browser action, not a config edit.
+
+
 ### Updated — 2026-10-29 (D-92 remediation is half done, and measuring it found a worse credential problem)
 
 - `~/.ssh/id_ed25519` **now has a passphrase** (verified: empty-passphrase test returns rc=255, file
