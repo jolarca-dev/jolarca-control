@@ -10,6 +10,25 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-10-29 (the one-command test for "is this SSH key registered?", and the cut is still blocked)
+
+- `curl -s https://github.com/<account>.keys` lists an account's SSH keys with no token and no new scope,
+  and `ssh-keygen -lf -` turns each entry into the same `SHA256:…` fingerprint `ssh -v` prints when
+  offering a key. Measured: `JourneyOfLife.keys` contains **exactly one** key — `id_ed25519`, the
+  credential that is also root on `pve` and `pbs01` — and the dedicated `jol_github_ed25519`
+  (`SHA256:EnOjKXinbT…`) is **absent**.
+- So the blast-radius cut was **not performed**: repointing `Host github.com` at a key GitHub rejects
+  would break every push, and the precondition was checked rather than assumed after the operator's go
+  ahead. `git ls-remote` still exits 0 on the current single-block config.
+- The isolation probe was clean this time and is worth copying: `ssh -F /dev/null -i <key> -o
+  IdentitiesOnly=yes -o BatchMode=yes -T git@github.com` removes the config file from the equation, and
+  `ssh -v`'s `Offering public key:` line names the key that was actually tried — the check whose absence
+  produced the false claim earlier today.
+- Also recorded: a key's *comment* is not an account name. `journeyoflife-platform` is a comment; the
+  account is `JourneyOfLife`, and guessing from the comment would have sent the registration to the wrong
+  place.
+
+
 ### Corrected — 2026-10-29 (a false claim I wrote into D-92, and the config cleanup that exposed it)
 
 - **Retraction:** D-92's row said the dedicated GitHub key "authenticates to the same account under
