@@ -10,6 +10,29 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-30 (D-92 blast-radius cut performed: GitHub no longer authenticates with the hypervisor root key)
+
+- `Host github.com` now resolves to exactly one identity, `~/.ssh/jol_github_ed25519`, with
+  `IdentitiesOnly yes`. Verified the way the last attempt was not: `ssh -v` shows `Offering public key:
+  …/jol_github_ed25519` **and** `Server accepts key`, so the dedicated credential is the one GitHub
+  authenticates rather than a fallback that happens to succeed. The other six host stanzas (root on `pve`
+  and `pbs01`, operator on four prod hosts) were verified line-identical, and `git ls-remote` exits 0.
+- The edit was gated on an isolation probe that ran **before** the config changed, and rolled back to an
+  explicitly named file (`config.bak.1793312449`) if any post-check failed. That structure exists because
+  the previous claim of the same fact was false: `IdentityFile` accumulates across `Host` blocks, so a
+  success cannot be attributed to a key without `-F /dev/null` plus `IdentitiesOnly`.
+- **What is still open, and it is the part that matters:** `https://github.com/JourneyOfLife.keys` lists
+  **both** keys, so `id_ed25519` — root on the hypervisor and the backup server — remains *authorized*
+  against GitHub even though nothing on this host uses it that way. The separation is behavioural until
+  that key is de-registered.
+- Not recommended blind: the key comment `ubuntu24-jol-server-auth` suggests copies exist on other
+  machines, and this host cannot enumerate them. GitHub's per-key **last used** timestamp is the empirical
+  gate; deleting a key that other infrastructure still pushes with produces an outage rather than a
+  warning.
+- Register handled per this file's own rule: the 2026-10-29 rows are kept and marked superseded rather
+  than rewritten, so the sequence — claim, refutation, then the verified cut — stays auditable.
+
+
 ### Added — 2026-10-29 (the one-command test for "is this SSH key registered?", and the cut is still blocked)
 
 - `curl -s https://github.com/<account>.keys` lists an account's SSH keys with no token and no new scope,
