@@ -319,12 +319,21 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   backfills after a suspend; its own residual gap is that a **user** timer requires a
   login session, so a reboot with nobody logged in runs nothing until
   `loginctl show-user jol --property=Linger` reports `yes`.
-  **What is still not true:** the first *scheduled* run has yet to happen — the unit is
-  proven only by a manual `systemctl --user start`, which exited 0 and logged
-  `BACKUP OK (round-trip verified)` with `off-host: yes`; the age identity still lives on
-  the same machine as the working copy; and a second disk inside one host survives volume
-  loss, not host loss. So this is a verified, scheduled, off-*volume* copy — **not** a
-  3-2-1 copy. Do not delete an account, org or workspace, and do not treat D-02 as closed.
+  **What tonight proved (2026-10-29):** the backfill works and the failure was a race, not a
+  misconfiguration. The host was asleep across 04:17, `Persistent=true` fired the unit at **12:16:50** —
+  the instant of resume, while NetworkManager was still bringing the link up (8 connect/up events in that
+  window) — and the run exited **2** with `CANNOT VERIFY: cloud state could not be retrieved from the
+  backend — no backup was taken and no claim is made`. It wrote nothing and claimed nothing: the §3
+  contract held under real conditions. The same unit at 22:12 exited 0 and archived serial 17, so the
+  configuration was never wrong. The unit now retries (`Restart=on-failure`, `RestartSec=2min`, bounded
+  by `StartLimitBurst` in `[Unit]`), because a scheduler that fires once at the moment the network
+  returns is a scheduler that loses nights.
+  **What is still not true:** the *cause* is not retained — the script's fetch log lives in a temp
+  directory its trap deletes, so "could not be retrieved" carries no HTTP status and the reason had to
+  be inferred from NetworkManager; and the age identity still lives on the same machine as the working
+  copy. A second disk inside one host survives volume loss, not host loss. So this is a verified,
+  scheduled, retrying, off-*volume* copy — **not** a 3-2-1 copy. Do not delete an account, org or
+  workspace, and do not treat D-02 as closed.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
   apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
   `*.tfvars` and itself, then runs `terraform apply -input=false -auto-approve

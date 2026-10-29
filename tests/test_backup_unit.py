@@ -70,6 +70,44 @@ def test_timer_names_a_service_that_is_committed() -> None:
     )
 
 
+def test_service_retries_a_transient_failure() -> None:
+    """A backfilled run fires at the instant of resume, before the network is usable.
+
+    Measured 2026-10-29: `Persistent=true` started the unit at 12:16:50 on resume while NetworkManager
+    was still linking (8 connect/up events in that window); the fetch exited 2 and no archive was
+    written, while the identical unit at 22:12 succeeded. Without a retry, every suspend-through-04:17
+    costs a night that nobody notices.
+    """
+    text = _read(SERVICE)
+    assert re.search(r"^Restart=on-failure$", text, re.M), "the unit lost its retry policy"
+    assert re.search(r"^RestartSec=\d+\s*(s|sec|min|h)?$", text, re.M), (
+        "RestartSec is missing or malformed"
+    )
+
+
+def test_start_limit_directives_are_in_the_section_that_reads_them() -> None:
+    """`StartLimit*` belong to [Unit]. Under [Service] systemd warns and ignores them, so the retry
+    bound silently stops existing -- a guard that is not applied is worse than no guard, because it
+    reads like one. Assert placement by section, not mere presence in the file."""
+    text = _read(SERVICE)
+    unit_section = re.search(r"^\[Unit\](.*?)(?=^\[)", text, re.S | re.M)
+    service_section = re.search(r"^\[Service\](.*?)(?=^\[|$)", text, re.S | re.M)
+    assert unit_section and service_section, "the unit is missing [Unit] or [Service]"
+    body = unit_section.group(1)
+    assert re.search(r"^StartLimitBurst=\d+$", body, re.M), (
+        "StartLimitBurst is not in [Unit] -- retries are unbounded or the limit is being ignored"
+    )
+    # Burst alone is not a bound: without an explicit interval the count runs over systemd's default
+    # window, so "10 attempts per hour" in the comment would be a claim the unit does not implement.
+    assert re.search(r"^StartLimitIntervalSec=\d+\s*(s|sec|min|h)?$", body, re.M), (
+        "StartLimitIntervalSec is missing or malformed -- StartLimitBurst without an explicit interval "
+        "counts over the default window, which is not the bound the comments describe"
+    )
+    assert "StartLimit" not in service_section.group(1), (
+        "StartLimit* under [Service] is ignored by systemd with a warning; move it to [Unit]"
+    )
+
+
 def test_units_carry_no_credential_shaped_values() -> None:
     """Section 5: push protection scans documentation and unit files alike; a real-looking token in a
     committed unit would S0-BLOCK the readiness gate permanently."""

@@ -1,6 +1,11 @@
 [Unit]
 Description=jolarca-control Terraform state backup (age-encrypted, decrypt-verified)
 Documentation=file:///opt/jolarca/repos/jolarca-control/AGENTS.md
+# Bounded retries, and deliberately in [Unit]: StartLimit* are [Unit] directives, and placed under
+# [Service] systemd warns and silently ignores them -- a limit that does not apply is worse than none,
+# because it reads like a guard. 10 attempts per hour distinguishes "transient" from "broken".
+StartLimitIntervalSec=1h
+StartLimitBurst=10
 # The repository is the source of truth for this file: install it with
 #   make backup-timer-install
 # rather than editing the copy under ~/.config/systemd/user. Editing the installed
@@ -19,5 +24,13 @@ WorkingDirectory=/opt/jolarca/repos/jolarca-control
 Environment=BACKUP_DEST=/mnt/jol-backup/jol-state-backup
 Environment=STATE_BACKUP_REQUIRE_OFF_HOST=1
 ExecStart=/usr/bin/env bash scripts/state_backup.sh
+# Retry a failed attempt. Measured 2026-10-29: the host was asleep across 04:17, Persistent=true fired
+# this unit at 12:16:50 -- the instant of resume, while NetworkManager was still bringing the link up
+# (8 connect/up events in that window) -- and the fetch failed with exit 2, correctly writing nothing
+# and claiming nothing. The same unit at 22:12 exited 0 and archived serial 17, so the configuration
+# was never the problem: a scheduler that fires exactly once at the moment the network returns is a
+# scheduler that loses nights.
+Restart=on-failure
+RestartSec=2min
 # The script already exits 1 on a refusal and 2 on "could not verify" (AGENTS.md §3),
 # so a single failed attempt is a failed unit -- visible in the journal, not swallowed.

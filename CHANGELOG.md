@@ -10,6 +10,31 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-29 (the timer backfilled correctly and the run still failed: a resume-time network race)
+
+- First real scheduled attempt: the host was asleep across 04:17, `Persistent=true` fired the unit at
+  **12:16:50** — the instant of resume — and the fetch failed with **exit 2**, journal line
+  `CANNOT VERIFY: cloud state could not be retrieved from the backend — no backup was taken and no claim
+  is made`. **The control behaved exactly as specified**: no archive, no false `BACKUP OK`, unit marked
+  `failed`. The same unit at 22:12 exited 0 and archived serial 17, so nothing was misconfigured.
+- Cause, measured rather than assumed: boot was Oct 21 (so 12:16 was a **resume**, not a start), the user
+  manager had been alive since 00:00:01, and NetworkManager logged **8** link-up events in 12:10–12:20.
+  The backfill fires before the link is usable.
+- `systemd/jolarca-state-backup.service` now retries: `Restart=on-failure`, `RestartSec=2min`, bounded by
+  `StartLimitIntervalSec=1h` / `StartLimitBurst=10`. The bound is deliberate — unbounded retries cannot
+  distinguish "transient" from "broken for a week".
+- `StartLimit*` were placed in `[Unit]`, **not** `[Service]`, because systemd ignores them in the latter
+  with only a warning: a limit that is not applied is worse than no limit, since it reads like a guard.
+  `tests/test_backup_unit.py` now asserts section placement, not mere presence (7 checks).
+- Mutation-checked again rather than trusted: dropping `Restart`, dropping `RestartSec`, and moving
+  `StartLimitBurst` into `[Service]` each make the suite fail, alongside the six earlier breakages.
+- Remaining gap recorded honestly: **the cause is not retained.** The script writes its fetch log into a
+  temp directory that its own trap deletes, so `CANNOT VERIFY` carries no HTTP status and the reason had
+  to be reconstructed from NetworkManager. Surfacing the underlying error in the script is the follow-up.
+- And the meta-lesson: this PR exists to stop §8 going stale, and §8 went stale again while it sat
+  unmerged — the fix for a lying description is to merge it, not to write a better one.
+
+
 ### Added — 2026-10-28 (the backup schedule becomes a governed artifact, not a home-directory file)
 
 - Measured before fixing: **zero tracked files** mentioned the nightly backup. Its only definition was
