@@ -10,6 +10,27 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Found — 2026-10-29 (D-92: the keys that unlock the estate are on unencrypted volumes, SSH key unprotected)
+
+- Surfaced while deciding whether `loginctl enable-linger` was safe. It is the smaller question. Measured:
+  `/home`, `/opt/jolarca` and the backup disk `/mnt/jol-backup` have **no crypto layer** under their
+  filesystems, and they hold the age identity that decrypts the state backups, the HCP organization token,
+  and the operator's SSH private key.
+- `ssh-keygen -y -P '' -f ~/.ssh/id_ed25519` **succeeded** — the private key has **no passphrase**. Mode 600
+  protects against other users on a running system, not against a stolen or imaged disk read offline.
+- The backup archives themselves are correctly encrypted (verified this week, off-host, decrypt round trip
+  proven). The finding is that the decrypting key lives on an unencrypted disk in the same box, which turns
+  an encryption control into an access-control convention.
+- Noted in the same probe: `sdc`/`sdd` **are** `crypto_LUKS` (`DR-JOL`, `DR-JOLM`, unmounted) — this host
+  already uses LUKS for removable media, so the internal volumes are the exception rather than the norm.
+- Cheapest fix first: add a passphrase to the SSH key (minutes, no infrastructure). Then move the age
+  identities off plaintext disk. Full-disk encryption is the correct long answer and is a planned change,
+  not a weekend task.
+- Registered as a finding, not silently fixed: changing key material or disk layout is the operator's
+  decision under §5, and this session's own rule is that an observation which only exists in a chat log is
+  not evidence.
+
+
 ### Fixed — 2026-10-29 (the timer backfilled correctly and the run still failed: a resume-time network race)
 
 - First real scheduled attempt: the host was asleep across 04:17, `Persistent=true` fired the unit at
