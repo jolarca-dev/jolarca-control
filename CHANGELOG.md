@@ -10,6 +10,27 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Updated — 2026-10-29 (D-92 remediation is half done, and measuring it found a worse credential problem)
+
+- `~/.ssh/id_ed25519` **now has a passphrase** (verified: empty-passphrase test returns rc=255, file
+  rewritten 23:19:40, `ssh -T` and `git ls-remote` both still succeed via the GNOME Keyring agent).
+  Nothing unattended broke: zero SSH client invocations in any scheduled job, and the every-10-minute
+  guard ran normally after the change.
+- `~/.ssh/jol_github_ed25519` **still has no passphrase** — so item 1 of the remediation is not finished,
+  it is only started. Recorded rather than assumed done.
+- The bigger finding: `~/.ssh/config` maps `root@pve`, `root@pbs01`, four production hosts **and**
+  `github.com` onto that single key. One credential spans hypervisor root, backup-server root and push
+  access to thirteen governed repositories. The dedicated GitHub key authenticates to the same account
+  under `BatchMode` with no prompt, so separating them is a verified, reversible cut.
+- My own two errors, recorded: the `IdentitiesOnly`/`IdentityFile` block I suggested was **appended**
+  beside an existing `Host github.com` block (duplicate config, and it pins GitHub to the root key while
+  excluding the purpose-built one), and a probe that tested both keys over **HTTPS** reported success
+  while proving nothing — HTTPS never consults an SSH key on a public repo.
+- Method note that earned its keep: ask in the direction that can fail. `ssh -T` succeeding proves
+  authentication, not protection; `ssh-keygen -y -P ''`, `BatchMode=yes` and `ssh -v`'s "Offering public
+  key" are the probes that can actually be wrong in the safe direction.
+
+
 ### Found — 2026-10-29 (D-92: the keys that unlock the estate are on unencrypted volumes, SSH key unprotected)
 
 - Surfaced while deciding whether `loginctl enable-linger` was safe. It is the smaller question. Measured:
