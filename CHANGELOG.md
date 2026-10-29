@@ -10,6 +10,85 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-29 (the timer backfilled correctly and the run still failed: a resume-time network race)
+
+- First real scheduled attempt: the host was asleep across 04:17, `Persistent=true` fired the unit at
+  **12:16:50** — the instant of resume — and the fetch failed with **exit 2**, journal line
+  `CANNOT VERIFY: cloud state could not be retrieved from the backend — no backup was taken and no claim
+  is made`. **The control behaved exactly as specified**: no archive, no false `BACKUP OK`, unit marked
+  `failed`. The same unit at 22:12 exited 0 and archived serial 17, so nothing was misconfigured.
+- Cause, measured rather than assumed: boot was Oct 21 (so 12:16 was a **resume**, not a start), the user
+  manager had been alive since 00:00:01, and NetworkManager logged **8** link-up events in 12:10–12:20.
+  The backfill fires before the link is usable.
+- `systemd/jolarca-state-backup.service` now retries: `Restart=on-failure`, `RestartSec=2min`, bounded by
+  `StartLimitIntervalSec=1h` / `StartLimitBurst=10`. The bound is deliberate — unbounded retries cannot
+  distinguish "transient" from "broken for a week".
+- `StartLimit*` were placed in `[Unit]`, **not** `[Service]`, because systemd ignores them in the latter
+  with only a warning: a limit that is not applied is worse than no limit, since it reads like a guard.
+  `tests/test_backup_unit.py` now asserts section placement, not mere presence (7 checks).
+- Mutation-checked again rather than trusted: dropping `Restart`, dropping `RestartSec`, and moving
+  `StartLimitBurst` into `[Service]` each make the suite fail, alongside the six earlier breakages.
+- Remaining gap recorded honestly: **the cause is not retained.** The script writes its fetch log into a
+  temp directory that its own trap deletes, so `CANNOT VERIFY` carries no HTTP status and the reason had
+  to be reconstructed from NetworkManager. Surfacing the underlying error in the script is the follow-up.
+- And the meta-lesson: this PR exists to stop §8 going stale, and §8 went stale again while it sat
+  unmerged — the fix for a lying description is to merge it, not to write a better one.
+
+
+### Added — 2026-10-28 (the backup schedule becomes a governed artifact, not a home-directory file)
+
+- Measured before fixing: **zero tracked files** mentioned the nightly backup. Its only definition was
+  `~/.config/systemd/user/jolarca-state-backup.{service,timer}` on device **66319** (`/home`, 86% full)
+  — a third device relative to the repository (64513) and the backup disk (2065) — and no archive
+  contained it. One lost home directory would have destroyed the definition of the control that
+  protects the state, leaving a chat log as the only record. That is the D-85 class: a real fix that
+  lived on one machine.
+- `systemd/jolarca-state-backup.{service,timer}` are now committed with the reasoning in comments
+  (why `Persistent=true` replaced cron, and the `Linger=no` residual gap stated rather than hidden).
+  `make backup-timer-install` is the only supported install path and **diffs after copying**, so the
+  repo copy is the source of truth rather than a second description free to drift.
+- `tests/test_backup_unit.py`: 5 checks, **mutation-tested — six deliberate breakages (drop
+  `Persistent`, drop `REQUIRE_OFF_HOST`, bad `ExecStart` path, `Unit=` typo, same-disk `BACKUP_DEST`,
+  planted credential shape) were all detected, zero vacuous**, files restored byte-identically. They
+  assert the unit's own properties instead of comparing against the installed copy, because in CI that
+  copy does not exist and a check that passes on absent input is the vacuous-green pattern this
+  register exists to catch.
+- Two self-inflicted faults found on the way, recorded because both were near-misses: an appended
+  `.PHONY` name landed **after a trailing backslash**, breaking the line continuation so `make` failed
+  to parse the whole file (rc=2, `missing separator`) — and the first repair attempt aborted on its
+  own `AssertionError` without writing anything, which I nearly accepted because I had clipped the
+  evidence with `cut -c1-110` and the backslash sat past column 110. Also: the new files were created
+  while checked out on the **#107 branch**, and the `AGENTS.md` anchor did not exist there — caught by
+  reading the file instead of assuming the branch.
+
+
+### Changed — 2026-10-28 (the backup schedule is now a pointer to the unit, because the sentence describing it went stale three times in 24 hours)
+
+- The crontab entry documented yesterday as "the nightly job" **never fired**. Measured: zero `CRON`
+  syslog entries between 04:00 and 06:00 on 2026-10-28, the five-minute `health-check` heartbeat gap
+  running 00:25 → 19:05, and `Stopped target suspend.target` on resume — the host was suspended across
+  04:17, and user crontabs do not backfill.
+- **A recommended check that could not have found the failure:** AGENTS.md told the reader to "check
+  `uptime`" if the run looked missing. `uptime` reported "up 1 week 4 hours" the whole time, because it
+  measures *booted*, not *awake*. Corrected in the record rather than quietly dropped.
+- Replaced by `~/.config/systemd/user/jolarca-state-backup.{service,timer}` with `Persistent=true`, so a
+  missed window runs on resume. Verified **through systemd, not through a shell**:
+  `systemctl --user start` → `status=0/SUCCESS`, journal `off-host: yes (dest_dev=2065 repo_dev=64513)`
+  and `BACKUP OK (round-trip verified)`, archive `terraform.tfstate.s17.20261028T175728Z.age` plus a
+  matching `backup-probes.tsv` row. An earlier `env -i` test proved the *script* runs under cron's PATH;
+  it proved nothing about the unit file's own path resolution.
+- New residual gap, stated rather than glossed: a **user** timer needs a login session, so a reboot with
+  nobody logged in runs nothing until `loginctl show-user jol --property=Linger` says `yes`. Linger
+  measured `no` tonight.
+- Structural change to how this is documented: §8 no longer restates the schedule, it points at the unit
+  files and gives the two commands that read them. A sentence describing a control goes stale every time
+  the control changes; a pointer cannot. That is the third stale backup sentence in one day and the last
+  one intended.
+- Still not claimed: that any *scheduled* run has happened (only a manual one), that key custody is
+  separate (the age identity is on the same machine), or that one host with two disks is a second site.
+  D-02 stays PARTIALLY FIXED / S0.
+
+
 ### Fixed — 2026-10-27 (CHANGELOG anchor collisions: a merge driver for the file, and a guard for the driver)
 
 - Third collision of the same kind in one day: every PR inserts its `### ...` section directly after

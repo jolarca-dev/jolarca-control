@@ -299,13 +299,41 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   declared unacceptable). Measured: `/opt/jolarca/backups` is device **64513** — the
   same ext4 volume as the working copy, so every archive ever taken there survives
   operator error and nothing else — while `/mnt/jol-backup/jol-state-backup` is
-  device **2065** (`sdb1`, a separate physical disk), which is where the nightly job
-  points (`17 4 * * *`, installed 2026-10-27 with `REQUIRE_OFF_HOST=1`).
-  **What is still not true:** that scheduled run has not happened yet, so the cadence
-  is configured and unproven; the age identity still lives on the same machine as the
-  working copy; and a second disk inside one host survives volume loss, not host loss.
-  So this is a verified, scheduled, off-*volume* copy — **not** a 3-2-1 copy. Do not
-  delete an account, org or workspace, and do not treat D-02 as closed.
+  device **2065** (`sdb1`, a separate physical disk), and that is the destination.
+  **Read the schedule; do not trust this sentence to carry it.** The source of truth is the
+  committed `systemd/jolarca-state-backup.{service,timer}`; `make backup-timer-install` copies it
+  into `~/.config/systemd/user/` and **diffs after copying**, so the running unit and the reviewed
+  unit cannot silently diverge. The installed copy is a build output on a third device (`/home`,
+  66319) that sits in no archive — which is exactly why the definition belongs in the repository:
+  measured 2026-10-28, zero tracked files mentioned the schedule and its only copy was one
+  hand-written file in a home directory. Inspect with `make backup-timer-status`, or directly:
+  `systemctl --user list-timers --all | grep jolarca` and
+  `journalctl --user -u jolarca-state-backup -n 20`. The history of this bullet is the
+  reason for that instruction: a crontab entry installed 2026-10-27 was documented here
+  as the schedule and **never fired once** — the host was suspended across 04:17 and
+  user crontabs do not backfill (measured: zero `CRON` syslog entries 04:00–06:00, the
+  five-minute heartbeat gap 00:25→19:05, `Stopped target suspend.target` on resume).
+  `uptime` reported "up 1 week" throughout, because **uptime measures *booted*, not
+  *awake*** — which is why the check this file recommended the previous evening could
+  not have found the failure. A `systemd` timer with `Persistent=true` replaces cron and
+  backfills after a suspend; its own residual gap is that a **user** timer requires a
+  login session, so a reboot with nobody logged in runs nothing until
+  `loginctl show-user jol --property=Linger` reports `yes`.
+  **What tonight proved (2026-10-29):** the backfill works and the failure was a race, not a
+  misconfiguration. The host was asleep across 04:17, `Persistent=true` fired the unit at **12:16:50** —
+  the instant of resume, while NetworkManager was still bringing the link up (8 connect/up events in that
+  window) — and the run exited **2** with `CANNOT VERIFY: cloud state could not be retrieved from the
+  backend — no backup was taken and no claim is made`. It wrote nothing and claimed nothing: the §3
+  contract held under real conditions. The same unit at 22:12 exited 0 and archived serial 17, so the
+  configuration was never wrong. The unit now retries (`Restart=on-failure`, `RestartSec=2min`, bounded
+  by `StartLimitBurst` in `[Unit]`), because a scheduler that fires once at the moment the network
+  returns is a scheduler that loses nights.
+  **What is still not true:** the *cause* is not retained — the script's fetch log lives in a temp
+  directory its trap deletes, so "could not be retrieved" carries no HTTP status and the reason had to
+  be inferred from NetworkManager; and the age identity still lives on the same machine as the working
+  copy. A second disk inside one host survives volume loss, not host loss. So this is a verified,
+  scheduled, retrying, off-*volume* copy — **not** a 3-2-1 copy. Do not delete an account, org or
+  workspace, and do not treat D-02 as closed.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
   apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
   `*.tfvars` and itself, then runs `terraform apply -input=false -auto-approve
