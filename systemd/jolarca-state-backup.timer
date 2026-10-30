@@ -5,7 +5,7 @@ Documentation=file:///opt/jolarca/repos/jolarca-control/AGENTS.md
 # beside this one for why that matters.
 
 [Timer]
-OnCalendar=*-*-* 04:17:00
+OnCalendar=*-*-* 09:17:00
 # Persistent=true is the whole reason this replaced a crontab entry. The crontab line
 # installed 2026-10-27 never fired: the host was suspended across 04:17 on 2026-10-28
 # and user crontabs do not backfill (anacron covers only the system cron directories).
@@ -17,10 +17,16 @@ Unit=jolarca-state-backup.service
 [Install]
 WantedBy=timers.target
 
-# CADECE, MEASURED: the 04:17 window was reached on neither 2026-10-29 nor 2026-10-30 -- the host is
-# asleep (zero CRON heartbeat entries 03:00-05:59 both nights), so Persistent=true fires on first login
-# instead. The honest description is "one verified copy per login session, backfilled on resume", not
-# "every night at 04:17": a day with no login is a day with no backup.
+# CADENCE, MEASURED. The window was 04:17 from install until 2026-10-30 and it was reached on NEITHER
+# 2026-10-29 nor 2026-10-30: the host is asleep (zero CRON heartbeat entries 03:00-05:59 both nights), so
+# Persistent=true fired on first login instead -- 21:22 on the 30th, which failed on a backend race and
+# succeeded on the retry two minutes later. 09:17 was chosen because the host is measurably awake then,
+# which turns a backfill into a live fire.
+#
+# What does NOT change: a day with no login and no resume is a day with no backup. The guarantee is "one
+# verified copy per session, backfilled on resume", never "every night at HH:MM". Read the value on the
+# OnCalendar= line above rather than from AGENTS.md -- that sentence has gone stale four times chasing
+# this one line, which is why it no longer carries the number.
 #
 # RESIDUAL GAP, recorded rather than hidden: this is a USER timer, so it only runs while
 # the user's systemd manager exists. `loginctl show-user jol --property=Linger` measured

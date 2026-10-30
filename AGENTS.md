@@ -336,11 +336,14 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   https://app.terraform.io/api/v2/organizations/jolarca-dev/workspaces/…`. The error was concluding a
   property of the script from a `-n 14` journal window that had cut those lines off: §1 and §7 again,
   in my own prose.
-  **What "nightly" does not mean** (measured 2026-10-29 and 2026-10-30): the 04:17 window was reached on
-  **neither** night — the host is asleep, zero `CRON` heartbeat entries across 03:00–05:59 both nights —
-  so the job runs on first login via `Persistent=true`. The real guarantee is "one verified copy per
-  login session, backfilled on resume", **not** "every night at 04:17"; a day with no login is a day
-  with no backup. The retry has now been proven by reality rather than by a fixture: 21:22:42 failed
+  **What "nightly" does not mean** (measured 2026-10-29 and 2026-10-30): the window configured at the
+  time was reached on **neither** night — the host is asleep, zero `CRON` heartbeat entries across
+  03:00–05:59 both nights — so the job ran on first login via `Persistent=true` instead. The real
+  guarantee is "one verified copy per login session, backfilled on resume", **not** "every night at
+  HH:MM"; a day with no login is a day with no backup. The hour moved on 2026-10-30 because the host is
+  measurably awake later in the day, and **the value is deliberately not restated here** — read
+  `OnCalendar=` in the unit file. This sentence has gone stale four times chasing that one line, which is
+  the whole argument for pointing instead of describing. The retry has now been proven by reality rather than by a fixture: 21:22:42 failed
   (`exit 2`), 21:24:43 `Scheduled restart job, restart counter is at 1` → `BACKUP OK (round-trip
   verified)`, `NRestarts=1`. `Result=success` describes only the final attempt, so
   `make backup-timer-status` now prints `NRestarts` — otherwise a retried control reports a clean pass

@@ -10,6 +10,25 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-30 (the backup window moved to a time the host is actually awake)
+
+- `OnCalendar` was `*-*-* 04:17:00` and was reached on **neither** night — zero `CRON` heartbeat entries
+  across 03:00–05:59 on 2026-10-29 and 2026-10-30 — so every run so far has been a `Persistent=true`
+  backfill on first login, not a scheduled one. It is now `09:17:00`, chosen because the host is
+  measurably awake then. Verified after the change: `NEXT Sat 2026-10-31 09:17:00`, live units
+  byte-identical to the committed ones, `systemd-analyze verify` rc=0, `make -n` rc=0.
+- Honest about what this does **not** fix: a day with no login and no resume is still a day with no
+  backup, and `Linger=no` still means a reboot with nobody logged in runs nothing. The guarantee is
+  session-bound; only a second machine or a wake alarm would change that.
+- A contradiction the `sed` left behind, fixed in the same commit: the timer file carried
+  `OnCalendar=*-*-* 09:17:00` on line 8 while its own comment block still explained why **04:17** was
+  never reached — a file arguing with itself. Also corrected a typo in that block (`CADECE` → `CADENCE`)
+  and removed the hour from AGENTS.md §8 entirely.
+- Structural decision, stated once and enforced: **the number now lives only in the unit file.** §8
+  points at it instead of repeating it, because that sentence has gone stale four times in 24 hours
+  chasing one line — describing a control is how records rot; referencing it is not.
+
+
 ### Fixed — 2026-10-30 (the retry was proven by reality, and two of my own claims about it were wrong)
 
 - **The retry works, measured on live failure:** `21:22:42` → `backend unreachable at
