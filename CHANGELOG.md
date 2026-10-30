@@ -10,6 +10,31 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-30 (the retry was proven by reality, and two of my own claims about it were wrong)
+
+- **The retry works, measured on live failure:** `21:22:42` → `backend unreachable at
+  https://app.terraform.io/api/v2/organizations/jolarca-dev/workspaces/…` → `CANNOT VERIFY … no backup was
+  taken and no claim is made` (`exit 2`) → `21:24:43 Scheduled restart job, restart counter is at 1` →
+  `BACKUP OK (round-trip verified)`, `NRestarts=1`, archive
+  `terraform.tfstate.s17.20261030T192446Z.age`. The same race that failed unattended yesterday was
+  absorbed today without a human in the loop.
+- **A false claim I made yesterday, corrected in place:** AGENTS.md §8 said the failure *cause* is not
+  retained because the fetch log lives in a temp dir the trap deletes. It is retained —
+  `state_backup.sh:214` cats the log to stderr before the trap, `:215` extracts `(HTTP <code>)`, `:179`
+  names the exception class and the URL. I had read a `-n 14` journal window that cut those lines off and
+  generalised from a truncated view. That is §1's own rule broken by §8's own text.
+- **"Nightly" was not true either.** 04:17 was reached on neither night (zero `CRON` heartbeat entries
+  03:00–05:59 on 2026-10-29 and 2026-10-30); the host sleeps, and `Persistent=true` runs the job on first
+  login. The guarantee is "one verified copy per login session, backfilled on resume" — a day with no
+  login is a day with no backup. The unit's `Description=` now says that instead of "Nightly".
+- **`make backup-timer-status` now prints `Result`, `ExecMainStatus` and `NRestarts`.** Before this it
+  showed `Result=success` for tonight's run, which is true of the *last attempt only* — a control that
+  failed and then retried would have looked like a clean pass in the only view an operator reads.
+  `NRestarts` is the difference between "worked" and "worked after breaking".
+- Still open and unchanged: `Linger=no`, the age identity on an unencrypted volume in the same machine
+  (D-92), and one host with two disks is not a second site. D-02 stays PARTIALLY FIXED / S0.
+
+
 ### Changed — 2026-10-30 (D-92 blast-radius cut performed: GitHub no longer authenticates with the hypervisor root key)
 
 - `Host github.com` now resolves to exactly one identity, `~/.ssh/jol_github_ed25519`, with

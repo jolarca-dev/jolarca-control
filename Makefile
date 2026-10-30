@@ -193,6 +193,12 @@ backup-timer-status: ## Show the backup timer, its next run and the last journal
 	systemctl --user list-timers --all | grep jolarca || echo "timer not installed"
 	-loginctl show-user $$(whoami) --property=Linger
 	-journalctl --user -u jolarca-state-backup -n 12 --no-pager
+	@systemctl --user show jolarca-state-backup.service \
+	  --property=Result --property=ExecMainStatus --property=NRestarts | tr '\n' ' '; \
+	  echo ""; \
+	  echo "  read NRestarts: Result describes only the LAST attempt, so a control that failed and then \
+succeeded on retry reports 'success' and the failure is invisible here (measured 2026-10-30: \
+NRestarts=1 with Result=success)"
 
 # Step 6b step 1 of docs/state-migration-runbook.md. The instruction used to be "land this file only
 # in the PR that runs step 2", i.e. transcribe a protection object by hand — the friction D-87 row

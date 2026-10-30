@@ -328,12 +328,27 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   configuration was never wrong. The unit now retries (`Restart=on-failure`, `RestartSec=2min`, bounded
   by `StartLimitBurst` in `[Unit]`), because a scheduler that fires once at the moment the network
   returns is a scheduler that loses nights.
-  **What is still not true:** the *cause* is not retained — the script's fetch log lives in a temp
-  directory its trap deletes, so "could not be retrieved" carries no HTTP status and the reason had to
-  be inferred from NetworkManager; and the age identity still lives on the same machine as the working
-  copy. A second disk inside one host survives volume loss, not host loss. So this is a verified,
-  scheduled, retrying, off-*volume* copy — **not** a 3-2-1 copy. Do not delete an account, org or
-  workspace, and do not treat D-02 as closed.
+  **Corrected 2026-10-30 — the next sentence was false.** It claimed the *cause* is not retained
+  because the fetch log lives in a temp directory the trap deletes. It **is** retained:
+  `scripts/state_backup.sh:214` runs `cat "$work/fetch.log" >&2` *before* the trap fires, `:215`
+  extracts `(HTTP <code>)` when the response carried a status, and `:179` names the exception class and
+  the endpoint. Tonight's journal shows exactly that — `backend unreachable at
+  https://app.terraform.io/api/v2/organizations/jolarca-dev/workspaces/…`. The error was concluding a
+  property of the script from a `-n 14` journal window that had cut those lines off: §1 and §7 again,
+  in my own prose.
+  **What "nightly" does not mean** (measured 2026-10-29 and 2026-10-30): the 04:17 window was reached on
+  **neither** night — the host is asleep, zero `CRON` heartbeat entries across 03:00–05:59 both nights —
+  so the job runs on first login via `Persistent=true`. The real guarantee is "one verified copy per
+  login session, backfilled on resume", **not** "every night at 04:17"; a day with no login is a day
+  with no backup. The retry has now been proven by reality rather than by a fixture: 21:22:42 failed
+  (`exit 2`), 21:24:43 `Scheduled restart job, restart counter is at 1` → `BACKUP OK (round-trip
+  verified)`, `NRestarts=1`. `Result=success` describes only the final attempt, so
+  `make backup-timer-status` now prints `NRestarts` — otherwise a retried control reports a clean pass
+  and the failure vanishes from the only view an operator reads.
+  **What is still not true:** the age identity still lives on the same machine as the working copy, on
+  an unencrypted volume (D-92), and a second disk inside one host survives volume loss, not host loss.
+  So this is a verified, login-cadenced, retrying, off-*volume* copy — **not** a 3-2-1 copy. Do not
+  delete an account, org or workspace, and do not treat D-02 as closed.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
   apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
   `*.tfvars` and itself, then runs `terraform apply -input=false -auto-approve

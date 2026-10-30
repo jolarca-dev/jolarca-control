@@ -1,5 +1,5 @@
 [Unit]
-Description=Nightly jolarca-control state backup, with missed-run backfill
+Description=Daily jolarca-control state backup, backfilled on the next session when the window is missed
 Documentation=file:///opt/jolarca/repos/jolarca-control/AGENTS.md
 # Source of truth: install with `make backup-timer-install`. See the .service file
 # beside this one for why that matters.
@@ -17,6 +17,11 @@ Unit=jolarca-state-backup.service
 [Install]
 WantedBy=timers.target
 
+# CADECE, MEASURED: the 04:17 window was reached on neither 2026-10-29 nor 2026-10-30 -- the host is
+# asleep (zero CRON heartbeat entries 03:00-05:59 both nights), so Persistent=true fires on first login
+# instead. The honest description is "one verified copy per login session, backfilled on resume", not
+# "every night at 04:17": a day with no login is a day with no backup.
+#
 # RESIDUAL GAP, recorded rather than hidden: this is a USER timer, so it only runs while
 # the user's systemd manager exists. `loginctl show-user jol --property=Linger` measured
 # `no` on 2026-10-28, which means a reboot with nobody logged in runs nothing at all --
