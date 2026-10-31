@@ -10,6 +10,34 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Found — 2026-10-31 (D-93: a PCI/GDPR repo merges with zero required checks, the detector says so, nothing enforces it)
+
+- First fleet-wide guard sweep (all 17 repos, live API, not declarations): **`jolarca-vendor`** —
+  `tier: governance`, declaring **`gdpr` and `pci-dss`** — has a ruleset with a `pull_request` rule but
+  **0 required status checks**, while `repos/jolarca-vendor.yml` declares 1. `policy/repo-defaults.yml`
+  calls an empty list non-negotiable: *"a protected branch with zero required contexts enforces nothing,
+  which is how unreviewed code reached main before the 2026-09-17 delivery-chain audit."*
+- **This is not a visibility gap.** `drift_detect.py` exits **1** with
+  `ruleset requires 0 status check(s), need >= 1`. It is invoked from `apply.yml:170` — a path that
+  cannot reach the backend (D-56) — and from `make drift`, i.e. a human choosing to look. A red verdict
+  has been blocking nothing. That is the D-67 advisory-gate shape, re-proven with commands.
+- **`.github` is invisible by design and that is the second finding**: no `repos/.github.yml`, **0**
+  addresses in state, and `drift_detect` reports `"health_repo_excluded": ".github"`. It publishes the
+  org-wide SECURITY.md (2420 bytes, the file GitHub serves for every repo), runs
+  `secret_scanning=disabled`, `push_protection=null`, and requires **0** checks to change it. D-15 says
+  the disclosure address is hand-edited there; this adds that the control plane neither declares,
+  imports, nor checks it.
+- The reassuring half, now measured rather than assumed: **no repository's `main` is directly pushable**
+  across all 17, and `bypass_actors` is empty everywhere read. dr and vendor do carry `pull_request`
+  rules — so "unmanaged" was always shorthand for "unmanaged by Terraform", and consent's closed S0 was
+  the real hole.
+- Remediation order matters and is written down: fix vendor's live baseline first, decide whether
+  `.github` is governed (silence is the one unacceptable option, because the exclusion is currently
+  invisible), and only then consider wiring the drift gate into a required context — wiring it today
+  would wedge every merge on a repo that is already red, which is A-01/D-44/D-90 all over again.
+- Cost: zero for the first and third steps; the middle one is a decision, not a purchase.
+
+
 ### Corrected — 2026-10-31 (four register headings contradicted measured state; all four now carry dated status)
 
 A sweep of every S0/S1 heading against its own dated rows found four places where the file's headline
