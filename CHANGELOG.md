@@ -10,6 +10,184 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Corrected — 2026-10-31 (the new window missed too; the retry has now saved the backup twice)
+
+- 09:17 was chosen because the host was measurably awake at that hour — **on a Friday**. Saturday
+  falsified it: zero `CRON` heartbeat entries 08:00–10:59, and the job backfilled at `12:12:45` again.
+  **No configured window has ever fired on time**; every run since install is a session-start catch-up.
+  My reasoning error was generalising one weekday observation into a property of the machine, and it is
+  recorded rather than quietly rewritten.
+- The retry absorbed the same race a second time: `12:12:45` failed → `12:14:45` →
+  `terraform.tfstate.s17.20261031T101447Z.age`, `NRestarts=1`, `Result=success`. The pattern is now
+  understood rather than patched: a backfill fires while the network is still settling, so the first
+  attempt of every catch-up is effectively always lost. `NRestarts>0` with `Result=success` is this
+  control's **normal healthy state** — the opposite of what I implied when I wrote yesterday that a good
+  morning would show `NRestarts=0`.
+- Chasing the hour is the wrong lever. A true time-based guarantee on a sleeping single host needs
+  `WakeSystem=true` on **system-level** units, or an always-on second machine; neither is proportionate
+  for a control plane whose state last changed on 2026-10-27 and which is copied on every login.
+- The timer file's comment and AGENTS.md §8 now carry the falsification instead of the claim, and the
+  stale-count confession went from four to five.
+
+
+### Changed — 2026-10-30 (the backup window moved to a time the host is actually awake)
+
+- `OnCalendar` was `*-*-* 04:17:00` and was reached on **neither** night — zero `CRON` heartbeat entries
+  across 03:00–05:59 on 2026-10-29 and 2026-10-30 — so every run so far has been a `Persistent=true`
+  backfill on first login, not a scheduled one. It is now `09:17:00`, chosen because the host is
+  measurably awake then. Verified after the change: `NEXT Sat 2026-10-31 09:17:00`, live units
+  byte-identical to the committed ones, `systemd-analyze verify` rc=0, `make -n` rc=0.
+- Honest about what this does **not** fix: a day with no login and no resume is still a day with no
+  backup, and `Linger=no` still means a reboot with nobody logged in runs nothing. The guarantee is
+  session-bound; only a second machine or a wake alarm would change that.
+- A contradiction the `sed` left behind, fixed in the same commit: the timer file carried
+  `OnCalendar=*-*-* 09:17:00` on line 8 while its own comment block still explained why **04:17** was
+  never reached — a file arguing with itself. Also corrected a typo in that block (`CADECE` → `CADENCE`)
+  and removed the hour from AGENTS.md §8 entirely.
+- Structural decision, stated once and enforced: **the number now lives only in the unit file.** §8
+  points at it instead of repeating it, because that sentence has gone stale four times in 24 hours
+  chasing one line — describing a control is how records rot; referencing it is not.
+
+
+### Fixed — 2026-10-30 (the retry was proven by reality, and two of my own claims about it were wrong)
+
+- **The retry works, measured on live failure:** `21:22:42` → `backend unreachable at
+  https://app.terraform.io/api/v2/organizations/jolarca-dev/workspaces/…` → `CANNOT VERIFY … no backup was
+  taken and no claim is made` (`exit 2`) → `21:24:43 Scheduled restart job, restart counter is at 1` →
+  `BACKUP OK (round-trip verified)`, `NRestarts=1`, archive
+  `terraform.tfstate.s17.20261030T192446Z.age`. The same race that failed unattended yesterday was
+  absorbed today without a human in the loop.
+- **A false claim I made yesterday, corrected in place:** AGENTS.md §8 said the failure *cause* is not
+  retained because the fetch log lives in a temp dir the trap deletes. It is retained —
+  `state_backup.sh:214` cats the log to stderr before the trap, `:215` extracts `(HTTP <code>)`, `:179`
+  names the exception class and the URL. I had read a `-n 14` journal window that cut those lines off and
+  generalised from a truncated view. That is §1's own rule broken by §8's own text.
+- **"Nightly" was not true either.** 04:17 was reached on neither night (zero `CRON` heartbeat entries
+  03:00–05:59 on 2026-10-29 and 2026-10-30); the host sleeps, and `Persistent=true` runs the job on first
+  login. The guarantee is "one verified copy per login session, backfilled on resume" — a day with no
+  login is a day with no backup. The unit's `Description=` now says that instead of "Nightly".
+- **`make backup-timer-status` now prints `Result`, `ExecMainStatus` and `NRestarts`.** Before this it
+  showed `Result=success` for tonight's run, which is true of the *last attempt only* — a control that
+  failed and then retried would have looked like a clean pass in the only view an operator reads.
+  `NRestarts` is the difference between "worked" and "worked after breaking".
+- Still open and unchanged: `Linger=no`, the age identity on an unencrypted volume in the same machine
+  (D-92), and one host with two disks is not a second site. D-02 stays PARTIALLY FIXED / S0.
+
+
+### Changed — 2026-10-30 (D-92 blast-radius cut performed: GitHub no longer authenticates with the hypervisor root key)
+
+- `Host github.com` now resolves to exactly one identity, `~/.ssh/jol_github_ed25519`, with
+  `IdentitiesOnly yes`. Verified the way the last attempt was not: `ssh -v` shows `Offering public key:
+  …/jol_github_ed25519` **and** `Server accepts key`, so the dedicated credential is the one GitHub
+  authenticates rather than a fallback that happens to succeed. The other six host stanzas (root on `pve`
+  and `pbs01`, operator on four prod hosts) were verified line-identical, and `git ls-remote` exits 0.
+- The edit was gated on an isolation probe that ran **before** the config changed, and rolled back to an
+  explicitly named file (`config.bak.1793312449`) if any post-check failed. That structure exists because
+  the previous claim of the same fact was false: `IdentityFile` accumulates across `Host` blocks, so a
+  success cannot be attributed to a key without `-F /dev/null` plus `IdentitiesOnly`.
+- **What is still open, and it is the part that matters:** `https://github.com/JourneyOfLife.keys` lists
+  **both** keys, so `id_ed25519` — root on the hypervisor and the backup server — remains *authorized*
+  against GitHub even though nothing on this host uses it that way. The separation is behavioural until
+  that key is de-registered.
+- Not recommended blind: the key comment `ubuntu24-jol-server-auth` suggests copies exist on other
+  machines, and this host cannot enumerate them. GitHub's per-key **last used** timestamp is the empirical
+  gate; deleting a key that other infrastructure still pushes with produces an outage rather than a
+  warning.
+- Register handled per this file's own rule: the 2026-10-29 rows are kept and marked superseded rather
+  than rewritten, so the sequence — claim, refutation, then the verified cut — stays auditable.
+
+
+### Added — 2026-10-29 (the one-command test for "is this SSH key registered?", and the cut is still blocked)
+
+- `curl -s https://github.com/<account>.keys` lists an account's SSH keys with no token and no new scope,
+  and `ssh-keygen -lf -` turns each entry into the same `SHA256:…` fingerprint `ssh -v` prints when
+  offering a key. Measured: `JourneyOfLife.keys` contains **exactly one** key — `id_ed25519`, the
+  credential that is also root on `pve` and `pbs01` — and the dedicated `jol_github_ed25519`
+  (`SHA256:EnOjKXinbT…`) is **absent**.
+- So the blast-radius cut was **not performed**: repointing `Host github.com` at a key GitHub rejects
+  would break every push, and the precondition was checked rather than assumed after the operator's go
+  ahead. `git ls-remote` still exits 0 on the current single-block config.
+- The isolation probe was clean this time and is worth copying: `ssh -F /dev/null -i <key> -o
+  IdentitiesOnly=yes -o BatchMode=yes -T git@github.com` removes the config file from the equation, and
+  `ssh -v`'s `Offering public key:` line names the key that was actually tried — the check whose absence
+  produced the false claim earlier today.
+- Also recorded: a key's *comment* is not an account name. `journeyoflife-platform` is a comment; the
+  account is `JourneyOfLife`, and guessing from the comment would have sent the registration to the wrong
+  place.
+
+
+### Corrected — 2026-10-29 (a false claim I wrote into D-92, and the config cleanup that exposed it)
+
+- **Retraction:** D-92's row said the dedicated GitHub key "authenticates to the same account under
+  `BatchMode` with no prompt, so pointing `Host github.com` at it is a verified, reversible cut." It is
+  not. Isolated with the config file out of the equation (`ssh -F /dev/null -i ... -o IdentitiesOnly=yes
+  -o BatchMode=yes`): **`Permission denied (publickey)`, exit 255 — the key is not registered on GitHub
+  at all.** The earlier "success" came from a config listing *both* `IdentityFile` entries, so
+  `id_ed25519` authenticated while the credit went to the other key, and the exit code I read was
+  `head`'s, not `ssh`'s, because the command was piped.
+- **Exit-code trap, second instance today:** `ssh -T git@github.com` returns **1 on success** (GitHub
+  refuses shell access after authenticating). A guard requiring `rc == 0` misjudges every real success as
+  a failure — which is exactly what my verify-then-restore did, and why it rolled back a config that was
+  in fact offering the right key.
+- **Config fixed properly:** the regex `
+Host github\.com
+` could not match the block starting at byte 0,
+  so the earlier cleanup deleted the wrong block and left both. Replaced with stanza parsing; the file now
+  has exactly **one** `github.com` block on the working key, the other six host stanzas verified
+  line-identical, and `git ls-remote` exits 0.
+- **Rollback bug owned:** `cp ~/.ssh/config.bak.* ~/.ssh/config` failed with "Not a directory" because the
+  glob matched two backups. A rollback that cannot run is not a rollback; name one file.
+- Both private keys now carry passphrases, measured: `ssh-keygen -y -P ''` returns **rc=255** for
+  `id_ed25519` (23:19:40) and for `jol_github_ed25519` (23:49:15). The earlier row saying the second was
+  "still bare" is kept and marked superseded rather than deleted, because the order of operations is
+  itself the finding.
+- Net security change tonight: two credentials that were offline-readable with no protection are now
+  passphrase-protected. Net **unchanged**: the blast-radius cut (GitHub off the hypervisor root key) is
+  blocked on registering the dedicated public key in GitHub's web UI — a browser action, not a config edit.
+
+
+### Updated — 2026-10-29 (D-92 remediation is half done, and measuring it found a worse credential problem)
+
+- `~/.ssh/id_ed25519` **now has a passphrase** (verified: empty-passphrase test returns rc=255, file
+  rewritten 23:19:40, `ssh -T` and `git ls-remote` both still succeed via the GNOME Keyring agent).
+  Nothing unattended broke: zero SSH client invocations in any scheduled job, and the every-10-minute
+  guard ran normally after the change.
+- `~/.ssh/jol_github_ed25519` **still has no passphrase** — so item 1 of the remediation is not finished,
+  it is only started. Recorded rather than assumed done.
+- The bigger finding: `~/.ssh/config` maps `root@pve`, `root@pbs01`, four production hosts **and**
+  `github.com` onto that single key. One credential spans hypervisor root, backup-server root and push
+  access to thirteen governed repositories. The dedicated GitHub key authenticates to the same account
+  under `BatchMode` with no prompt, so separating them is a verified, reversible cut.
+- My own two errors, recorded: the `IdentitiesOnly`/`IdentityFile` block I suggested was **appended**
+  beside an existing `Host github.com` block (duplicate config, and it pins GitHub to the root key while
+  excluding the purpose-built one), and a probe that tested both keys over **HTTPS** reported success
+  while proving nothing — HTTPS never consults an SSH key on a public repo.
+- Method note that earned its keep: ask in the direction that can fail. `ssh -T` succeeding proves
+  authentication, not protection; `ssh-keygen -y -P ''`, `BatchMode=yes` and `ssh -v`'s "Offering public
+  key" are the probes that can actually be wrong in the safe direction.
+
+
+### Found — 2026-10-29 (D-92: the keys that unlock the estate are on unencrypted volumes, SSH key unprotected)
+
+- Surfaced while deciding whether `loginctl enable-linger` was safe. It is the smaller question. Measured:
+  `/home`, `/opt/jolarca` and the backup disk `/mnt/jol-backup` have **no crypto layer** under their
+  filesystems, and they hold the age identity that decrypts the state backups, the HCP organization token,
+  and the operator's SSH private key.
+- `ssh-keygen -y -P '' -f ~/.ssh/id_ed25519` **succeeded** — the private key has **no passphrase**. Mode 600
+  protects against other users on a running system, not against a stolen or imaged disk read offline.
+- The backup archives themselves are correctly encrypted (verified this week, off-host, decrypt round trip
+  proven). The finding is that the decrypting key lives on an unencrypted disk in the same box, which turns
+  an encryption control into an access-control convention.
+- Noted in the same probe: `sdc`/`sdd` **are** `crypto_LUKS` (`DR-JOL`, `DR-JOLM`, unmounted) — this host
+  already uses LUKS for removable media, so the internal volumes are the exception rather than the norm.
+- Cheapest fix first: add a passphrase to the SSH key (minutes, no infrastructure). Then move the age
+  identities off plaintext disk. Full-disk encryption is the correct long answer and is a planned change,
+  not a weekend task.
+- Registered as a finding, not silently fixed: changing key material or disk layout is the operator's
+  decision under §5, and this session's own rule is that an observation which only exists in a chat log is
+  not evidence.
+
+
 ### Fixed — 2026-10-29 (the timer backfilled correctly and the run still failed: a resume-time network race)
 
 - First real scheduled attempt: the host was asleep across 04:17, `Persistent=true` fired the unit at
