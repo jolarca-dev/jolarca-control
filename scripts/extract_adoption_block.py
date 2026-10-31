@@ -14,7 +14,16 @@ fenced block by ``startswith('resource "github_repository_ruleset"')`` and the a
 
 An ``awk`` variant then emitted zero lines and ``terraform fmt -check`` on the empty file exited
 **0**, so a passing format check proved nothing. This script therefore asserts structure and fails
-closed: exit 0 only when exactly one adoption candidate exists and it is provably inert.
+closed: exit 0 only when exactly one adoption candidate exists for the requested repository and it is
+provably inert.
+
+Repository selection (D-94, 2026-10-31). The first version hard-coded ``jolarca-consent`` in four
+places, which made Step 6b a one-shot tool: adopting a second ruleset-only repo (vendor, per D-93)
+was impossible without hand-editing generated config, and the printed next-step hint carried a
+literal numeric ruleset id — a wrong command that looks right, for any repo but one. The target is
+now an argument, the assertions are made against it, and the emitted hint contains a placeholder plus
+the command that discovers the real id. ``--repo`` defaults to the historical target so existing
+invocations and fixtures behave identically.
 
 Exit codes follow AGENTS.md §3: 0 verified, 1 refused (a real finding), 2 could not verify.
 """
@@ -28,12 +37,28 @@ import sys
 
 RUNBOOK = "docs/state-migration-runbook.md"
 RESOURCE = "github_repository_ruleset"
+DEFAULT_REPO = "jolarca-consent"
 
 _HEADER = re.compile(r'^resource "github_repository_ruleset"', re.M)
 _RULE_BLOCK = re.compile(r"^\s*(pull_request|required_status_checks|bypass_actors)\s*\{", re.M)
 _RESOURCE_BLOCK = re.compile(r'^resource "', re.M)
 _FOR_EACH = re.compile(r"^\s*for_each\s*=", re.M)
-_REPO_KEY = re.compile(r'toset\(\["jolarca-consent"\]\)')
+# The repo a block targets, read out of its own for_each rather than compared against a constant.
+_FOR_EACH_ITEM = re.compile(r"toset\(\[([^\]]*)\]")
+_STRING_ITEM = re.compile('"([^"]+)"')
+
+
+def _repo_pattern(repo: str) -> re.Pattern[str]:
+    """Match a for_each list that names `repo`, wherever it sits in the list."""
+    return re.compile(r'toset\(\[[^\]]*"' + re.escape(repo) + r'"[,\]]')
+
+
+def _targeted_repos(block: str) -> list[str]:
+    """Every repository named in the block's toset(...) list."""
+    m = _FOR_EACH_ITEM.search(block)
+    if not m:
+        return []
+    return _STRING_ITEM.findall(m.group(1))
 
 
 def fences(text: str) -> list[str]:
@@ -51,24 +76,46 @@ def is_adoption(block: str) -> bool:
     return _RULE_BLOCK.search(block) is None
 
 
-def select(text: str) -> tuple[list[str], list[str]]:
+def select(text: str, repo: str = DEFAULT_REPO) -> tuple[list[str], list[str]]:
+    """(all ruleset fences, adoption fences targeting `repo`).
+
+    Filtering by target is what makes a second repo adoptable without ambiguity: two adoption fences
+    in one document are fine as long as exactly one of them names the repo being adopted.
+    """
     adopted = fences(text)
-    return adopted, [b for b in adopted if is_adoption(b)]
+    return adopted, [b for b in adopted if is_adoption(b) and _repo_pattern(repo).search(b)]
 
 
-def vet(block: str) -> list[str]:
+def adoption_repos(text: str) -> list[str]:
+    """Repositories that DO have an adoption fence — for a useful refusal when the wrong one is asked for."""
+    seen: list[str] = []
+    for block in fences(text):
+        if is_adoption(block):
+            for name in _targeted_repos(block):
+                if name not in seen:
+                    seen.append(name)
+    return seen
+
+
+def vet(block: str, repo: str = DEFAULT_REPO) -> list[str]:
     """Structural requirements for a block an operator is about to import."""
     problems: list[str] = []
     if len(_RESOURCE_BLOCK.findall(block)) != 1:
         problems.append(
             f"{len(_RESOURCE_BLOCK.findall(block))} resource blocks; expected exactly 1"
         )
-    if 'resource "github_repository_ruleset" "main"' not in block:
-        problems.append('resource is not named "main" -> the step-2 import address would not exist')
+    if f'resource "{RESOURCE}" "main"' not in block:
+        problems.append(
+            f'resource is not named "main" -> the step-2 import address for {repo} would not exist'
+        )
     if not _FOR_EACH.search(block):
-        problems.append('no for_each -> address main["jolarca-consent"] does not exist')
-    if not _REPO_KEY.search(block):
-        problems.append('for_each does not include "jolarca-consent"')
+        problems.append(f'no for_each -> address main["{repo}"] does not exist')
+    if not _repo_pattern(repo).search(block):
+        named = _targeted_repos(block)
+        problems.append(
+            f'for_each does not name "{repo}"'
+            + (f" (it names {named})" if named else " (no toset list found)")
+        )
     if _RULE_BLOCK.search(block):
         found = sorted({m.group(1) for m in _RULE_BLOCK.finditer(block)})
         problems.append(f"carries rule block(s) {found} -> adopting it would MUTATE protection")
@@ -79,6 +126,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
         "--runbook", default=RUNBOOK, help="override the source document (for fixtures)"
+    )
+    ap.add_argument(
+        "--repo",
+        default=DEFAULT_REPO,
+        help=f"ruleset-only repository to adopt (default: {DEFAULT_REPO}, the historical target)",
     )
     ap.add_argument("--out", default="rulesets.tf")
     ap.add_argument("--check", action="store_true", help="select and vet, write nothing")
@@ -92,35 +144,52 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     text = path.read_text(encoding="utf-8")
 
-    all_blocks, candidates = select(text)
+    all_blocks, candidates = select(text, args.repo)
     print(
-        f"ruleset fences in {path.name}: {len(all_blocks)}  adoption candidates: {len(candidates)}"
+        f"ruleset fences in {path.name}: {len(all_blocks)}  "
+        f"adoption candidates for {args.repo}: {len(candidates)}"
     )
     for block in all_blocks:
         head = next(ln for ln in block.splitlines() if _HEADER.match(ln))
         kind = "adoption (inert mirror)" if is_adoption(block) else "stage-2 (adds rules)"
-        print(f"  {kind:22} {head}")
+        print(f"  {kind:22} targets={','.join(_targeted_repos(block)) or '?'}  {head}")
 
     if not all_blocks:
         print("CANNOT-VERIFY: no github_repository_ruleset fence found", file=sys.stderr)
         return 2
+    if not candidates:
+        available = adoption_repos(text)
+        print(
+            f"REFUSED: no inert adoption fence targets {args.repo}"
+            + (
+                f"; adoption fences exist for {available}"
+                if available
+                else "; no adoption fences at all"
+            )
+            + ". Pass --repo <name>, or add the repo's Step 6b step-1 block to the runbook first.",
+            file=sys.stderr,
+        )
+        return 1
     if len(candidates) != 1:
         print(
-            f"REFUSED: expected exactly 1 adoption candidate, found {len(candidates)}. "
-            "Extracting the wrong fence would import a non-inert adoption or fail in step 2.",
+            f"REFUSED: expected exactly 1 adoption candidate for {args.repo}, found "
+            f"{len(candidates)}. Extracting the wrong fence would import a non-inert adoption "
+            "or fail in step 2.",
             file=sys.stderr,
         )
         return 1
 
     body = candidates[0].rstrip() + "\n"
-    problems = vet(body)
+    problems = vet(body, args.repo)
     if problems:
         print("REFUSED: the selected block is not a safe adoption:", file=sys.stderr)
         for p in problems:
             print(f"  - {p}", file=sys.stderr)
         return 1
 
-    print(f"OK: {len(body.splitlines())} lines, 1 resource, 0 rule blocks, for_each present")
+    print(
+        f"OK: {len(body.splitlines())} lines, 1 resource, 0 rule blocks, for_each names {args.repo}"
+    )
     out = pathlib.Path(args.out)
     if args.check:
         print(f"--check: nothing written (would write {out})")
@@ -128,6 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     if out.exists():
         print(f"REFUSED: {out} already exists; refusing to overwrite silently", file=sys.stderr)
         return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(body, encoding="utf-8")
     print(f"wrote {out}")
     # The artifact this tool produces is a `*.tf` file, and `apply.yml` triggers on `*.tf`. Committing
@@ -137,12 +207,17 @@ def main(argv: list[str] | None = None) -> int:
     # holds, but the merge is already the act. Say it out loud instead of relying on the reader to
     # have read step 1's warning paragraph.
     print(
-        "WARNING: rulesets.tf is an apply-trigger path (*.tf). Import it (step 2) BEFORE committing, "
+        f"WARNING: {out} is an apply-trigger path (*.tf). Import it (step 2) BEFORE committing, "
         "or delete it: a declared-but-unimported ruleset plans a create beside the live one (D-46)."
     )
+    # Deliberately a placeholder, not a literal id (D-94): the previous version printed
+    # 'jolarca-consent:24087580' unconditionally, so adopting any other repository produced a
+    # confident, specific, WRONG import command.
     print(
-        "next: terraform import -input=false "
-        "'github_repository_ruleset.main[\"jolarca-consent\"]' 'jolarca-consent:24087580'"
+        "next: discover the ruleset id, then import --\n"
+        f"      gh api repos/jolarca-dev/{args.repo}/rulesets --jq '.[] | \"\\(.id)\\t\\(.name)\"'\n"
+        f"      terraform import -input=false "
+        f"'{RESOURCE}.main[\"{args.repo}\"]' '{args.repo}:<ruleset-id>'"
     )
     return 0
 

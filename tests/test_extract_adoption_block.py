@@ -184,3 +184,95 @@ def test_each_rule_shape_is_treated_as_mutation(rule: str) -> None:
     )
     assert injected != ADOPTION
     assert ex.select(injected)[1] == []
+
+
+# --- D-94: the generator used to be consent-only. These fixtures keep it multi-repo. -----------
+
+VENDOR_ADOPTION = """```hcl
+# rulesets-vendor.tf — D-46 option A, vendor next (D-93 step 1).
+# Mirrors live ruleset 24138288 measured 2026-10-31; changes NOTHING about what GitHub enforces.
+resource "github_repository_ruleset" "main" {
+  for_each = toset(["jolarca-vendor"])
+
+  repository  = each.value
+  name        = "protect-main"
+  target      = "branch"
+  enforcement = "active"
+
+  rules {
+    deletion                = true
+    non_fast_forward        = true
+    required_linear_history = true
+    # Deliberately absent: the live pull_request rule carries dismissal_restriction and
+    # require_extra_approval_for_unattributed_changes, which provider 6.13.0 cannot send.
+  }
+}
+```"""
+
+
+def test_a_second_repository_can_be_adopted_by_name(tmp_path: pathlib.Path) -> None:
+    """D-94's core defect: the selector matched a literal repo constant, so Step 6b was one-shot."""
+    rb = write_runbook(tmp_path, VENDOR_ADOPTION)
+    out = tmp_path / "rulesets-vendor.tf"
+    assert ex.main(["--runbook", str(rb), "--repo", "jolarca-vendor", "--out", str(out)]) == 0
+    assert 'toset(["jolarca-vendor"])' in out.read_text(encoding="utf-8")
+
+
+def test_the_wrong_repo_is_refused_rather_than_silently_picking_the_only_block(
+    tmp_path: pathlib.Path, capsys
+) -> None:
+    """The dangerous failure is not an error, it is a confident wrong choice: a runbook holding only
+    consent's fence must never produce a file that imports consent while the operator asked for vendor."""
+    rb = write_runbook(tmp_path, ADOPTION)
+    out = tmp_path / "rulesets-vendor.tf"
+    rc = ex.main(["--runbook", str(rb), "--repo", "jolarca-vendor", "--out", str(out)])
+    assert rc == 1
+    assert not out.exists(), "it wrote a block for the wrong repository"
+    err = capsys.readouterr().err
+    assert "jolarca-vendor" in err and "jolarca-consent" in err, err
+
+
+def test_two_adoption_fences_for_two_repos_are_selected_independently(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The old single-candidate guard turned a second repo into an ambiguity. Target filtering is what
+    makes both adoptable without ever guessing."""
+    rb = write_runbook(tmp_path, ADOPTION + "\n\n" + VENDOR_ADOPTION)
+    for repo, marker in (
+        ("jolarca-consent", "D-46 option A, consent first"),
+        ("jolarca-vendor", "vendor next"),
+    ):
+        out = tmp_path / f"out-{repo}.tf"
+        assert ex.main(["--runbook", str(rb), "--repo", repo, "--out", str(out)]) == 0, repo
+        assert marker in out.read_text(encoding="utf-8"), repo
+
+
+def test_two_fences_for_the_same_repo_are_still_refused(tmp_path: pathlib.Path) -> None:
+    """Per-repo selection must not weaken the original guarantee: ambiguity within one repo is fatal."""
+    rb = write_runbook(tmp_path, VENDOR_ADOPTION + "\n\n" + VENDOR_ADOPTION)
+    out = tmp_path / "dup.tf"
+    assert ex.main(["--runbook", str(rb), "--repo", "jolarca-vendor", "--out", str(out)]) == 1
+    assert not out.exists()
+
+
+def test_the_emitted_import_command_carries_no_hardcoded_ruleset_id(
+    tmp_path: pathlib.Path, capsys
+) -> None:
+    """D-94's sharpest edge: the old hint printed 'jolarca-consent:24087580' unconditionally, so for any
+    other repo it produced a specific, plausible, WRONG command. A placeholder plus a discovery command
+    cannot mislead."""
+    rb = write_runbook(tmp_path, VENDOR_ADOPTION)
+    out = tmp_path / "rulesets-vendor.tf"
+    assert ex.main(["--runbook", str(rb), "--repo", "jolarca-vendor", "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "24087580" not in printed, "a literal ruleset id leaked back into the hint"
+    assert "<ruleset-id>" in printed
+    assert "gh api repos/jolarca-dev/jolarca-vendor/rulesets" in printed
+    assert 'github_repository_ruleset.main["jolarca-vendor"]' in printed
+
+
+def test_vet_reports_the_repo_it_was_asked_for_not_a_default_one() -> None:
+    """A refusal that names the wrong repository sends the operator debugging the wrong file."""
+    blocks = ex.fences(VENDOR_ADOPTION)
+    problems = ex.vet(blocks[0] + "\n", "jolarca-consent")
+    assert any("jolarca-consent" in p and "jolarca-vendor" in p for p in problems), problems

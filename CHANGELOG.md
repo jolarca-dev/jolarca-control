@@ -10,6 +10,33 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-10-31 (D-94 closed in code: the adoption generator is no longer consent-only)
+
+- `scripts/extract_adoption_block.py` takes `--repo` (defaulting to the historical target so every
+  existing invocation behaves identically). Selection, `vet()`'s assertions and the refusal messages are
+  derived from the requested repository instead of a hard-coded constant, and the tool now prints which
+  repository each fence targets, so a mismatch is visible instead of silent.
+- **The dangerous line is gone:** the emitted next-step hint used to print
+  `'jolarca-consent:24087580'` unconditionally — for any other repo that is a specific, plausible, WRONG
+  import command. It now prints `'<repo>:<ruleset-id>'` plus the `gh api … /rulesets` call that discovers
+  the real id. A fixture asserts the literal id can never come back.
+- The single-candidate guard survives, narrowed rather than removed: ambiguity **within one repo** is
+  still fatal (fixture), while two repos are now selectable independently — which is what D-93 step (1)
+  needed and what hand-editing generated config would have quietly broken.
+- Wrong-repo requests **refuse with rc=1 and write nothing**, naming the repos that do have fences. The
+  dangerous failure mode was never the error; it was the confident wrong choice.
+- `make adoption-block REPO=jolarca-vendor OUT=rulesets-vendor.tf` is now the documented path.
+- **Proven red before green:** reverting the script to the committed version and keeping the six new
+  fixtures gives `6 failed, 13 passed`; restoring gives 19/19 and 351/351 for the suite. The old 13
+  fixtures were never edited — backward compatibility is asserted, not assumed.
+- Gates, exit codes captured with no intervening pipe: pytest 0, gate-parity 0, findings-register 0,
+  `hash_evidence --check` 0, yamllint 0, terraform fmt/validate 0, ruff check + format 0, mypy 0,
+  shellcheck 0, validate_repos 0, required-context-baseline 0, compliance_check 0, `make -n` 0.
+- Not included, deliberately: vendor's Step 6b fence and the generated file. The fence is a runbook edit
+  and the output is a `*.tf` protection object — that lands in the PR that runs the import, per D-46's
+  own sequencing, with the operator's apply.
+
+
 ### Found — 2026-10-31 (D-94: Step 6b can only ever adopt one repo, and a CHANGELOG line could get consent downgraded)
 
 - D-46 and D-93 both point at Step 6b to fix vendor. **Step 6b cannot run for a second repo.**
