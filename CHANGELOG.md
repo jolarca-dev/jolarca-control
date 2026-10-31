@@ -10,6 +10,33 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Corrected — 2026-10-31 (D-46's deferral premise does not hold for vendor, and there is no provider upgrade to wait for)
+
+- The reason dr/vendor adoption was deferred is that provider 6.13.0 does not model
+  `dismissal_restriction` or `require_extra_approval_for_unattributed_changes`, so a Terraform PUT —
+  `rules` is `max_items = 1`, so an update replaces the whole object — was assumed to reset live
+  protections. Tested rather than repeated:
+  - `terraform providers schema -json` → **0 hits** for both names in `github_repository_ruleset`.
+  - `gh api repos/integrations/terraform-provider-github/releases/latest` → **v6.13.0**, the version
+    already pinned by `~> 6.0`. **There is no newer release to wait for**, so "defer until the provider
+    grows the field" is not a plan, it is a stall.
+  - Consent's own step-4 apply is a natural experiment: the provider never sent
+    `require_extra_approval_for_unattributed_changes` and GitHub **defaulted it to `true`**.
+  - vendor's live ruleset reads `require_extra_approval_for_unattributed_changes: true` and
+    `dismissal_restriction: {enabled: false, allowed_actors: []}` — the field that could be lost is
+    **already off**, and the one that could flip defaults **upward**.
+- And the tightening passes the satisfiability test this register keeps failing: `lint` is recorded
+  **`success` on vendor's `main`**, with a real `ci.yml` behind it. So requiring it cannot produce the
+  D-90/A-01 deadlock.
+- What still needs doing before dr is adopted: the same two measurements on `jolarca-dr` (24136490),
+  whose live values were not re-read in this pass. **Stated as not-yet-known rather than assumed.**
+- A vacuous probe, discarded: fetching the provider's ruleset source by tag returned 172 bytes, so its
+  "0 hits" proves nothing. The schema dump against the actually-pinned binary is the authority — which
+  is the §7 rule about checking that a probe can return a non-zero answer, applied to my own tooling.
+- Register edits: a dated status row on D-46 with re-derive commands, and D-93's remediation step (1)
+  sharpened to `lint` + `strict` with the provider excuse removed.
+
+
 ### Found — 2026-10-31 (D-93: a PCI/GDPR repo merges with zero required checks, the detector says so, nothing enforces it)
 
 - First fleet-wide guard sweep (all 17 repos, live API, not declarations): **`jolarca-vendor`** —
