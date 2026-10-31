@@ -10,6 +10,26 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Corrected — 2026-10-31 (the new window missed too; the retry has now saved the backup twice)
+
+- 09:17 was chosen because the host was measurably awake at that hour — **on a Friday**. Saturday
+  falsified it: zero `CRON` heartbeat entries 08:00–10:59, and the job backfilled at `12:12:45` again.
+  **No configured window has ever fired on time**; every run since install is a session-start catch-up.
+  My reasoning error was generalising one weekday observation into a property of the machine, and it is
+  recorded rather than quietly rewritten.
+- The retry absorbed the same race a second time: `12:12:45` failed → `12:14:45` →
+  `terraform.tfstate.s17.20261031T101447Z.age`, `NRestarts=1`, `Result=success`. The pattern is now
+  understood rather than patched: a backfill fires while the network is still settling, so the first
+  attempt of every catch-up is effectively always lost. `NRestarts>0` with `Result=success` is this
+  control's **normal healthy state** — the opposite of what I implied when I wrote yesterday that a good
+  morning would show `NRestarts=0`.
+- Chasing the hour is the wrong lever. A true time-based guarantee on a sleeping single host needs
+  `WakeSystem=true` on **system-level** units, or an always-on second machine; neither is proportionate
+  for a control plane whose state last changed on 2026-10-27 and which is copied on every login.
+- The timer file's comment and AGENTS.md §8 now carry the falsification instead of the claim, and the
+  stale-count confession went from four to five.
+
+
 ### Changed — 2026-10-30 (the backup window moved to a time the host is actually awake)
 
 - `OnCalendar` was `*-*-* 04:17:00` and was reached on **neither** night — zero `CRON` heartbeat entries
