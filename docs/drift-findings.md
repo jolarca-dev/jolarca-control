@@ -50,6 +50,15 @@ Severity: **S0** stop-work · **S1** fix before first apply · **S2** fix soon �
 ## S1 — fix before first apply
 
 ### D-01 · Four repositories are PUBLIC but declared private — **BLOCKING DECISION**
+
+> **Status 2026-10-31 — the decision is no longer pending; the rows below are history.** Measured:
+> `grep -h '^visibility:' repos/*.yml` returns **16 × `public` and zero `private`**, and
+> `gh api orgs/jolarca-dev/repos` reports `PUBLIC` for every repository with `forks_count: 0` on all of
+> them. The rows underneath still assert "This repo declares `visibility: private` for all four — the
+> intent of record" and ask the owner to choose (a) or (b); that choice was overtaken when GitHub moved
+> the fleet public and is covered by the accepted `fleet-public-2026-10` exception, which carries its own
+> expiry. What remains genuinely open is not a decision but a **risk acceptance with a deadline** — the
+> PCI-DSS public-visibility acceptance — and the zero-fork measurement bounds its blast radius.
 | | |
 |---|---|
 | Evidence | Live API 2026-09-25 (re-verified): **all six** repositories in `jolarca-dev` return `visibility: public` / `private: false` — `jolarca`, `jolarca-compliance`, `jolarca-data`, `jolarca-infrastructure`, `jolarca-legal`, `.github`. Intent of record — `jolarca-infrastructure/terraform/modules/github-org/variables.tf` marks the four above `visibility = "private"`, and its `main.tf` states *"The infrastructure, compliance, legal, and data repos in this fleet are private."* Terraform state (Aug 31) also records `private: true` for all four. **Dated baseline:** change record `JOL-ORGTRANSFER-20260902-01` captured pre-transfer visibility on 2026-09-02 as `jolarca` public, `jolarca-infrastructure` public, `jolarca-compliance` public, `jolarca-legal` public, **`jolarca-data` private**. |
@@ -304,6 +313,15 @@ re-verified against the live GitHub API on 2026-09-26, read-only. Numbering
 continues from D-32.
 
 ### D-33 · Branch protection is unenforceable on every private repo — only 2 of 16 repositories are guarded — **S1, BLOCKING, OPEN**
+
+> **Status 2026-10-31 — the headline number is stale by an order of magnitude.** Measured:
+> `gh api repos/jolarca-dev/<r>/branches/main --jq .protected` returns **true for all 17 repositories**;
+> `terraform state list` holds **14** `github_branch_protection` addresses plus **1**
+> `github_repository_ruleset` (consent), and 3 repos carry rulesets. "Only 2 of 16 are guarded" was true
+> when filed. What survives is narrower and is tracked as D-46: **`jolarca-dr` and `jolarca-vendor` are
+> protected by rulesets that no configuration declares**, and vendor's status-checks rule carries an
+> **empty** context list — so "guarded" has to mean "guarded with the declared checks", not
+> `.protected = true`. §8 states the same warning; read the two together.
 | | |
 |---|---|
 | Evidence — plan tier | `gh api orgs/jolarca-dev -q .plan.name` → **`free`**. `GET /repos/jolarca-dev/{repo}/branches/main/protection` returns **HTTP 403 `{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature."}`** for all seven private repositories: `jolarca-infrastructure`, `jolarca-compliance`, `jolarca-legal`, `jolarca-data`, `jolarca-control`, `jolarca-security`, `jolarca-identity`. The 403 is a plan-tier refusal, not a token-scope failure — the same token reads those repositories without error. |
@@ -897,6 +915,17 @@ class this register has been corrected for before.
 | Related | D-20 (code-owner reviews inert without teams; its correction (b) already flagged a declared-vs-live conflict on this attribute), D-08 (out-of-band protection history), D-22 (a gate that cannot see the class), D-33 (Free-plan protection availability), D-55. |
 
 ### D-55 · The D-02 off-host state backup does not run against the cloud backend — the authoritative state has exactly one copy — **S0, OPEN**
+
+> **Status 2026-10-31 — the tail moved as well: there is a schedule, on a second disk, with a retry
+> proven twice in the field.** The 2026-10-17 note below still says "Still open: no schedule, and
+> `/opt/jolarca/backups/` plus the age identity are on the same host". Both halves changed: the
+> destination is now `/mnt/jol-backup/jol-state-backup` — device **2065**, `sdb1`, a separate physical
+> disk, and the script measures that rather than trusting the path — the schedule is committed systemd
+> units with `Persistent=true`, and the bounded retry has absorbed the same resume-time network race
+> twice (2026-10-30 21:22:42→21:24:43, 2026-10-31 12:12:45→12:14:45). **What D-55 still correctly
+> blocks:** the age identity remains on the same unencrypted host as the working copy (D-92), and one
+> host with two disks is not a second site. So D-02 stays PARTIALLY FIXED / S0 and the standing
+> instruction — do not delete an account, organization or workspace — is unchanged.
 > **Status at salvage, 2026-10-17 — the headline is fixed, the tail is not.** `scripts/state_backup.sh`
 > was rewritten on 2026-10-15 to export the **cloud** state (`include=current-state-version` →
 > `hosted-state-download-url`, rejecting the sanitized `hosted-json-state-download-url`), encrypt with
@@ -913,9 +942,20 @@ class this register has been corrected for before.
 | Why the gate is silent | The script has no negative control for the cloud case, so nothing distinguishes "backed up" from "refused". It exits 1 honestly when run — but nothing runs it, and no CI job asserts a fresh entry in the log it never creates. This is the D-22/D-50 class again: a control present in configuration, never exercised. |
 | Required | Make the backup cloud-aware (`terraform state pull` when `.terraform/terraform.tfstate` declares `"type": "cloud"`, instead of reading the local file), write and verify an `age`-encrypted copy to a real `BACKUP_DEST`, create `docs/backup-log.tsv`, and add a fixture that must fail when the state source is empty or absent. Then re-read D-02 and close it only against that evidence. `scripts/**` is high blast radius (§4) and the destination is a custody decision — owner-executed. |
 | Consequence for other work | Until this lands, **no account, organization or workspace deletion is permissible**, and any apply that could replace state should be treated as unrecoverable-by-design. This is the finding that makes the step-0 backup in `docs/state-migration-runbook.md` a prerequisite rather than a formality. |
-| Related | D-02 (partially fixed: remote backend landed, backup did not), D-13 (legacy root drained — the remaining `.backup` files are not a second authority), ADR-0006 §7–§8, D-54. |
+| Related | D-02 (remote backend and the encrypted, decrypt-proven export have both landed; the second SITE has not), D-13 (legacy root drained — the remaining `.backup` files are not a second authority), ADR-0006 §7–§8, D-54. |
 
 ### D-56 · The PR-time Terraform plan gate has never executed — `init -backend=false` against a `cloud {}` root, and every green run predates the migration gate — **S1, FIXED in #67, needs live proof**
+
+> **Status 2026-10-31 — the live proof is negative, and that is what keeps applies inert.**
+> `gh run list --workflow plan.yml --limit 3` shows `failure` on 2026-10-27, 2026-10-27 and 2026-10-28,
+> and run 40581973366 (#107) still dies at Terraform Init with `Failed to read organization
+> "jolarca-dev" at host app.terraform.io` / `unauthorized`. The PR-time plan gate has therefore **still
+> never executed** post-migration; "FIXED in #67" describes the `-backend=false` half (D-64) only.
+> Consequence an agent must hold: the CI apply path cannot currently reach HCP at all, so no merge can
+> apply — which is a **broken credential, not a control**. Repairing it is deliberately sequenced LAST:
+> the plan measured today reads `0 to add, 2 to change, 0 to destroy`, not the `0 to change` that
+> `policy/compliance-gates.yml` `open_blocking` requires, so fixing the token first would convert
+> "nothing applies" into an unattended `-auto-approve` against a 49-resource state.
 > **Status at salvage, 2026-10-17 — this id now means the CI credential, and only that.** The
 > `-backend=false` half was root-caused and fixed (recorded as **D-64**, landed in #69); `terraform
 > init` succeeds in CI. What remains, and what every citation of D-56 refers to today: `Terraform Plan`

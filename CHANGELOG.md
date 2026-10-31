@@ -10,6 +10,46 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Corrected — 2026-10-31 (four register headings contradicted measured state; all four now carry dated status)
+
+A sweep of every S0/S1 heading against its own dated rows found four places where the file's headline
+disagreed with what is measurable today. Each is corrected by **insertion, not deletion**, following the
+`Status at salvage` precedent, so the original claim stays greppable:
+
+- **D-01** (`BLOCKING DECISION`) — the rows still say "this repo declares `visibility: private` for all
+  four". Measured: `repos/*.yml` declares **`public` 16 times and `private` zero times**, live is
+  `PUBLIC` everywhere, `forks_count: 0` on all. The decision was overtaken by events and is now an
+  expiring risk acceptance (`fleet-public-2026-10`), not a pending choice.
+- **D-33** (`only 2 of 16 repositories are guarded`) — measured `.protected = true` on **all 17**, with
+  14 branch-protection addresses and 1 ruleset address in state. The surviving problem is narrower and
+  already tracked as D-46: dr and vendor are guarded by rulesets no configuration declares, and vendor's
+  status-checks rule lists **zero** contexts. "Guarded" must mean "guarded with the declared checks".
+- **D-55** (`S0, OPEN`, and its `Related` line said the backup "did not" land) — the schedule exists, on
+  device 2065 (`sdb1`), with a retry proven twice in the field. What D-55 still correctly blocks is
+  stated: key custody co-located on an unencrypted host, no second site, no account/org/workspace
+  deletion. D-02 stays PARTIALLY FIXED / S0.
+- **D-56** (`FIXED in #67, needs live proof`) — the proof is now **negative**: `plan.yml` failed on
+  2026-10-27, 2026-10-27 and 2026-10-28, and run 40581973366 still dies at `Terraform Init` with
+  `unauthorized` reading the org. The PR-time plan gate has never executed post-migration; the CI apply
+  path cannot reach HCP, which is a broken credential and not a control — and the reason to repair it
+  **last**, while the plan still reads `2 to change`.
+
+Also checked and clean: **no exception in `policy/compliance-gates.yml` has lapsed** (nearest is D-58,
+16 days), and the consent dependency-review exception is correctly absent from the active list because
+#107 is unmerged — it is not in force, and neither is the trim. (The guard flagged my first draft of this
+very sentence for citing that exception by id before its register heading exists on `main`; the
+required context `Validate Repo Allow-List` fails on a dangling citation, as it did on #108, so the
+reference is written in prose instead of by id.)
+
+Method note, because it bit me three times today: `docs/drift-findings.md` is **not in ascending id
+order** (first headings are D-02, D-13, D-01, D-03…), so `awk '/^### D-01 /,/^### D-02 /'` silently runs
+past the section and returns another finding's rows. Two of my first-pass "stale" conclusions came from
+that and were discarded; the four above come from block-splitting on `^### D-` plus live API reads.
+
+Docs only: `docs/drift-findings.md`, `CHANGELOG.md`. No apply trigger path, no state change, no
+credential touched. Rollback: revert one commit.
+
+
 ### Corrected — 2026-10-31 (the new window missed too; the retry has now saved the backup twice)
 
 - 09:17 was chosen because the host was measurably awake at that hour — **on a Friday**. Saturday
