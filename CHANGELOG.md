@@ -10,6 +10,31 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Found — 2026-10-31 (D-94: Step 6b can only ever adopt one repo, and a CHANGELOG line could get consent downgraded)
+
+- D-46 and D-93 both point at Step 6b to fix vendor. **Step 6b cannot run for a second repo.**
+  `scripts/extract_adoption_block.py` hard-codes consent in four places — `_REPO_KEY`, two `vet()`
+  messages, and the printed `terraform import … 'jolarca-consent:24087580'` hint, which for vendor would
+  emit a **wrong command that looks right**.
+- The single-candidate guard was measured, not assumed: appending a vendor stage-1 fence to a **copy** of
+  the runbook gives `adoption candidates: 2` → **rc=1, REFUSED, no file written**; the real runbook gives
+  1 → rc=0. So "just add the block" hard-stops by design, and that design is the limitation.
+- **A stale line in the audit trail with real teeth:** `CHANGELOG.md:569` says `rulesets.tf` is
+  "byte-identical to the block `make adoption-block` extracts from Step 6b". True while the file held the
+  stage-1 inert mirror; false now that it is stage 2 (pull_request + seven required checks). A reader
+  trusting it would regenerate and **downgrade consent's protection to a ruleset with no rules** — caught
+  only by the pre-apply brake. Corrected by a dated entry, not by rewriting history.
+- Work order is written into the row: parameterise the extractor by repo, keep `vet()`'s semantics but
+  assert them against the target, add four fixtures (including the two-candidate refusal, which is true
+  in code and untested today), and only then add vendor's fence. Cost: zero — a script and its tests.
+- Also recorded, so the next session does not re-derive it: vendor's full mirror-live rule set, and that
+  `lint` is observed `success` on vendor's `main`, so stage 2 clears D-90.
+- Three of my own inferences were disproved by testing during this investigation, and are noted rather
+  than quietly dropped: `make adoption-block` is **not** broken (I misread `select()`'s return shape);
+  a source-file probe returning 172 bytes was **vacuous**; and a `sim_rc=0` was again `tail`'s status,
+  not the extractor's — the third time today that a piped exit code nearly became a finding.
+
+
 ### Corrected — 2026-10-31 (D-46's deferral premise does not hold for vendor, and there is no provider upgrade to wait for)
 
 - The reason dr/vendor adoption was deferred is that provider 6.13.0 does not model
