@@ -207,11 +207,12 @@ NRestarts=1 with Result=success)"
 # because its own comment mentions `pull_request`, and an awk variant emitted zero lines which
 # `terraform fmt -check` then reported as clean. So this extracts by BLOCK syntax, asserts the result
 # is inert, and refuses rather than write something an operator will import.
-#   make adoption-block                 # writes rulesets.tf (refuses if it already exists)
+#   make adoption-block                 # writes rulesets.tf for jolarca-consent (refuses to overwrite)
+#   make adoption-block REPO=jolarca-vendor OUT=rulesets-vendor.tf   # D-94: any ruleset-only repo
 #   make adoption-block OUT=/tmp/preview.tf
 #   0 one inert adoption · 1 refused (ambiguous, contaminated, or would overwrite) · 2 cannot verify
 adoption-block: ## Extract Step 6b's inert adoption block for terraform import
-	python3 scripts/extract_adoption_block.py --out $(if $(OUT),$(OUT),rulesets.tf)
+	python3 scripts/extract_adoption_block.py --repo $(if $(REPO),$(REPO),jolarca-consent) --out $(if $(OUT),$(OUT),rulesets.tf)
 
 # Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
 # STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target
