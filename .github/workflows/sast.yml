@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
       # Pinned to the exact version verified locally 2026-10-08 (0 findings
       # across scripts/ + tests/). Floating versions in a security gate let
       # a rule change silently break or silently pass; a human reviews this
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
       - name: Install bandit (pinned)
         run: pip install bandit==1.9.4
       # `-ll -ii`: fail on MEDIUM severity + MEDIUM confidence or higher.

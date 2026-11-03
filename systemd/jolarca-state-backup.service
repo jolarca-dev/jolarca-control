@@ -1,0 +1,36 @@
+[Unit]
+Description=jolarca-control Terraform state backup (age-encrypted, decrypt-verified)
+Documentation=file:///opt/jolarca/repos/jolarca-control/AGENTS.md
+# Bounded retries, and deliberately in [Unit]: StartLimit* are [Unit] directives, and placed under
+# [Service] systemd warns and silently ignores them -- a limit that does not apply is worse than none,
+# because it reads like a guard. 10 attempts per hour distinguishes "transient" from "broken".
+StartLimitIntervalSec=1h
+StartLimitBurst=10
+# The repository is the source of truth for this file: install it with
+#   make backup-timer-install
+# rather than editing the copy under ~/.config/systemd/user. Editing the installed
+# copy creates exactly the drift this repository exists to prevent -- a control whose
+# only definition lives on one partition of one machine, described by nothing tracked.
+# Measured 2026-10-28: before this file was committed, zero tracked files mentioned
+# the schedule, and the live unit sat on /home (device 66319) while the repository is
+# on 64513 and the backup destination on 2065.
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/jolarca/repos/jolarca-control
+# Destination is a second physical disk (sdb1, device 2065), not a second directory on
+# the volume holding the working copy (device 64513). scripts/state_backup.sh compares
+# device ids and refuses to write anywhere else when the flag below is set.
+Environment=BACKUP_DEST=/mnt/jol-backup/jol-state-backup
+Environment=STATE_BACKUP_REQUIRE_OFF_HOST=1
+ExecStart=/usr/bin/env bash scripts/state_backup.sh
+# Retry a failed attempt. Measured 2026-10-29: the host was asleep across 04:17, Persistent=true fired
+# this unit at 12:16:50 -- the instant of resume, while NetworkManager was still bringing the link up
+# (8 connect/up events in that window) -- and the fetch failed with exit 2, correctly writing nothing
+# and claiming nothing. The same unit at 22:12 exited 0 and archived serial 17, so the configuration
+# was never the problem: a scheduler that fires exactly once at the moment the network returns is a
+# scheduler that loses nights.
+Restart=on-failure
+RestartSec=2min
+# The script already exits 1 on a refusal and 2 on "could not verify" (AGENTS.md §3),
+# so a single failed attempt is a failed unit -- visible in the journal, not swallowed.

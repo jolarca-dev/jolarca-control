@@ -1,0 +1,30 @@
+# Bounds mise's config discovery to this repository. Closes ADR-0010 M-01.
+#
+# WHY THIS FILE AND NOT [settings] IN mise.toml
+# mise reads .miserc.toml BEFORE any mise.toml. Setting ceiling_paths under
+# [settings] in mise.toml has no effect on config discovery, which is precisely
+# the mistake a reader of mise.toml alone would make.
+#
+# WHY THE PARENT, NOT THE REPO ROOT
+# The ceiling directory is not searched itself: with a ceiling of /home/user,
+# /home/user/projects/app/mise.toml loads but /home/user/mise.toml does not.
+# config_root is the directory holding this file, so dirname(config_root) is the
+# repo's parent. Naming the repo root would stop mise loading this repository's
+# own mise.toml -- a bound that passes by disabling the thing it guards.
+#
+# WHY THIS FAILS OPEN, AND WHAT ACTUALLY ENFORCES IT
+# If the template does not render, mise uses the file's raw, unrendered content as
+# a literal path. That path matches nothing, discovery stays unbounded, and no
+# warning is printed because mise reads this before logging starts. So this file
+# is a declaration, not a control. The `mise config scope guard` job in
+# .github/workflows/mise-toolchain.yml is the control: it plants a decoy config in
+# the parent directory and fails the run if mise loads it.
+#
+# WHAT IT CANNOT BOUND
+# A project .miserc.toml cannot ignore global or system config -- documented, not
+# inferred from this repo's silence. So ~/.config/mise/config.toml and /etc/mise
+# still merge into every project here, and env/get_env() are empty in a project
+# miserc so this file cannot even read the environment to compensate. That is
+# ADR-0010 M-04: the remaining half of the bound is a machine baseline, and it is
+# not enforced by anything in this repository.
+ceiling_paths = ["{{ config_root | dirname }}"]

@@ -28,6 +28,25 @@ custodians; no single person may hold, use, or rotate it alone. See deviation 3
 | AGE identity for state backup encryption | 1 operator | operator workstation `~/.config/age/state-backup-key.txt` (mode 600) | on personnel change or compromise | regenerate keypair with `age-keygen`, update `.state-backup-pubkey.txt` and `AGE_SECRET_KEY_CI` repo secret |
 | Local Terraform state (`terraform.tfstate`) | 1 operator host | operator workstation only | n/a — see D-02 | restore from the off-host verified backup taken in `../state-migration-runbook.md` step 0 |
 
+### Expiry register (machine-read by `scripts/check_secret_inventory.sh`)
+
+Added 2026-10-20. This table is the single `expires`-bearing block the gate parses;
+the custody table above stays prose-stable. `unknown` fails the gate on purpose —
+verify, don't pad.
+
+| Credential | Expires | Rotation | Last verified | Notes |
+|---|---|---|---|---|
+| GitHub PAT — TF read-only (fine-grained `jolarca-dev`) | 2027-01-08 | 90d | 2026-10-20 | inferred backing of `TF_GITHUB_TOKEN_READONLY` — Actions secrets are write-only, confirm in a plan run |
+| GitHub PAT — TF write (fine-grained `jolarca-control-tf-write-2026-10-17`) | 2027-01-15 | 90d | 2026-10-20 | inferred backing of `TF_GITHUB_TOKEN` (production env); **Never used** since mint — revoke by 2026-11-15 if no apply exercises it |
+| `TFC_TOKEN` (HCP Terraform) | unknown | manual | 2026-11-03 | **Expiry is unreadable from here, measured not assumed.** No read path available returns it: `~/.terraformrc`'s own CLI credential authenticates (`GET /api/v2/organizations` → 200 `[jolarca-dev]`, `/api/v2/account/details` → 200 `journey4oflife`), while `…/organization-tokens`, `…/organization-token`, `…/teams/owners/team-tokens` and `…/state-versions` all answer **HTML 404** — a route that resolves nothing, which is not evidence that no org token exists. The one place the date lives is the HCP UI record of the token that was minted for this secret (Actions secrets are write-only, so the stored value cannot be identified by kind either: org, team and user tokens are all possible). `check_secret_inventory.sh` therefore exits 1 by design, in the advisory `Deploy Gates` job, until a real date replaces `unknown`. See D-82 and `../runbooks/github-token-rotation.md`.See D-82 and `../runbooks/github-token-rotation.md`. **Re-verified 2026-11-03, still no read path:** the stored secret is untouched — `gh api repos/jolarca-dev/jolarca-control/actions/secrets` returns `created=2026-10-10T16:14:14Z updated_at=2026-10-19T16:26:30Z` — so `unknown` is now 15 days stale rather than newly recorded, and the HCP workspace has still produced **zero** Actions-originated runs (`GET /api/v2/workspaces/ws-w6NSnTXXmYgh78Su/runs` → 200, three runs, newest 2026-10-12, all `source=terraform+cloud`). The operator's CLI credential answers `/api/v2/account/details` with a username, which is what a **user** token does; the CI secret's kind remains unidentifiable because Actions secrets are write-only. `resource-count` moved 48 → **49**, consistent with the 2026-10-27 ruleset import, not with a credential event. |
+| Operator GitHub account (`JourneyOfLife`) | never | on-compromise | 2026-10-19 | org 2FA-required badge verified live on all three orgs 2026-10-19 |
+| AGE identity for state backup | never | on-compromise | 2026-10-17 | `~/.config/age/state-backup-key.txt`, mode 600 |
+
+> **Deviation 1 status hint (2026-10-20):** the two fine-grained PATs above were minted
+> 2026-10-17, which *suggests* the read/write split has been performed since this note
+> was written. Deviation 1 stays open until a plan/apply run proves each secret resolves
+> to its own token (the write token must be unreachable from a PR-triggered job).
+
 ### Why the operator account is the real crown jewel
 
 The write PAT can reconfigure or destroy every repository in a PCI-DSS-scoped

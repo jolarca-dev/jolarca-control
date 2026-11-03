@@ -476,7 +476,14 @@ def _vendor_ruleset_detail() -> dict[str, Any]:
 
 
 def _dr_ruleset_detail() -> dict[str, Any]:
-    """Same shape, but this ruleset DOES require two contexts."""
+    """Same shape, but this ruleset DOES require two contexts.
+
+    Fidelity correction (measured 2026-10-27 via `gh api repos/jolarca-dev/jolarca-dr/rulesets
+    /24136490`): the real ruleset carries a `pull_request` rule, and this fixture omitted it while
+    `_vendor_ruleset_detail()` included one. A fixture that claims to transcribe dr's real state has
+    to match dr's real state, or a new assertion about that rule would be tuned against a shape that
+    does not exist. The live payload also has `required_linear_history`, which the fixture omitted.
+    """
     return {
         "name": "protect-main",
         "enforcement": "active",
@@ -484,6 +491,17 @@ def _dr_ruleset_detail() -> dict[str, Any]:
         "rules": [
             {"type": "deletion"},
             {"type": "non_fast_forward"},
+            {"type": "required_linear_history"},
+            {
+                "type": "pull_request",
+                "parameters": {
+                    "required_approving_review_count": 0,
+                    "require_code_owner_review": False,
+                    "dismiss_stale_reviews_on_push": True,
+                    "required_review_thread_resolution": True,
+                    "allowed_merge_methods": ["merge", "squash", "rebase"],
+                },
+            },
             {
                 "type": "required_status_checks",
                 "parameters": {
@@ -743,3 +761,161 @@ def test_include_glob_matching_the_branch_still_counts(monkeypatch: Any) -> None
     assert not dd.ruleset_covers_branch(
         {"conditions": {"ref_name": {"exclude": ["main"], "include": ["~DEFAULT_BRANCH"]}}}, "main"
     ), "an explicit exclusion must win over inclusion"
+
+
+# ── The `pull_request` rule: D-84 residual (2), the absence that makes main pushable ──
+#
+# Measured 2026-10-27 on all three ruleset-only repos. consent (24087580) carries
+# deletion + non_fast_forward + required_linear_history and NO pull_request rule, so nothing
+# requires a PR and main is directly pushable -- the mechanism behind the historical no-PR commit.
+# dr (24136490) and vendor (24138288) each DO carry one. The gate read required_status_checks,
+# non_fast_forward and deletion, and asserted nothing about this rule type.
+
+
+def _ruleset_with(rule_types: list[dict[str, Any]], name: str = "protect-main") -> dict[str, Any]:
+    return {
+        "name": name,
+        "enforcement": "active",
+        "bypass_actors": [],
+        "conditions": {"ref_name": {"exclude": [], "include": ["~DEFAULT_BRANCH"]}},
+        "rules": rule_types,
+    }
+
+
+def _patch_ruleset(monkeypatch: Any, detail: dict[str, Any], ruleset_id: int = 99) -> None:
+    monkeypatch.setattr(
+        dd,
+        "try_get",
+        _mock_try_get(
+            {
+                f"repos/{dd.ORG}/r/branches/main": (200, {"protected": True}),
+                f"repos/{dd.ORG}/r/branches/main/protection": (
+                    404,
+                    {"message": "Branch not protected"},
+                ),
+                f"repos/{dd.ORG}/r/rulesets": (
+                    200,
+                    [{"id": ruleset_id, "name": detail["name"], "enforcement": "active"}],
+                ),
+                f"repos/{dd.ORG}/r/rulesets/{ruleset_id}": (200, detail),
+            }
+        ),
+    )
+
+
+def test_ruleset_with_enough_contexts_but_no_pull_request_rule_is_a_finding(
+    monkeypatch: Any,
+) -> None:
+    """The coupling case that made a PR-rule assertion inert if left unfixed.
+
+    Two required contexts satisfies `minimum_required_contexts`, so this repo used to land in
+    `ruleset_protected` and every note computed for it was dropped. A ruleset can therefore pass the
+    context floor while requiring no pull request at all -- which is the exposure, not the count.
+    """
+    _patch_ruleset(
+        monkeypatch,
+        _ruleset_with(
+            [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "strict_required_status_checks_policy": True,
+                        "required_status_checks": [{"context": "lint"}, {"context": "build"}],
+                    },
+                },
+            ]
+        ),
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    issues = " ".join(" ".join(i["issues"]) for i in bp["weakened"])
+    assert "pull_request" in issues, f"a ruleset requiring no PR must be named: {bp}"
+    assert bp["ruleset_protected"] == [], "must not be filed as protected while pushable directly"
+    assert unverified == []
+
+
+def test_consent_shaped_ruleset_names_the_missing_pull_request_rule(
+    monkeypatch: Any,
+) -> None:
+    """consent's real shape: the context floor already reported it, but for the wrong reason.
+
+    The recorded defect is that `main` is directly pushable. Reporting only 'requires 0 status
+    checks' leaves the remedy looking like adding a context, when the missing control is the PR rule.
+    """
+    _patch_ruleset(
+        monkeypatch,
+        _ruleset_with(
+            [
+                {"type": "deletion"},
+                {"type": "non_fast_forward"},
+                {"type": "required_linear_history"},
+            ]
+        ),
+        ruleset_id=24087580,
+    )
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert len(bp["weakened"]) == 1
+    issues = " ".join(bp["weakened"][0]["issues"])
+    assert "no required_status_checks rule" in issues, issues
+    assert "no pull_request rule" in issues, issues
+    assert unverified == []
+
+
+def test_ruleset_observations_are_surfaced_without_becoming_drift(
+    monkeypatch: Any,
+) -> None:
+    """dr's real shape: PR rule present, contexts satisfied, but `strict` is off.
+
+    `policy/repo-defaults.yml` declares no `strict` key and the legacy comparison path never checks
+    it, so calling this a finding would invent a fleet baseline and contradict
+    `test_protection_404_with_ruleset_requiring_contexts_is_not_drift`. It must be *visible* without
+    becoming a refusal -- computed-and-discarded is the defect; the verdict is a policy decision.
+    """
+    _patch_ruleset(monkeypatch, _dr_ruleset_detail(), ruleset_id=24136490)
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert bp["weakened"] == [], "strict=false is not a declared-baseline violation"
+    assert "r" in bp["ruleset_protected"]
+    observed = " ".join(str(o) for o in bp["ruleset_observations"])
+    assert "strict_required_status_checks_policy=false" in observed, bp["ruleset_observations"]
+    assert unverified == []
+
+
+def test_ruleset_attribute_limits_text_matches_what_the_code_now_asserts() -> None:
+    """The disclaimer must not claim an inability the code has since overcome.
+
+    It used to say review attributes are "not expressible by this API". Measured 2026-10-27, the
+    ruleset detail endpoint returns `required_approving_review_count`, `require_code_owner_review`
+    and `dismiss_stale_reviews_on_push` for dr and vendor -- so the claim was false, and a false
+    limitation note is how a gap gets accepted as a boundary (AGENTS.md section 6).
+    """
+    text = dd.RULESET_ATTRIBUTE_LIMITS
+    assert "pull_request" in text, text
+    assert "not expressible by this API" not in text, text
+
+
+def test_tag_targeted_ruleset_is_not_branch_coverage(monkeypatch: Any) -> None:
+    """A ruleset with `target: tag` guards refs/heads/* nothing, and must not be read as if it did.
+
+    Found while reviewing the change that added the `pull_request` assertion, which widened the
+    blast radius of this path: `ruleset_covers_branch` falls through to `return True` whenever
+    `conditions.ref_name` is absent, and a tag ruleset expresses its scope in `tag_name` instead.
+    Counting one as covering `main` reports the branch protected by the very object that does not
+    protect it -- the false clean the function was written to prevent, reached by a different door.
+    """
+    tag_ruleset = {
+        "name": "protect-release-tags",
+        "enforcement": "active",
+        "target": "tag",
+        "conditions": {"tag_name": {"exclude": [], "include": ["v*"]}},
+        "rules": [{"type": "deletion"}],
+    }
+    assert not dd.ruleset_covers_branch(tag_ruleset, "main"), (
+        "a tag ruleset does not cover a branch"
+    )
+
+    _patch_ruleset(monkeypatch, tag_ruleset, ruleset_id=777)
+    bp, unverified = dd.check_branch_protection(["r"], _BASELINE)
+    assert "r" in bp["missing"], "only a tag ruleset means main is unguarded"
+    assert bp["weakened"] == [], "it must not be credited with ruleset protection it does not exert"
+    assert unverified == []

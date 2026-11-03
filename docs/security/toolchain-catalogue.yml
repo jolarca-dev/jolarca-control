@@ -1,0 +1,178 @@
+# Approved toolchain catalogue — jolarca-dev marketplace fleet
+#
+# ADR-0010 M-06: per-repository mise configuration is correct, but it means one
+# upstream CVE is seventeen pull requests and makes divergence possible by omission.
+# Nothing in this repository could previously answer "what version of Python is
+# approved, and which of the 17 disagree". This file is that single answer, and
+# scripts/check_toolchain_baseline.py is the check that reads it.
+#
+# WHY HERE AND NOT IN policy/
+# policy/** is one of apply.yml's on.push.paths, so a merge touching it arms a real
+# `terraform apply -auto-approve tfplan` behind only the 30-minute wait timer and
+# check_plan_safety.sh. A catalogue is configuration data, not infrastructure, and it
+# must not be able to fire production. docs/security/** is inside
+# scripts/hash_evidence.sh's EVIDENCE_DIRS, so it is tamper-evident through
+# docs/evidence-registry.csv, and it is outside every trigger path, so it is inert.
+# That is the same placement argument ADR-0010 §References records for the mise
+# bootstrap digest.
+#
+# WHAT THIS FILE IS NOT
+# It is not a lockfile and it does not pin what any repository actually installs.
+# Each repository's mise.lock does that. This is the approval record: what an
+# operator is allowed to put in a mise.toml, who said so, and when that decision has
+# to be revisited. An entry whose review_due has passed is a finding, not a
+# suggestion.
+
+version: 1
+owner: jolarca-control
+scope: jolarca-dev marketplace fleet only (ADR-0004; the mission platform is not governed here)
+
+# ISO 27001 A.5.20/A.8.19 and SOC 2 CC8.1 both want a named human and a date on an
+# approved supply source, not a directory listing.
+reviewed_by: JourneyOfLife (organisation owner, sole operator)
+reviewed_on: "2026-11-03"
+review_due: "2027-05-03"
+
+# Supported platforms. Declared before any entry claims portability, because
+# ADR-0010 M-05 is exactly this: every generated lock covers linux-x64 only, and a
+# linux-x64 artifact cannot be assumed usable on Apple Silicon.
+supported_platforms:
+  - linux-x64
+
+# The mise executable itself is the trust root and is therefore central, not
+# per-repository (ADR-0010 Decision table). Three distinct objects, three distinct
+# pins: the action commit, the mise release, and the extracted binary digest.
+mise:
+  version: "2026.10.25"
+  action: jdx/mise-action
+  action_commit: 5228313ee0372e111a38da051671ca30fc5a96db
+  binary_sha256:
+    linux-x64: 5d362ecc578dc7c146679b841dda949d6472cbf86ff5635db7afdca1b6b3fd87
+  distribution: https://github.com/jdx/mise/releases
+  verification: >-
+    The archive digest was checked against the release API before the extracted
+    binary digest was derived. That is integrity against the same origin, not an
+    independent publisher-identity audit — see ADR-0010 M-03 and the paranoid
+    `provenance` category, which is global-only and therefore a machine baseline
+    this file cannot set.
+  install_provenance_recorded: false
+  # Set to true only when the workstation install path is recorded as well. The
+  # operator's host has no mise (measured 2026-11-03: `command -v mise` → not
+  # found), so the pin above is enforced in CI and not yet on any developer machine.
+
+# Approved tool versions. `exact` is enforced by the gate: a request that is a
+# prefix rather than a release is what makes `3.12` and `22` moving targets, and
+# mise resolves them to whatever the index offers at install time.
+tools:
+  python:
+    version: "3.12.16"
+    exact: true
+    backend: core:python
+    upstream: https://github.com/astral-sh/python-build-standalone/releases
+    verification: lockfile checksum plus github-attestations recorded by mise in mise.lock
+    reviewed_by: JourneyOfLife
+    reviewed_on: "2026-11-03"
+    review_due: "2027-05-03"
+    note: >-
+      Preserves the 3.12 family already declared across this fleet's workflows, but
+      3.12.16 is a new patch selection resolved on 2026-11-03, not a proven-compatible
+      one. Application compatibility across the fleet is unverified.
+
+  node:
+    version: "22.23.4"
+    exact: true
+    backend: core:node
+    upstream: https://nodejs.org/dist/index.json
+    verification: lockfile checksum recorded by mise in mise.lock
+    reviewed_by: JourneyOfLife
+    reviewed_on: "2026-11-03"
+    review_due: "2027-05-03"
+    note: >-
+      Declared only where inspected automation runs npm or npx. A GitHub Action that
+      bundles its own Node runtime does not require a separate local Node install, so
+      absence of node from a repository's mise.toml is not a finding.
+
+  terraform:
+    version: "1.16.1"
+    exact: true
+    backend: "aqua:hashicorp/terraform"
+    upstream: https://releases.hashicorp.com/terraform/
+    verification: lockfile checksum only — no provenance field, see ADR-0010 M-03
+    reviewed_by: JourneyOfLife
+    reviewed_on: "2026-11-03"
+    review_due: "2027-05-03"
+    per_repository_overrides:
+      # Terraform is deliberately NOT unified. Combining a toolchain adoption with a
+      # provider/state compatibility change in one merge is how a governance edit
+      # silently becomes an infrastructure deployment.
+      jolarca-infrastructure: "1.9.8"
+    note: >-
+      1.16.1 is this repository's existing CI selection (plan.yml and apply.yml).
+      compliance-scan.yml runs `terraform fmt -check` with no terraform_version at
+      all, which is the pre-existing skew ADR-0010 records in its Context table and
+      which this catalogue does not by itself fix.
+
+  shellcheck:
+    version: "0.11.0"
+    exact: true
+    backend: "aqua:koalaman/shellcheck"
+    upstream: https://github.com/koalaman/shellcheck/releases
+    verification: lockfile checksum recorded by mise in mise.lock
+    reviewed_by: JourneyOfLife
+    reviewed_on: "2026-11-03"
+    review_due: "2027-05-03"
+    note: >-
+      Proposed by jolarca-identity. Its current workflow installs shellcheck through
+      apt without an exact version, so adopting the mise selection there replaces an
+      unpinned apt-get rather than pinning an existing mise entry.
+
+# Tools that appear in fleet setup paths and are NOT yet in the approved set. Listed
+# so the gap is visible rather than inferred from absence: an unlisted tool is a
+# finding in --live mode only if a repository declares it in mise.toml, which is the
+# honest boundary — these are installed by other means today.
+not_yet_approved:
+  - gitleaks
+  - ansible
+  - pip-audit
+  - trivy
+  - yq
+  - jq
+
+# Repositories knowingly outside parts of the bound. `covers` names the rules the
+# exception excuses; an exception that names no rules pardons all of them, which is
+# the off-switch this register already documents elsewhere. A gate that cannot
+# explain the exact scope of its own exceptions becomes a wall people route around.
+exceptions:
+  - repo: jolarca-security
+    covers: []
+    reason: >-
+      Its repository-level Actions allow-list returns github_owned_allowed true,
+      patterns_allowed ["DavidAnson/*"], verified_allowed false, so jdx/mise-action is
+      refused and every mise workflow run in that repository has concluded
+      startup_failure (41654550029, 41678712745, 41679508071). That explains the
+      absence of CI PROOF. It does not explain the absence of the configuration from
+      the default branch, so this exception covers no rule: the repository is still
+      reported as not adopted until PR jolarca-security#9 merges, and resolving this
+      needs an approved installation approach, not a policy workaround.
+    expires: "2027-05-03"
+
+# Workflow runtime declarations answer to the same approval, because
+# `python-version: "3.12"` in a workflow is a REQUEST the hosted runner answers with
+# whatever its image ships. ADR-0010 M-10 measured that directly: the same unchanged
+# declarations produced 3.12.15 on one run and 3.12.16 an hour later. Rule R8 in
+# scripts/check_toolchain_baseline.py enforces this offline on every PR, as a step
+# inside the required Validate Repo Allow-List job.
+workflow_exceptions:
+  - file: .github/workflows/apply.yml
+    covers: [R8]
+    reason: >-
+      `.github/workflows/apply.yml` is one of apply.yml's own `on.push.paths`, so
+      editing this file arms a real `terraform apply -input=false -auto-approve
+      tfplan` on merge. What stands between that and production is the production
+      environment's 30-minute wait timer — which AGENTS.md §8 records as delay, not
+      approval (D-58, D-70) — plus check_plan_safety.sh. Its single
+      `python-version: "3.12"` is therefore left unpinned by a toolchain change: the
+      pin is a deploy decision the operator makes deliberately, in a PR whose only
+      purpose is that decision, where the resulting plan can be read. This exception
+      covers R8 only; it excuses nothing about adoption, lockfiles or any other file.
+    expires: "2027-05-03"

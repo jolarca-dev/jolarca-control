@@ -168,6 +168,95 @@ assert 1 protection-status-checks-added <<'PLAN'
     }
 PLAN
 
+# ── Repository rulesets (D-84) ────────────────────────────────────────────────
+# Every protection pattern above is scoped to `github_branch_protection`: the create rule
+# matches that address, and the attribute rule lists its attribute names. jolarca-consent,
+# jolarca-dr and jolarca-vendor are protected by RULESETS (D-46), so from 2026-10-15 until
+# this PR the gate had no rule that could see them. Measured before the fix, with these two
+# inputs: a ruleset create carrying only push rules exited 0, and an update that set
+# `enforcement = "active" -> "disabled"`, turned deletion and non_fast_forward off and added
+# a RepositoryAdmin bypass actor ALSO exited 0 — i.e. the brake that AGENTS.md §8 calls "what
+# actually stands between a merge and an apply" reported the total removal of a GDPR-scoped
+# repo's protection as safe to auto-apply. Case A below is the exact shape consent's live
+# ruleset (24087580) renders in, transcribed from `gh api repos/…/rulesets/24087580`.
+assert 1 ruleset-create-push-only <<'PLAN'
+Terraform will perform the following actions:
+
+  # github_repository_ruleset.main["jolarca-consent"] will be created
+  + resource "github_repository_ruleset" "main" {
+      + enforcement = "active"
+      + name        = "protect-main"
+      + repository  = "jolarca-consent"
+      + target      = "branch"
+      + rules {
+          + deletion         = true
+          + non_fast_forward = true
+        }
+      + conditions {
+          + ref_name {
+              + include = ["~DEFAULT_BRANCH"]
+            }
+        }
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+PLAN
+
+# The dangerous one: nothing here is named in the legacy attribute list, and the aggregate
+# verdict says "1 to change, 0 to destroy", so a whole-state `-auto-approve` apply would
+# have run it. A `+ bypass_actors` block is how an attacker-shaped config hands admins a
+# way around main.
+assert 1 ruleset-enforcement-disabled <<'PLAN'
+Terraform will perform the following actions:
+
+  # github_repository_ruleset.main["jolarca-consent"] will be updated in-place
+  ~ resource "github_repository_ruleset" "main" {
+      ~ enforcement = "active" -> "disabled"
+        name        = "protect-main"
+      ~ rules {
+          ~ deletion         = true -> false
+          ~ non_fast_forward = true -> false
+        }
+      ~ bypass_actors {
+          + actor_type  = "RepositoryAdmin"
+            bypass_mode = "always"
+            id          = 0
+        }
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+PLAN
+
+# Organization rulesets are the same object class at a higher blast radius: one
+# `github_organization_ruleset` covers every repository in jolarca-dev, and the provider
+# models it with the same `enforcement` / `bypass_actors` / `rules` vocabulary.
+assert 1 organization-ruleset-weakened <<'PLAN'
+Terraform will perform the following actions:
+
+  # github_organization_ruleset.default["block-force-push"] will be updated in-place
+  ~ resource "github_organization_ruleset" "default" {
+      ~ enforcement = "active" -> "evaluate"
+      ~ conditions {
+          ~ repository_id = [
+              - 1387897455,
+            ]
+        }
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+PLAN
+
+# Non-vacuity of the new rules: a ruleset that is merely REFRESHED and reported unchanged
+# must stay clean. This is Terraform's real refresh line for the address, not an invented
+# one — refusing it would mean every plan of this root dies once a ruleset is in state, and
+# a gate that always refuses is indistinguishable from a gate that detects nothing.
+assert 0 ruleset-refresh-only-noise <<'PLAN'
+github_repository_ruleset.main["jolarca-consent"]: Refreshing state... [id=24087580]
+github_repository.repo["jolarca-consent"]: Refreshing state... [id=r_KslIM0B99HlbgDzu]
+
+No changes. Your infrastructure matches the configuration.
+PLAN
+
 # Colourised input is the fourth way this gate was fooled, and it was found by running the
 # same plan twice: `terraform show tfplan` (colour on) exited 0 while `terraform show
 # -no-color tfplan` exited 1 on the identical 370-line plan, because every pattern here
@@ -304,6 +393,57 @@ else
   printf 'FAIL %-28s want exit=2\n' "missing-plan-refused"
   fail=$((fail + 1))
 fi
+
+# ── "Not a plan at all" must be exit 2, never exit 0 (measured 2026-10-19) ─────
+# Two inputs reached this gate in CI and both were reported SAFE:
+#   1. plan.yml's `Record skipped plan` step writes prose into plan-output.txt, and
+#      the gate read it as "no destroy, no visibility change" -> exit 0.
+#   2. run 39062414977 (rerun 2026-10-19): `Terraform Init` died with
+#      `Error: Failed to read organization "jolarca-dev" ... unauthorized`, and a
+#      plan-output.txt carrying only that error also exited 0.
+# A verdict of "safe to auto-apply" on text that is not a rendered plan is the D-22
+# class again: the gate answers a question nobody asked (AGENTS.md §7). The guard
+# below is deliberately ordered AFTER the refusal rules, so a plan-shaped input with
+# a refused action still exits 1 -- see the non-vacuity case at the end.
+assert 2 not-a-plan-workflow-stub <<'PLAN'
+terraform plan SKIPPED — STATE_MIGRATION_COMPLETE is not 'true'.
+
+The variable is the operator's switch on this workflow, nothing more.
+State itself already lives in the HCP Terraform workspace
+jolarca-dev/jolarca-control (see docs/state-migration-runbook.md,
+status COMPLETE 2026-10-10) and the legacy jolarca-infrastructure root
+was drained of github_* resources by `terraform state rm` (D-13), so
+this control plane IS the sole declarative owner.
+
+No plan was produced, so no apply may proceed from this run.
+Validate + fmt + init-only checks above DID run and passed.
+PLAN
+
+assert 2 not-a-plan-error-output <<'PLAN'
+Initializing HCP Terraform...
+
+Error: Failed to read organization "jolarca-dev" at host app.terraform.io
+
+  on main.tf line 28, in terraform:
+  28:     organization = "jolarca-dev"
+
+Encountered an unexpected error while reading the organization settings:
+unauthorized
+PLAN
+
+# Non-vacuity for the guard: real plan output carries warning noise and refresh
+# lines around the markers. If this flips to 2, the guard is matching too narrowly
+# and would fail every honest plan closed.
+assert 0 plan-shaped-with-warning-noise <<'PLAN'
+Warning: Value for previously declared attribute is null
+
+  on repositories.tf line 93, in resource "github_repository_vulnerability_alerts" "repo":
+
+github_repository.repo["jolarca"]: Refreshing state... [id=jolarca]
+github_branch_protection.main["jolarca"]: Refreshing state... [id=MDP:1234]
+
+No changes. Your infrastructure matches the configuration.
+PLAN
 
 echo
 echo "plan-gate tests: $pass passed, $fail failed"

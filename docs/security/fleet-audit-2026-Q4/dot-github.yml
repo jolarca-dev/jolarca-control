@@ -1,0 +1,230 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Fleet Audit 2026-Q4 — repository record: .github (org health / shared CI)
+# ─────────────────────────────────────────────────────────────────────────────
+# Repo name is `.github`; this file is named dot-github.yml because a file
+# literally called `.github.yml` is a hidden dotfile that glob patterns miss.
+# Organization: jolarca-dev (marketplace scope)
+# Status vocabulary is inherited from audit/soc2-checklist.yml (lines 9-21):
+#   implemented | pending-adoption | declared | gap | accepted
+# Narrative detail, reproduction and remediation: dot-github.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+framework_evidence: "jolarca-dev/.github"
+version: "fleet-audit-2026-Q4"
+owner: "jolarca-dev organization owner (single operator — D-10)"
+verification_date: "2026-10-26"
+verification_method: >-
+  read-only gh api queries against jolarca-dev/.github + recursive git-tree
+  probe + fleet-wide workflow scan from jolarca-control. No writes performed.
+  Exit codes recorded at scripts/hash_evidence.sh semantics (0/1/2).
+
+baseline:
+  commit_sha: "48b96656c6779788cf84444fc0973f9697d18dcb"
+  branch: "main"
+  manifest_fingerprint: "e6238ace35c1cefea352caa837738581d9cba19d38a514e1a195e01cd754e1fb"
+  blob_count: 13
+  commit_count_on_main: 4
+  control_plane_baseline: "jolarca-control 1ef4f9b05addc795a1dc8cafa18f1049ca7932fa"
+  provenance: "gh api repos/jolarca-dev/.github/branches/main -q .commit.sha"
+
+controls:
+  - id: "FA-dotgithub-01"
+    description: "Secret scanning and push protection are enabled on every repository"
+    evidence: >-
+      security_and_analysis: secret_scanning=disabled,
+      secret_scanning_push_protection=disabled,
+      secret_scanning_non_provider_patterns=disabled,
+      secret_scanning_validity_checks=disabled,
+      dependabot_security_updates=disabled
+    enforcement: "none — settings are off, not merely unverifiable"
+    status: "gap"
+    finding: "FA-dotgithub-01"
+    severity: "S1"
+    note: >-
+      The only repo of 17 with all scanning layers off, and it is the repo whose
+      SECURITY.md GitHub serves org-wide as the disclosure channel.
+
+  - id: "FA-dotgithub-02"
+    description: "A change to main requires a PR and green required checks"
+    evidence: >-
+      branches/main/protection: required_status_checks.contexts=[],
+      required_status_checks.strict=false,
+      required_pull_request_reviews.required_approving_review_count=0,
+      require_code_owner_reviews=false; rulesets=[]; branches/main .protected=true
+    enforcement: "legacy branch protection with an empty check list"
+    status: "gap"
+    finding: "FA-dotgithub-02"
+    severity: "S1"
+    note: >-
+      .protected=true while zero checks are required is the exact false-clean
+      signal that PDA-14/D-33 was about.
+
+  - id: "FA-dotgithub-03"
+    description: "Drift detection fails the fleet when a repo requires no checks"
+    evidence: >-
+      drift_detect.py:870-881 does not include hollow_rules in drift_detected,
+      and policy/repo-defaults.yml:216 lists .github in
+      branch_protection_baseline_exempt. Measured output:
+      hollow=[{repo:.github, issues:["exempt rule requires 0 status check(s), need >= 1"]}]
+    enforcement: "scripts/drift_detect.py"
+    status: "gap"
+    finding: "FA-dotgithub-03"
+    severity: "S1"
+    note: >-
+      The control plane can print NO DRIFT while this repo gates nothing. The
+      exemption was designed to skip attribute comparison, not to certify an
+      empty check list.
+
+  - id: "FA-dotgithub-04"
+    description: "Every fleet repository is evaluated by the declared-config gates"
+    evidence: >-
+      repos/ contains 16 *.yml and no entry for .github (grep -c github = 0);
+      compliance_check.py reports total_repos=16; repo_readiness_audit.py prints
+      16 rows with no .github row; .github is created by health-repo.tf:26
+    enforcement: "none for this repo"
+    status: "gap"
+    finding: "FA-dotgithub-04"
+    severity: "S1"
+    note: >-
+      Being governed by Terraform instead of the YAML allow-list removes this
+      repo from validate_repos.py, compliance_check.py and
+      check_declared_contexts.py coverage.
+
+  - id: "FA-dotgithub-05"
+    description: "Live repo settings match policy/repo-defaults.yml#defaults"
+    evidence: >-
+      live: allow_merge_commit=true, allow_rebase_merge=true, has_projects=true,
+      delete_branch_on_merge=false. policy/repo-defaults.yml:30-37 declares
+      allow_merge_commit:false, allow_rebase_merge:false, has_projects:false
+    enforcement: "health-repo.tf / manual settings"
+    status: "gap"
+    finding: "FA-dotgithub-05"
+    severity: "S2"
+    note: "Undetectable because of FA-dotgithub-04, not because the tools are weak."
+
+  - id: "FA-dotgithub-06"
+    description: "Published documentation states actual implementation status"
+    evidence: >-
+      SECURITY.md (2420 B, served org-wide) claims "Branch protection: Required
+      reviews, status checks", "Dependency scanning: Dependabot alerts enabled",
+      "Pre-commit hooks: gitleaks (secret scanning)". Measured: 0 required
+      contexts and 0 approving reviews; no dependabot.yml in either path and
+      security updates disabled; no .pre-commit-config.yaml in the 13-file tree.
+      It also documents honestly that security@jolarca.com is undeliverable
+      (fixed by PR #5, merged 2026-10-15) — the contact half is now accurate.
+    enforcement: "none — hand-edited file (D-15)"
+    status: "gap"
+    finding: "FA-dotgithub-06"
+    severity: "S1"
+    note: "AGENTS.md §6 forbids describing a configured-but-inert control as enforced."
+
+  - id: "FA-dotgithub-07"
+    description: "Compliance citations use the current standard revision"
+    evidence: "SECURITY.md:102 cites 'ISO 27001 A.12.6.1' (2013 Annex A numbering)"
+    enforcement: "none"
+    status: "gap"
+    finding: "FA-dotgithub-07"
+    severity: "S3"
+
+  - id: "FA-dotgithub-08"
+    description: "No mission-platform identity in marketplace files (ADR-0004 R4)"
+    evidence: >-
+      LICENSE: "INTERNAL USE ONLY / © 2026 JOL Infrastructure. All rights
+      reserved. ... confidential and proprietary information"
+    enforcement: "scripts/check_fleet_separation.sh does not scan LICENSE files"
+    status: "gap"
+    finding: "FA-dotgithub-08"
+    severity: "S2"
+    note: >-
+      Two defects in one file: the mission-platform entity name in a
+      marketplace repo, and a confidentiality claim on a world-readable repo
+      with no licence grant at all.
+
+  - id: "FA-dotgithub-09"
+    description: "CODEOWNERS review requests resolve to a real team or user"
+    evidence: >-
+      .github/CODEOWNERS assigns * to @jolarca-dev/infrastructure and
+      .github/workflows/ to @jolarca-dev/security; gh api orgs/jolarca-dev/teams
+      returned [] (0 teams); require_code_owner_reviews=false
+    enforcement: "none"
+    status: "gap"
+    finding: "FA-dotgithub-09"
+    severity: "S2"
+    note: "A CODEOWNERS file with no resolvable owner and the flag off is decoration."
+
+  - id: "FA-dotgithub-10"
+    description: "Third-party actions are pinned to immutable commit SHAs"
+    evidence: >-
+      11 tag-referenced uses: lines — ci-base.yml:139,157,175
+      (setup-python@v5, setup-node@v4, hashicorp/setup-terraform@v3),
+      compliance-base.yml:64,102,136,170,223 (setup-python@v5 x5),
+      security-scan.yml:97,183 (codeql-action/upload-sarif@v3 x2)
+    enforcement: "policy/compliance-gates.yml (declares pinning, no gate checks it)"
+    status: "gap"
+    finding: "FA-dotgithub-10"
+    severity: "S2"
+    note: "Documented call form is @main — a mutable ref to a repo with no required checks."
+
+  - id: "FA-dotgithub-11"
+    description: "A gate that is claimed must be shown to execute"
+    evidence: >-
+      gh run list -R jolarca-dev/.github returned [] (no workflow run has ever
+      occurred). Fleet-wide scan for 'uses: <owner>/<repo>/.github/workflows/'
+      excluding comment lines returned 0 matches. 17 jobs defined:
+      ci-base 7, compliance-base 5, security-scan 5.
+    enforcement: "none — the callers do not exist"
+    status: "declared"
+    finding: "FA-dotgithub-11"
+    severity: "S2"
+    note: >-
+      Implements the fleet's only copies of dependency_scan, license_check,
+      container_scan, iac_scan and iac_policy, all declared mandatory in
+      policy/compliance-gates.yml, executing nowhere.
+
+  - id: "FA-dotgithub-12"
+    description: "Merge method is squash-only (linear auditable history)"
+    evidence: "live allow_squash_merge=true AND allow_merge_commit=true AND allow_rebase_merge=true"
+    enforcement: "GitHub repo settings"
+    status: "gap"
+    finding: "FA-dotgithub-12"
+    severity: "S2"
+    note: "Subsumed by FA-dotgithub-05; recorded separately because CC8.1 cites it."
+
+  - id: "FA-dotgithub-13"
+    description: "Known fixes land within a defined window"
+    evidence: >-
+      PR #4 "ci: finish pinning the shared workflows; remove the last fabricated
+      SHA (D-43 part 1)" opened 2026-10-04, state OPEN, mergeable MERGEABLE,
+      22 days old — nothing blocks it, it is simply not merged.
+    enforcement: "none"
+    status: "gap"
+    finding: "FA-dotgithub-13"
+    severity: "S2"
+
+strengths:
+  - "permissions blocks are least-privilege: contents:read in all three; security-events:write only in security-scan.yml where SARIF upload needs it"
+  - "reusable workflows declare typed workflow_call inputs — correctly built to be called"
+  - "enforce_admins=true, required_linear_history=true, allow_force_pushes=false,
+    allow_deletions=false, required_conversation_resolution=true, dismiss_stale_reviews=true"
+  - "every non-root commit on main arrived through a PR (#1,#2,#5) — the weak gates have not been bypassed in practice"
+  - "SECURITY.md is honest about the undeliverable domain contact and names the exit condition (MX + DMARC + SPF/DKIM)"
+  - "forks=0, network=0 — external copies of the shared CI do not exist"
+
+not_run:
+  - item: "attempt a direct push or an unreviewed merge to .github/main"
+    reason: "requires a write to a repository; authorization not granted"
+    would_prove: "that 0 required contexts plus RARC=0 is actually exploitable"
+  - item: "confirm whether GitHub serves .github/SECURITY.md for each of the other 16 repos"
+    reason: "is_security_policy_enabled returned null for all 17 repos, which this API version does not populate — absence of the field is not evidence"
+  - item: "verify whether check_fleet_separation.sh excludes LICENSE by design"
+    reason: "its path scope was not read this pass"
+
+verdict: "NO-GO for this repository"
+blocking_findings: []
+s1_findings: ["FA-dotgithub-01", "FA-dotgithub-02", "FA-dotgithub-03", "FA-dotgithub-04", "FA-dotgithub-06"]
+framework_claims_not_supported:
+  - "SOC 2 CC6.7 (transmission/removal of confidential info) — no secret scanning anywhere in this repo's pipeline"
+  - "SOC 2 CC7.1 (detection of vulnerabilities) — the five mandatory scanner gates this repo implements are never executed"
+  - "SOC 2 CC8.1 (change management) — 0 required contexts, 0 approving reviews"
+  - "ISO/IEC 27001 technical vulnerability management (cited here as A.12.6.1, 2013 numbering)"
+  - "PCI DSS 6.5 (detection of known vulnerabilities) for anything consuming this repo's shared workflows"
