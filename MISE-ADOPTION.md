@@ -87,3 +87,57 @@ nothing:
   requires an approved, digest-pinned source that is not yet recorded.
 - The other sixteen repositories carry neither file. This branch is a pilot; it is
   not a fleet state.
+
+### Measured result of the four legs (run 41669118323, job 126032389384, 2026-11-03)
+
+All four printed their verdict; the job is not green on assertion count, it is
+green on the output quoted below. `mise config` abbreviates the home directory, so
+`~/work/jolarca-control/mise.toml` is the decoy and
+`~/work/jolarca-control/jolarca-control/mise.toml` is this repository.
+
+- **Leg 1, `MISE_CEILING_PATHS=""`** — mise listed the decoy and adopted its tool:
+  `~/work/jolarca-control/mise.toml  bidi-decoy`. mise's parent-directory
+  inheritance is therefore demonstrated on this runner, not assumed, which is what
+  makes leg 2 a test rather than a tautology.
+- **Leg 2, committed `.miserc.toml`** — the decoy is absent and the pins mise
+  actually selects are still this repository's:
+  `python 3.12.16 ~/work/jolarca-control/jolarca-control/mise.toml` and
+  `terraform 1.16.1 …`. Because an unrendered template would leave the literal
+  string as a path matching nothing (fail-open, silently), this leg is also the
+  proof that `{{ config_root | dirname }}` rendered.
+- **Leg 3** — `mise install` with no `--locked` flag anywhere succeeded from the
+  committed lockfile.
+- **Leg 4** — `mise install python` against a scratch copy requesting
+  `python@3.12.15`, a real release absent from `mise.lock`, refused:
+  `failed: python@3.12.15 is not in the lockfile` /
+  `hint: Run 'mise lock' to update the lockfile, or disable 'tool_config.locked'`.
+  The refusal names the mechanism, so the guard's `lock` match is attributable to
+  the fixture rather than incidental. Resolution took 0 ms: nothing was downloaded,
+  which is why the whole job runs in seconds.
+
+Two incidental facts worth recording because they change how the job must be
+written: mise prints config paths with `~` substituted for `HOME`, so a guard that
+greps for `$GITHUB_WORKSPACE/...` matches nothing while the config it seeks **is**
+loaded — that exact bug made this job fail on its first run and its failure output
+was the proof of the inheritance; and `jdx/mise-action` exports
+`MISE_TRUSTED_CONFIG_PATHS` for the workspace plus `MISE_YES=1`, so the action
+trusts the checked-out configuration for its own steps. The second is the
+fork-PR trust question ADR-0010 raises for self-hosted runners; it is tolerable
+here only because this job has `permissions: contents: read`, no secrets and no
+deployment path.
+
+## Two first attempts at this job failed, and what each taught
+
+1. Four steps used a shell fallback to keep reading after a command failed.
+   `tests/test_ci_gates_are_real.py::test_no_run_step_swallows_its_exit_status`
+   forbids that token in any `run:` step and named all four. The rule is the
+   executable form of AGENTS.md section 3: handing a verdict to a fallback reports
+   an unreadable input as a clean scan. Every step now tests status with `if` and
+   exits 1 when it cannot read its own input.
+2. The decoy assertion matched on a path spelling mise does not print, so leg 1
+   failed while the decoy was in fact loaded. A guard that cannot see the thing it
+   is looking for must fail, and it did — which is the only reason this was caught
+   before it could be believed.
+
+Neither failure is recorded as resolved by the green badge on the second attempt;
+the quoted output above is the evidence.
