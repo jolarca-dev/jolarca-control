@@ -220,17 +220,23 @@ unlisted tools inherited from parents. A hosted runner checks out to
 central configuration has no directory to live in, and an unbounded local search
 is what makes identical commits resolve differently across machines.
 
-**Current status, not aspiration.** Seventeen draft PRs (one per repository) add
-`mise.toml`, `mise.lock`, `MISE-ADOPTION.md` and an additive smoke workflow.
-None is merged. Sixteen report the new mise check green; `jolarca-security`
-reports `startup_failure` because its Actions allow-list rejects
-`jdx/mise-action`. `.miserc.toml` and `[tool_config] locked = true` — the bound on
-config inheritance and repository-level lockfile mode — now exist on **twelve**
-repositories' draft branches and are measured there by a four-leg refusal test;
-they exist on **no default branch**, so the inheritance bound is proven in CI and
-not yet enforced. `jolarca-security` carries the two files but cannot prove them,
-and four repositories whose drafts were already blocked by unrelated failing checks
-carry neither. Only `platforms.linux-x64` is locked anywhere. The existing Makefile,
+**Current status, measured 2026-11-03, not aspiration.** Seventeen draft PRs (one per
+repository) added `mise.toml`, `mise.lock`, `MISE-ADOPTION.md` and an additive smoke
+workflow. **One has merged:** `jolarca-control` PR #121, as `42f309a`. Sixteen of the
+seventeen reported the new mise check green on their drafts; `jolarca-security`
+reports `startup_failure` because its Actions allow-list rejects `jdx/mise-action`.
+
+`.miserc.toml` and `[tool_config] locked = true` — the bound on config inheritance and
+repository-level lockfile mode — are **enforced on one default branch, this one**, and
+are proven there by the guard's own printed output on the merge push (run
+`41683853027`, job `126084253752`). Eleven other repositories carry them on open draft
+branches, measured but unmerged. `jolarca-security` carries the two files and cannot
+prove them. Four repositories whose drafts were already blocked by unrelated failing
+checks carry neither. **Sixteen of seventeen default branches are still unbounded.**
+
+Only `platforms.linux-x64` is locked anywhere, and no bound reaches global or system
+config, so every workstation remains unbounded (M-04). The existing Makefile,
 workflows and required status checks remain authoritative; mise is a declaration and
 verification surface, not a task runner or a CI entry point. See ADR-0010 findings
-M-01, M-02, M-04 and M-08 for what each of those gaps means.
+M-01, M-02, M-04 and M-08, and its dated status-change section, for what each gap
+means.

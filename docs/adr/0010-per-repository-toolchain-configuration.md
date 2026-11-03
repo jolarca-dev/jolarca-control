@@ -130,7 +130,9 @@ should be promoted into the D-series if and when it is accepted for remediation.
   loading the root's own `mise.toml`. Read the second Amendment section before
   acting on this bullet.)_ *Control:* a committed `.miserc.toml` whose
   `ceiling_paths` names the **parent** of the repository root, or
-  `MISE_CEILING_PATHS` set in the workflow.
+  `MISE_CEILING_PATHS` set in the workflow. _(Further amended the same day: this is
+  now on `jolarca-control`'s default branch as of `42f309a`, and on none of the
+  other sixteen.)_
 - **M-02 — `--locked` binds the CI job, not the repository.** The workflows pass
   `install_args: --locked`, so a developer running plain `mise install` resolves
   unlocked against whatever the lockfile does not constrain. *Control to add:*
@@ -140,7 +142,9 @@ should be promoted into the D-series if and when it is accepted for remediation.
   affect tools inherited from global, system, or parent config roots" — is why
   M-02 must ship together with M-01. _(Amended the same day: measured on twelve
   repositories' draft branches, one of which tests shellcheck rather than python,
-  so the bound is not python-specific. On no default branch yet.)_
+  so the bound is not python-specific. On no default branch yet.)_ _(Further
+  amended: enforced on this repository's default branch as of `42f309a`; the other
+  sixteen remain without it.)_
 - **M-03 — provenance strength is asymmetric inside one lockfile.** In
   `jolarca-control`'s `mise.lock`, python (`backend = "core:python"`) carries
   `provenance = "github-attestations"`, while terraform
@@ -426,6 +430,67 @@ smoothed over.
 - Measured 2026-11-03: `gh pr checks` across 13 repositories; `gh run view --log --job`
   for each quoted verdict;
   `gh api repos/jolarca-dev/jolarca-security/actions/permissions/selected-actions`
+
+---
+
+## Status change — 2026-11-03 (later): one default branch is now bounded
+
+The sentence above that "every one of those pull requests is still `isDraft: true`,
+so `main` in all thirteen remains unbounded as this is written" was true when
+written at `3436a55` and is falsified by a later merge. It is kept rather than
+edited: this register polices the error of describing unmerged work as delivered,
+and the same discipline applies to the inverse — prose that was accurate at its
+timestamp must not be retrodated into a claim about a later state.
+
+- PR #124, this ADR's second amendment, merged as `3436a55`.
+- PR #121 merged as `42f309a`, putting `.miserc.toml`, `[tool_config] locked = true`
+  and the `mise-config-scope` job on `jolarca-control`'s default branch.
+
+**M-01 and M-02 are therefore enforced on one default branch — this repository — and
+on none of the other sixteen.** The "twelve draft branches" count in the section
+above still describes the eleven repositories that remain drafts plus this one's
+history; `jolarca-control` has moved from that column to this one.
+
+Proof that the bound holds on the default branch is the guard's own printed output on
+the merge push — run `41683853027`, job `126084253752` — which is the first time it
+executed outside a pull request:
+
+```text
+~/work/jolarca-control/mise.toml                  bidi-decoy        (leg 1, unbounded)
+OK: with no ceiling mise discovers the parent config and adopts its tool.
+OK: python 3.12.16 is the selected version.
+OK: terraform 1.16.1 is the selected version.
+OK: decoy excluded and every declared pin is the one mise actually selects.
+OK: no --locked flag was passed anywhere and the lock still governed resolution.
+python@3.12.16  0ms · failed: python@3.12.16 is not in the lockfile
+hint: Run `mise lock` to update the lockfile, or disable `tool_config.locked`
+OK: refused, and the refusal names the lockfile.
+```
+
+**Post-merge live state, read rather than inferred from the merge banner.**
+`gh api …/pulls/121` → `merged: true`, `merged_at: 2026-11-03T17:23:52Z`; `main` =
+`42f309a`; all four required contexts `pass` (`Validate Repo Allow-List`, `Policy
+Compliance Check`, `Repository Secret Pattern Scan`, `SAST (semgrep)`); a clean clone
+of `main` reports `hash_evidence.sh --check` 47 files / 0 mismatches rc=0,
+`pytest tests/` 351 passed rc=0, and gitleaks over 126 commits "no leaks found".
+
+**No `apply.yml` run was created by either merge** — newest remains `40568492494` of
+2026-10-27. That is the pre-merge intersection test doing its job, not luck: #124
+touched three `docs/` files, and #121 touched `.miserc.toml`, `mise.toml`,
+`mise.lock`, `MISE-ADOPTION.md` and `.github/workflows/mise-toolchain.yml`, none of
+which matches `apply.yml`'s own `on.push.paths` (`repos/**`, `policy/**`, `*.tf`,
+`*.tfvars`, `.github/workflows/apply.yml`), verified both through
+`scripts/check_apply_path_trigger.py` (rc=0, "no apply armed") and by grepping each
+pattern against the API-returned file list independently of the gate.
+
+One procedural note: #121 was a draft, and `gh pr merge` refuses drafts, so it was
+marked ready for review immediately before merging. That is a state change on the
+pull request and is recorded rather than glossed.
+
+**Still open after this:** M-03, M-04 unchanged and load-bearing — the bound reaches
+neither global nor system config, and every workstation is still unbounded — plus
+M-05, M-06, M-07, M-08, and sixteen repositories whose default branches carry no
+bound at all.
 
 ---
 
