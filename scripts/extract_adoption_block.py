@@ -25,6 +25,14 @@ now an argument, the assertions are made against it, and the emitted hint contai
 the command that discovers the real id. ``--repo`` defaults to the historical target so existing
 invocations and fixtures behave identically.
 
+Resource naming (D-94, second half). Parameterising the *target* left a second consent-specificity
+behind: the block it emitted was always labelled ``"main"``. That label is not free — ``rulesets.tf``
+is tracked, declares ``resource "github_repository_ruleset" "main"`` for the historical target, and
+that address is in state, so a second file reusing it fails ``terraform validate`` with a duplicate
+resource error. ``default_resource_name()`` derives a per-repo label and ``main`` is grandfathered
+only for the historical target, so the tree this tool can emit is always planable. The contract is
+enforced in exactly one place, :func:`vet`, which runs before anything is written.
+
 Exit codes follow AGENTS.md §3: 0 verified, 1 refused (a real finding), 2 could not verify.
 """
 
@@ -45,7 +53,24 @@ _RESOURCE_BLOCK = re.compile(r'^resource "', re.M)
 _FOR_EACH = re.compile(r"^\s*for_each\s*=", re.M)
 # The repo a block targets, read out of its own for_each rather than compared against a constant.
 _FOR_EACH_ITEM = re.compile(r"toset\(\[([^\]]*)\]")
+_RESOURCE_NAMED = re.compile(r'resource "github_repository_ruleset" "([^"]+)"')
 _STRING_ITEM = re.compile('"([^"]+)"')
+
+
+def default_resource_name(repo: str) -> str:
+    """`main` is grandfathered for the historical target only.
+
+    Every other repository needs its own resource name: two files declaring
+    `resource "github_repository_ruleset" "main"` for different repositories are a hard
+    `terraform validate` error (measured 2026-10-31: "Duplicate resource
+    \"github_repository_ruleset\" configuration"), so a generator that always emitted `main`
+    produced a tree that could not be planned. D-94's first fix parameterised selection and
+    left this second consent-specificity in place.
+    """
+    if repo == DEFAULT_REPO:
+        return "main"
+    slug = re.sub(r"[^a-z0-9_]", "_", repo.replace("jolarca-", "")).strip("_")
+    return slug or "main"
 
 
 def _repo_pattern(repo: str) -> re.Pattern[str]:
@@ -97,19 +122,26 @@ def adoption_repos(text: str) -> list[str]:
     return seen
 
 
-def vet(block: str, repo: str = DEFAULT_REPO) -> list[str]:
+def vet(block: str, repo: str = DEFAULT_REPO, resource_name: str | None = None) -> list[str]:
     """Structural requirements for a block an operator is about to import."""
     problems: list[str] = []
+    want = resource_name or default_resource_name(repo)
     if len(_RESOURCE_BLOCK.findall(block)) != 1:
         problems.append(
             f"{len(_RESOURCE_BLOCK.findall(block))} resource blocks; expected exactly 1"
         )
-    if f'resource "{RESOURCE}" "main"' not in block:
+    if f'resource "{RESOURCE}" "{want}"' not in block:
+        named = _RESOURCE_NAMED.findall(block)
         problems.append(
-            f'resource is not named "main" -> the step-2 import address for {repo} would not exist'
+            f'resource is not named "{want}" (found {named}) -> the step-2 import address '
+            f'`{RESOURCE}.{want}["{repo}"]` would not exist, and a label two repos both declare '
+            "is a hard `terraform validate` error (measured 2026-10-31: Duplicate resource "
+            '"github_repository_ruleset" configuration) -- `rulesets.tf` is tracked and declares '
+            f'"main" for {DEFAULT_REPO}. Rename the fence in the runbook to `{want}`, or pass '
+            f"--resource-name {want}."
         )
     if not _FOR_EACH.search(block):
-        problems.append(f'no for_each -> address main["{repo}"] does not exist')
+        problems.append(f'no for_each -> address {want}["{repo}"] does not exist')
     if not _repo_pattern(repo).search(block):
         named = _targeted_repos(block)
         problems.append(
@@ -131,6 +163,13 @@ def main(argv: list[str] | None = None) -> int:
         "--repo",
         default=DEFAULT_REPO,
         help=f"ruleset-only repository to adopt (default: {DEFAULT_REPO}, the historical target)",
+    )
+    ap.add_argument(
+        "--resource-name",
+        default=None,
+        help="Terraform resource label; defaults to `main` for the historical target and a "
+        "repo-derived slug otherwise, because two `main` blocks for different repos make "
+        "`terraform validate` fail",
     )
     ap.add_argument("--out", default="rulesets.tf")
     ap.add_argument("--check", action="store_true", help="select and vet, write nothing")
@@ -180,7 +219,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     body = candidates[0].rstrip() + "\n"
-    problems = vet(body, args.repo)
+    resource_name = args.resource_name or default_resource_name(args.repo)
+    problems = vet(body, args.repo, resource_name)
     if problems:
         print("REFUSED: the selected block is not a safe adoption:", file=sys.stderr)
         for p in problems:
@@ -217,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
         "next: discover the ruleset id, then import --\n"
         f"      gh api repos/jolarca-dev/{args.repo}/rulesets --jq '.[] | \"\\(.id)\\t\\(.name)\"'\n"
         f"      terraform import -input=false "
-        f"'{RESOURCE}.main[\"{args.repo}\"]' '{args.repo}:<ruleset-id>'"
+        f"'{RESOURCE}.{resource_name}[\"{args.repo}\"]' '{args.repo}:<ruleset-id>'"
     )
     return 0
 
