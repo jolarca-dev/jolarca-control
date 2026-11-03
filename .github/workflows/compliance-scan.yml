@@ -154,6 +154,21 @@ jobs:
       # tests/test_check_gate_parity.py in the same commit.
       - name: Gate parity — every gate has a control that can fail (D-80)
         run: python3 scripts/check_gate_parity.py
+      # ADR-0010 M-06. docs/security/toolchain-catalogue.yml is the fleet's single
+      # approved toolchain answer, and a catalogue nobody checks is documentation.
+      # This step validates the approval RECORD offline: exact pins rather than
+      # version requests, a named reviewer, an unexpired review deadline, a full-SHA
+      # action pin with a 64-hex artifact digest, and no duplicate YAML key — the last
+      # because yaml keeps the LAST duplicate silently, so appending `python:` twice
+      # would delete an approval and still load. It is deterministic and needs no
+      # token, which is why it can sit in a required context.
+      # The fleet comparison (--live, L1-L7 over every repository's default branch) is
+      # deliberately NOT wired here. It cannot go green today — 16 of 17 default
+      # branches carry no mise configuration at all — and a required check that cannot
+      # be satisfied wedges every pull request, including the ones that would fix it
+      # (D-90). Run it with `make toolchain-baseline`.
+      - name: Approved toolchain catalogue is coherent and unexpired (M-06)
+        run: python3 scripts/check_toolchain_baseline.py
       # D-81: apply.yml fires on `push: main` for repos/**, policy/**, *.tf, *.tfvars and
       # ITSELF, then runs `terraform apply -input=false -auto-approve tfplan`. Measured on the two
       # open Dependabot PRs: #87 (setup-python 7.0.0->7.1.0) and #68 (upload-artifact 7.0.1->7.0.2)

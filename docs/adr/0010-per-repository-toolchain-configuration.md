@@ -172,7 +172,13 @@ should be promoted into the D-series if and when it is accepted for remediation.
   add:* a fleet check comparing each repository's locked versions against the
   approved catalogue, following the existing `scripts/drift_detect.py` and
   `make fleet-audit` pattern. Without it the central catalogue is documentation,
-  not a control.
+  not a control. _(Amended the same day: `docs/security/toolchain-catalogue.yml`
+  and `scripts/check_toolchain_baseline.py` now exist, so the finding is
+  half-closed — the catalogue and its offline validation are wired into the required
+  job, and the fleet comparison runs through `make toolchain-baseline` but is
+  deliberately not a required context because it cannot go green today. It is
+  renumbered below rather than deleted, because "the gate exists" and "the gate is
+  enforced" are different claims.)_
 - **M-07 — the platform does not enforce the action pin, and the remedy first
   written here was wrong.** Both the org and `jolarca-security` return
   `sha_pinning_required: false` (measured 2026-11-03), so GitHub itself accepts a
@@ -199,6 +205,22 @@ should be promoted into the D-series if and when it is accepted for remediation.
   and lint it locally at that limit before pushing, not at the local one. This is
   Rationale 3 arriving as a defect: centralising a file does not centralise the
   rules that judge it.
+- **M-09 — an exception that names no rules pardons all of them.** Found while
+  building the M-06 gate, and the gate caught it in its own first draft. The
+  catalogue's `jolarca-security` entry explained why the CI **proof** cannot run
+  there, and the implementation keyed suppression on repository name alone — so it
+  also silenced L1, "this repository is not adopted", which is a different gap the
+  recorded reason does not cover. The first live run reported **15 findings where
+  the true count was 16**, and the missing one was exactly that repository. The
+  hand-built probe that motivated the gate had counted correctly, so the new tool
+  was about to disagree with the evidence that justified it. *Control:* `covers` is
+  now a required field on every exception and names the rule ids it excuses; an
+  exception without it is a C6 finding, and an exception that does not list a rule
+  cannot silence it. Proven by
+  `tests/test_check_toolchain_baseline.py::test_an_exception_does_not_silence_a_rule_it_does_not_cover`.
+  Same shape as the gate-parity lesson in AGENTS.md §7 — "an exception that also
+  silences a second rule is an off switch" — arriving a third time, inside a gate
+  written to detect drift in the others.
 
 ### What this decision does not do
 
