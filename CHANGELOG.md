@@ -10,6 +10,38 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Corrected — 2026-11-04 (AGENTS.md §8 described two brakes that are not what they say)
+
+- **The reviewer claim was flatly false.** §8's production-apply bullet asserted "no reviewer signs
+  anything" and that reviewers "were deliberately **not** added", while D-75 had installed a `production`
+  required reviewer on 2026-10-17. Re-read 2026-11-04: `protection_rules` is
+  `[{type: wait_timer, wait_timer: 30}, {type: required_reviewers, prevent_self_review: false,
+  reviewers: [JourneyOfLife]}]` with `can_admins_bypass: false` and `last_deployed_at: null`. The clause
+  now says what is true — approval is mandatory, and the same sole identity can grant it, so it is
+  friction rather than separation of duties and **D-58 stays open**. This is not tidiness: an agent
+  trusting the old sentence would not expect an approval step, would not look for a run sitting in
+  `status=waiting`, and could leave an apply armed.
+- **The state count is pointed at rather than carried.** §8 asserted "the 48-resource state"; the
+  workspace `resource-count` measures **49** today — the extra address is consent's adopted ruleset,
+  imported 2026-10-27, so the state grew as recorded and only the prose aged. The bullet now names the
+  two commands that read it. Dated measurements in the same bullets — the 2026-10-16 cancellation
+  recorded as "the workspace unchanged at 48 resources" — were **left untouched**: they were true when
+  taken, and correcting a dated observation is falsification, not maintenance.
+- **A new §8 bullet records a control that is not enforced at PR time.** Twelve merge commits reached
+  `main` on 2026-11-03 and `plan.yml` ran for **none** of them: its path filters exclude `docs/**`,
+  `scripts/**`, `tests/**` and `.github/workflows/**`, and all six runs that day were `pull_request`
+  events that died at `terraform init` on the D-56 credential. "Continuously red" and "never triggered"
+  are different defects, and §8 exists precisely so an agent does not assume protection that is absent.
+- **Scope, stated because it is not uniform:** the reviewer and resource-count edits are corrections of
+  demonstrably false text; the plan-gate bullet is new content. Drop it if this PR should stay narrow.
+- No new finding id. D-75 already owns the reviewer change and D-56/D-77 the credential, so §8 now
+  points at them instead of restating them. `AGENTS.md` sits at the repository root — outside
+  `EVIDENCE_DIRS` and outside every `apply.yml` push path — so nothing is re-registered and no apply is
+  armed by merging this.
+- Verified before opening: `grep -c 'no reviewer signs anything' AGENTS.md` → **0**; the surviving
+  `48-resource` match is the quoted phrase inside the correction itself, not a live claim; full suite
+  and governance gates per the PR body.
+
 ### Corrected — 2026-11-03 (D-77 re-measured: still open 15 days on, and none of today's twelve commits ran the plan gate)
 
 - A dated status row on **D-77** and a `Last verified` refresh on the `TFC_TOKEN` row of
