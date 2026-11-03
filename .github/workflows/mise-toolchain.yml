@@ -1,0 +1,31 @@
+name: mise toolchain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  mise-toolchain:
+    name: mise toolchain (Linux x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install verified mise and locked tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          version: 2026.10.25
+          sha256: 5d362ecc578dc7c146679b841dda949d6472cbf86ff5635db7afdca1b6b3fd87
+          install_args: --locked
+          cache: false
+          env: false
+      - name: Print selected tool versions
+        run: mise run toolchain
+      - name: Confirm installation did not change configuration
+        run: git diff --exit-code -- mise.toml mise.lock
