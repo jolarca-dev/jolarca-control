@@ -10,6 +10,46 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Corrected — 2026-11-03 (D-77 re-measured: still open 15 days on, and none of today's twelve commits ran the plan gate)
+
+- A dated status row on **D-77** and a `Last verified` refresh on the `TFC_TOKEN` row of
+  `docs/security/key-custody.md`. **No new finding id**: D-77 already owns the defect and D-82 already
+  closed the differential, so this is a re-measurement, not a discovery.
+- **Nothing has been repaired.** `gh api repos/jolarca-dev/jolarca-control/actions/secrets` returns
+  `TFC_TOKEN created=2026-10-10T16:14:14Z updated_at=2026-10-19T16:26:30Z` — untouched for 15 days — and
+  the gate's latest execution, run **41713583778** on head `00c7f9c` at `2026-11-03T20:32:57Z`, fails with
+  the same `Failed to read organization "jolarca-dev" … unauthorized` recorded on 2026-10-19. `expires`
+  stays `unknown`: no read path exists, which is that row's own measured claim, not an omission.
+- **The sharpest new fact is a coverage one, not a credential one.** Twelve commits landed on `main`
+  today and **not one ran `plan.yml`**: `GET /actions/workflows/plan.yml/runs` returns six runs for the
+  day, every one a `pull_request` event, and no merge-commit SHA appears as a `head_sha`. `plan.yml`'s
+  `push:` paths are `**.tf`, `**.tfvars`, `repos/**`, `policy/**`, `.terraform.lock.hcl` and none of the
+  twelve touched one. So the PR-time plan gate is not merely red on the apply path: on a documentation or
+  workflow merge it is **silent**, and "the plan job is failing" understates the position.
+- **The backend has still never seen CI.** `GET /api/v2/workspaces/ws-w6NSnTXXmYgh78Su/runs` → 200 with
+  **three** runs, newest `2026-10-12T10:54:52Z`, all `source=terraform+cloud`. D-82's row said the CI plan
+  cannot reach the backend; 22 days, twelve commits and five merges later the accurate claim is that no CI-triggered
+  operation has ever reached it.
+- **A number moved, and it is the documents that went stale:** `resource-count` is now **49** against the 48
+  recorded here on 2026-10-26 — consistent with the operator's 2026-10-27 `terraform import` of
+  `github_repository_ruleset.main["jolarca-consent"]`, so the state grew as recorded. `AGENTS.md` §8 still
+  says "the 48-resource state"; that correction is left for its own edit rather than bundled here.
+- Stated as an inference, not a fact: the operator's `~/.terraformrc` credential answers
+  `/api/v2/account/details` with a username, which is what a **user** token does — but the CI secret's kind
+  remains unidentifiable because Actions secrets are write-only, so the register's existing claim stands.
+- Nothing previously recorded is re-stated as new. `prevent_self_review: false` (D-75) and the three-way
+  Terraform version skew (D-64, D-74) were both checked against the register **before** writing, and are
+  only cited here where they bear on the ordering of the fix.
+- Companion edit required by the repository's own rule: `docs/security/key-custody.md` is inside
+  `EVIDENCE_DIRS`, so `docs/evidence-registry.csv` is re-registered in this same commit — the integrity gate
+  attests the committed tree, so a hash left stale would fail `make evidence-check`.
+- Two claims in the first version of this section were wrong and are corrected in place rather than left
+  for a follow-up, because this branch has not landed: it named run `41710558509` on `896ca6a` as the
+  gate's latest execution (two later `pull_request` runs exist, `41712475617` and `41713583778`), and it
+  inferred "each SHA fired exactly three workflows" from a capped `gh run list` page, which silently drops
+  older SHAs as new runs arrive — the same query re-run now returns nothing at all for three of them.
+  Absence from a capped listing is not absence of runs; the workflow-scoped endpoint is what the counts
+  above rest on.
 ### Fixed — 2026-11-03 (the D-94 label guard could be bypassed by the very flag its refusal message recommended)
 
 - **This corrects the section below it, written the same day.** #131's entry and commit `8a2ce48` claim
