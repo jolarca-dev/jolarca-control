@@ -217,6 +217,33 @@ should be promoted into the D-series if and when it is accepted for remediation.
   Same shape as the gate-parity lesson in AGENTS.md §7 — "an exception that also
   silences a second rule is an off switch" — arriving a third time, inside a gate
   written to detect drift in the others.
+- **M-10 — the gate cannot see the interpreter the required checks actually run
+  on.** `docs/security/toolchain-catalogue.yml` approves python `3.12.16` and
+  `scripts/check_toolchain_baseline.py` validates that approval — but it reads
+  `mise.toml`, and `grep -c 'python-version'` inside the gate returns **0**. Ten
+  `python-version:` declarations across six workflows on `main` (`apply.yml` 1,
+  `compliance-scan.yml` 4, `context-parity.yml` 1, `deploy-gates.yml` 1, `plan.yml` 1,
+  `sast.yml` 2) all request `"3.12"`, which is a prefix and not a release.
+  The consequence was measured as an A/B rather than argued: run `41690569251` job
+  `126107728895`, on PR head `2d6c049`, reported
+  `pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64`; run `41693066694` job
+  `126116360439`, on `main` at `5a7237c` an hour later, reported
+  `…/Python/3.12.16/x64`. **No file in this repository changed between them** — the
+  declarations sit at identical line numbers (77, 212, 245, 294) in both commits and
+  `actions/setup-python` appears four times in each. The required checks' green
+  verdict is therefore produced by an interpreter announced nowhere and attested by
+  nothing, and its current agreement with the catalogue is coincidence.
+  *Why this is a compliance finding and not a cosmetic one:* SOC 2 CC7.1 and ISO
+  27001 A.8.19 ask which version was in force when a control produced its evidence.
+  "Whatever the runner image happened to ship" cannot answer that. This is the same
+  defect ADR-0010 §Context measured to justify the whole exercise, still live in
+  this repository, and invisible to the gate built to detect it.
+  *Two ways to close it, different blast radius:* **(a)** extend the gate to read
+  `python-version:` from every workflow and require the approved release — offline,
+  deterministic, no protection mutation, but it will fail on first run, so it must
+  land together with the ten declarations it turns into pins, in one PR; **(b)**
+  make the workflows consume mise, which is the workflow migration the next section
+  defers to its own ADR. (a) is the next step.
 
 ### What this decision does not do
 
@@ -277,6 +304,9 @@ Revisit this ADR:
   checks receive the same two files (M-01, M-02) and the lint discipline (M-08);
 - when a second platform's lock entries exist (M-05);
 - when the machine baseline for M-04 is recorded;
+- when M-10 is closed — until then the catalogue's approved python is connected to
+  nothing that executes, and the required checks' interpreter is chosen by a runner
+  image that changes on its own schedule;
 - before any workflow migration that makes `mise` the CI entry point — that
   change needs its own ADR, because it converts a declaration surface into an
   execution surface;
