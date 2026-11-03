@@ -33,3 +33,57 @@ No automatic hooks, environment-file loading, production credentials, deployment
 ## Installer provenance
 
 The smoke workflow pins mise-action to its reviewed commit and mise to 2026.10.25, verifies the extracted Linux x64 binary SHA-256, disables shared caching, and uses a read-only token on a hosted runner. The archive digest was checked against the release API before deriving the binary digest. This is integrity verification, not an independent publisher identity audit.
+
+## Pilot: repository-level bounds (added 2026-11-03, ADR-0010 M-01 and M-02)
+
+Two files that the original proposal did not carry, and the reason each exists:
+
+- `.miserc.toml` sets `ceiling_paths` so mise stops searching parent directories
+  above this repository. mise loads config from the filesystem root down to the
+  current directory and merges `[tools]` per tool, so without a bound a stray
+  `../mise.toml` silently adds tools here that CI never sees. It must live in
+  `.miserc.toml`, not in `[settings]` in `mise.toml`, because mise reads the
+  former before any `mise.toml`. The ceiling names the **parent** of the
+  repository root: a ceiling directory is not searched itself, so pointing it at
+  this directory would disable the config it is meant to protect.
+- `mise.toml` gains `[tool_config] locked = true`, which makes strict lockfile
+  mode a property of the repository rather than of one CI invocation.
+  `install_args: --locked` in the workflow bound the job; a developer running
+  plain `mise install` was never bound by it.
+
+### What is proven, and by what
+
+`mise-config-scope`, the second job in `.github/workflows/mise-toolchain.yml`, is a
+refusal test with four legs. Each negative leg is paired with a positive one,
+because a guard that only asserts absence also passes when the command printed
+nothing:
+
+1. With `MISE_CEILING_PATHS=""`, `mise config` **must** list a decoy planted one
+   directory above the checkout. This proves the decoy is discoverable, so leg 2
+   is not vacuous.
+2. With the committed `.miserc.toml`, `mise config` must **not** list the decoy and
+   must still list this repository's `mise.toml`.
+3. Plain `mise install`, no `--locked` flag anywhere, must succeed from the
+   committed lockfile.
+4. The same plain `mise install`, against a copy whose `python` request is changed
+   to `3.12.15` (a real release, not the locked one), must be refused with a
+   lockfile reason.
+
+### Limits this pilot does not remove
+
+- `ceiling_paths` **fails open**. If the Tera template does not render, mise uses
+  the file's raw content as a literal path, that path matches nothing, discovery
+  stays unbounded, and no warning is printed because the file is read before
+  logging starts. Leg 2 is what turns that declaration into a control; deleting
+  the leg deletes the control.
+- A project `.miserc.toml` **cannot** ignore global or system config.
+  `~/.config/mise/config.toml` and `/etc/mise` still merge into every project on
+  the machine, and `env` is empty in a project miserc so this file cannot even
+  read the environment to compensate. The remaining half of the bound is a
+  machine baseline (ADR-0010 M-04) and nothing in this repository enforces it.
+- Both bounds are exercised on **Linux x64 only**, in CI, on a hosted runner with
+  `permissions: contents: read` and no secrets. Workstation behaviour is untested
+  here because mise is not installed on the operator's host and installing it
+  requires an approved, digest-pinned source that is not yet recorded.
+- The other sixteen repositories carry neither file. This branch is a pilot; it is
+  not a fleet state.

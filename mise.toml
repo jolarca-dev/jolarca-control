@@ -1,4 +1,14 @@
 # Initial local toolchain adoption; see MISE-ADOPTION.md for validation limits.
+#
+# locked = true makes strict lockfile mode a property of THIS repository rather
+# than of one CI invocation. install_args: --locked in the workflow binds the job;
+# a developer running plain `mise install` was not bound by it at all (ADR-0010
+# M-02). [tool_config] is not merged and applies only to tools declared in this
+# config root, so it does nothing about tools inherited from a parent directory --
+# which is why .miserc.toml must ship together with it.
+[tool_config]
+locked = true
+
 [tools]
 python = "3.12.16"
 terraform = "1.16.1"
