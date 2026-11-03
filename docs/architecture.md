@@ -192,3 +192,78 @@ govern team membership once teams are created. Until then, the RBAC policy
 serves as the target-state definition, not live enforcement. The separation
 between `jolarca-identity` (IAM machinery) and `jolarca-compliance` (access
 review evidence) is deliberate — policy and proof must not share a repository.
+
+## Toolchain Management (mise)
+
+**Decision: toolchain configuration is per repository; the baseline that governs
+it is central.** See `docs/adr/0010-per-repository-toolchain-configuration.md`
+for the rationale, the rejected alternatives and the open findings.
+
+The split by layer, as of 2026-11-03:
+
+- The `mise` executable — once per workstation and runner image, one approved
+  version, one recorded digest. It is the trust root, so it is not replicated
+  per repository.
+- The approved tool catalogue, exception process and fleet drift gate — central,
+  owned by this repository.
+- `mise.toml`, `mise.lock` and `.miserc.toml` — one set per repository, committed
+  and reviewed in the PR that changes them.
+- Package dependencies (`requirements*.txt`, `package-lock.json`,
+  `.terraform.lock.hcl`) — per repository and **unchanged** by mise. A pinned
+  interpreter does not make an unpinned `pip install` reproducible.
+
+Per repository is a correctness requirement, not a convention: mise inherits
+configuration by *filesystem ancestry*, loading every config file from the
+filesystem root down to the current directory, and `[tools]` merges per tool with
+unlisted tools inherited from parents. A hosted runner checks out to
+`/home/runner/work/<repo>/<repo>/`, where no org-level parent can exist — so a
+central configuration has no directory to live in, and an unbounded local search
+is what makes identical commits resolve differently across machines.
+
+**Current status, measured 2026-11-03, not aspiration.** Seventeen draft PRs (one per
+repository) added `mise.toml`, `mise.lock`, `MISE-ADOPTION.md` and an additive smoke
+workflow. **One has merged:** `jolarca-control` PR #121, as `42f309a`. Sixteen of the
+seventeen reported the new mise check green on their drafts; `jolarca-security`
+reports `startup_failure` because its Actions allow-list rejects `jdx/mise-action`.
+
+`.miserc.toml` and `[tool_config] locked = true` — the bound on config inheritance and
+repository-level lockfile mode — are **enforced on one default branch, this one**, and
+are proven there by the guard's own printed output on the merge push (run
+`41683853027`, job `126084253752`). Eleven other repositories carry them on open draft
+branches, measured but unmerged. `jolarca-security` carries the two files and cannot
+prove them. Four repositories whose drafts were already blocked by unrelated failing
+checks carry neither. **Sixteen of seventeen default branches are still unbounded.**
+
+Only `platforms.linux-x64` is locked anywhere, and no bound reaches global or system
+config, so every workstation remains unbounded (M-04). The existing Makefile,
+workflows and required status checks remain authoritative; mise is a declaration and
+verification surface, not a task runner or a CI entry point. See ADR-0010 findings
+M-01, M-02, M-04, M-08, M-09 and M-10, and its dated status-change section, for what
+each gap means.
+
+### The approved catalogue is not yet connected to what executes (M-10)
+
+**Closed for nine of ten declarations on 2026-11-03 — see the Closure section of
+ADR-0010.** Rule R8 in `scripts/check_toolchain_baseline.py` now reads every
+workflow in this repository and requires `python-version` and `terraform_version` to
+equal the approved release. The text below is kept as the measurement that justified
+the rule.
+
+`docs/security/toolchain-catalogue.yml` names the approved toolchain and
+`scripts/check_toolchain_baseline.py` validates it — in `make lint` and as a step
+inside the required `Validate Repo Allow-List` job. But the gate reads `mise.toml`
+only, and ten `python-version: "3.12"` declarations across six workflows request a
+prefix rather than a release. The interpreter that produces this repository's
+required-check evidence is therefore chosen by the hosted runner image, on its own
+schedule. Measured 2026-11-03 as an A/B on an unchanged tree: run `41690569251` job
+`126107728895` reported Python **3.12.15**, and run `41693066694` job `126116360439`
+an hour later reported **3.12.16**, with the declarations at identical line numbers
+in both commits. Agreement with the approved 3.12.16 today is coincidence, not a
+control — and "which version was in force when this evidence was produced" (SOC 2
+CC7.1, ISO 27001 A.8.19) currently has no answer in this repository. See ADR-0010
+M-10 for the two ways to close it.
+
+The remaining gap is `apply.yml`: it holds the tenth declaration and is itself an
+apply trigger path, so pinning it is a deploy decision rather than a toolchain edit.
+It is excused by a dated `workflow_exceptions` entry covering R8 only, expiring
+2027-05-03.

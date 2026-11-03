@@ -1,0 +1,170 @@
+name: mise toolchain
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mise-toolchain:
+    name: mise toolchain (Linux x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install verified mise and locked tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          version: 2026.10.25
+          sha256: 5d362ecc578dc7c146679b841dda949d6472cbf86ff5635db7afdca1b6b3fd87
+          install_args: --locked
+          cache: false
+          env: false
+      - name: Print selected tool versions
+        run: mise run toolchain
+      - name: Confirm installation did not change configuration
+        run: git diff --exit-code -- mise.toml mise.lock
+
+  # ADR-0010 M-01 and M-02. mise.toml binds the repository; this job binds the claim.
+  # A declaration nobody has watched fail is a hypothesis, so every leg below has an
+  # opposite leg: a guard that only asserts absence also passes when the command
+  # printed nothing at all.
+  #
+  # Portable by construction. Nothing here names a tool or a version: the declared
+  # set is read out of mise.toml, so the same file is correct in every repository
+  # that adopts this pattern. Two measured reasons it is written this way:
+  #   * mise abbreviates HOME in `mise config` output, so a grep for
+  #     "$GITHUB_WORKSPACE/mise.toml" matches nothing while that very file is loaded.
+  #     The first version of this job failed for exactly that reason, and its failure
+  #     output was the proof of the inheritance. Assertions therefore match on the
+  #     fixture's own tool name and on the versions the repository declares.
+  #   * jolarca-control's tests/test_ci_gates_are_real.py forbids a shell fallback in
+  #     any run step, and it named four steps here. Handing a status to a fallback
+  #     reports an unreadable input as a clean scan, so every step tests status with
+  #     `if` and exits 1 when it cannot read its own input.
+  mise-config-scope:
+    name: mise config scope guard (Linux x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install verified mise and locked tools
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          version: 2026.10.25
+          sha256: 5d362ecc578dc7c146679b841dda949d6472cbf86ff5635db7afdca1b6b3fd87
+          install_args: --locked
+          cache: false
+          env: false
+      - name: Show what mise loaded and what it trusts
+        run: |
+          set -euo pipefail
+          mise --version
+          echo '--- mise trust --show ---'
+          if ! mise trust --show; then
+            echo 'note: trust listing exited non-zero'
+          fi
+          echo '--- mise config ---'
+          if ! mise config; then
+            echo 'note: config listing exited non-zero'
+          fi
+      - name: Plant a decoy config one directory above the repository
+        run: |
+          set -euo pipefail
+          parent="$(dirname "$GITHUB_WORKSPACE")"
+          printf '[tools]\nbidi-decoy = "9.9.9"\n' > "$parent/mise.toml"
+          echo "planted: $parent/mise.toml"
+          ls -l "$parent"
+      - name: Leg 1 - unbounded search MUST see the decoy (so leg 2 is not vacuous)
+        env:
+          MISE_CEILING_PATHS: ""
+        run: |
+          set -euo pipefail
+          if ! out="$(mise config 2>&1)"; then
+            printf '%s\n' "$out"
+            echo '::error::mise config could not be read; the guard refuses to grade an input it cannot see'
+            exit 1
+          fi
+          printf '%s\n' "$out"
+          if ! printf '%s' "$out" | grep -q 'bidi-decoy'; then
+            echo '::error::decoy invisible even with no ceiling: this runner cannot test ceiling_paths'
+            exit 1
+          fi
+          echo 'OK: with no ceiling mise discovers the parent config and adopts its tool.'
+      - name: Leg 2 - the committed .miserc.toml MUST hide the decoy and keep every declared pin
+        run: |
+          set -euo pipefail
+          if ! out="$(mise config 2>&1)"; then
+            printf '%s\n' "$out"
+            echo '::error::mise config could not be read'
+            exit 1
+          fi
+          printf '%s\n' "$out"
+          if printf '%s' "$out" | grep -q 'bidi-decoy'; then
+            echo '::error::ceiling_paths failed open: mise still loads a config above the repository'
+            exit 1
+          fi
+          if ! vers="$(mise ls --current 2>&1)"; then
+            printf '%s\n' "$vers"
+            echo '::error::mise ls --current could not be read'
+            exit 1
+          fi
+          printf '%s\n' "$vers"
+          declared="$(awk '/^\[tools\]/{f=1; next} /^\[/{f=0} f && /=/ {
+            gsub(/[ "]/, ""); split($0, a, "="); if (a[2] ~ /^[0-9]/) print a[1] " " a[2] }' mise.toml)"
+          if [ -z "$declared" ]; then
+            echo '::error::mise.toml declares no tools, so a silent refusal would be read as a bound holding'
+            exit 1
+          fi
+          printf 'declared tools:\n%s\n' "$declared"
+          while read -r name version; do
+            if [ -z "$name" ]; then
+              continue
+            fi
+            if ! printf '%s' "$vers" | grep -qF "$version"; then
+              echo "::error::$name $version is declared but not selected, so this repository's config is not in effect"
+              exit 1
+            fi
+            echo "OK: $name $version is the selected version."
+          done <<< "$declared"
+          echo 'OK: decoy excluded and every declared pin is the one mise actually selects.'
+      - name: Leg 3 - plain "mise install" succeeds from the committed lockfile
+        run: |
+          set -euo pipefail
+          mise install
+          echo 'OK: no --locked flag was passed anywhere and the lock still governed resolution. Leg 4 is meaningful.'
+      - name: Leg 4 - with no lockfile, plain "mise install" MUST be refused
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          cp mise.toml .miserc.toml "$work"/
+          cd "$work"
+          if ! mise trust .; then
+            echo 'note: mise trust exited non-zero on the scratch copy'
+          fi
+          first="$(awk '/^\[tools\]/{f=1; next} /^\[/{f=0} f && /=/ {
+            gsub(/[ "]/, ""); split($0, a, "="); if (a[2] ~ /^[0-9]/) print a[1]; exit }' mise.toml)"
+          if [ -z "$first" ]; then
+            echo '::error::no tool to test, so this leg would prove nothing'
+            exit 1
+          fi
+          echo "testing: mise install $first with mise.lock deliberately absent"
+          data="$(mktemp -d)"
+          if out="$(MISE_DATA_DIR="$data" mise install "$first" 2>&1)"; then
+            printf '%s\n' "$out"
+            echo "::error::mise install ACCEPTED $first with no lockfile: locked mode is not a repo property"
+            exit 1
+          fi
+          printf '%s\n' "$out"
+          if ! printf '%s' "$out" | grep -qi 'lock'; then
+            echo '::error::install failed for a reason other than the lockfile, so this leg proves nothing'
+            exit 1
+          fi
+          echo 'OK: refused, and the refusal names the lockfile.'

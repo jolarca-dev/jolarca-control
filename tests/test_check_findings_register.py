@@ -92,25 +92,30 @@ def test_cross_source_different_titles_is_a_collision() -> None:
     assert labels == {"main", "PR #41 (feat/deploy-gate-check)"}
 
 
-def test_renumbered_collision_closes(monkeypatch: Any, tmp_path: Path) -> None:
-    """Positive control: the fix that closed A-02 (branch renames D-52 -> D-53) yields exit 0."""
-    fixed = tmp_path / "docs"
-    fixed.mkdir()
-    (fixed / "drift-findings.md").write_text(
-        MAIN_D52 + LEGIT_D53,
-        encoding="utf-8",
+def _tmp_repo(tmp_path: Path, files: dict[str, str]) -> Path:
+    """A throwaway git repo with `files` staged, so the dangling-reference scan has an index to read.
+
+    The scan shells out to `git ls-files`, which needs a real work tree; asserting against a plain
+    directory would either find nothing (vacuous pass) or fall through to the real repository
+    (testing the wrong tree). Creating an index is what makes the fixture a fixture.
+    """
+    import subprocess
+
+    for rel, text in files.items():
+        target = tmp_path / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "-A"], check=True, capture_output=True, text=True
     )
-    monkeypatch.setattr(cfr, "REGISTER_PATH", fixed / "drift-findings.md")
-    rc = cfr.main([])
-    assert rc == 0, rc
+    return tmp_path
 
 
-def test_duplicate_ids_on_working_copy_exit_one(monkeypatch: Any, tmp_path: Path) -> None:
-    """Negative control: intra-file collision in the working copy must exit 1 (findings, real refusal)."""
-    bad = tmp_path / "docs"
-    bad.mkdir()
-    (bad / "drift-findings.md").write_text(MAIN_D52 + PR41_D52, encoding="utf-8")
-    monkeypatch.setattr(cfr, "REGISTER_PATH", bad / "drift-findings.md")
+def _run_main(monkeypatch: Any, repo: Path, register: Path) -> tuple[int, str]:
+    """Point both module paths at the fixture repo and capture stderr."""
+    monkeypatch.setattr(cfr, "REGISTER_PATH", register)
+    monkeypatch.setattr(cfr, "ROOT", repo)
     err = io.StringIO()
     old = sys.stderr
     sys.stderr = err
@@ -118,8 +123,28 @@ def test_duplicate_ids_on_working_copy_exit_one(monkeypatch: Any, tmp_path: Path
         rc = cfr.main([])
     finally:
         sys.stderr = old
+    return rc, err.getvalue()
+
+
+def test_renumbered_collision_closes(monkeypatch: Any, tmp_path: Path) -> None:
+    """Positive control: the fix that closed A-02 (branch renames D-52 -> D-53) yields exit 0."""
+    repo = _tmp_repo(
+        tmp_path,
+        {"docs/drift-findings.md": MAIN_D52 + LEGIT_D53, "AGENTS.md": "cites D-52 and D-53 only\n"},
+    )
+    rc, _ = _run_main(monkeypatch, repo, repo / "docs" / "drift-findings.md")
+    assert rc == 0, rc
+
+
+def test_duplicate_ids_on_working_copy_exit_one(monkeypatch: Any, tmp_path: Path) -> None:
+    """Negative control: intra-file collision in the working copy must exit 1 (findings, real refusal)."""
+    repo = _tmp_repo(
+        tmp_path,
+        {"docs/drift-findings.md": MAIN_D52 + PR41_D52, "Makefile": "see D-52\n"},
+    )
+    rc, out = _run_main(monkeypatch, repo, repo / "docs" / "drift-findings.md")
     assert rc == 1, rc
-    assert "COLLISION D-52" in err.getvalue(), err.getvalue()
+    assert "COLLISION D-52" in out, out
 
 
 def test_missing_register_is_could_not_verify_not_pass(monkeypatch: Any, tmp_path: Path) -> None:
@@ -142,6 +167,68 @@ def test_zero_headings_parse_is_could_not_verify(monkeypatch: Any, tmp_path: Pat
     monkeypatch.setattr(cfr, "REGISTER_PATH", empty / "drift-findings.md")
     rc = cfr.main([])
     assert rc == 2, rc
+
+
+def test_dangling_citation_is_reported_and_blocks(monkeypatch: Any, tmp_path: Path) -> None:
+    """The D-73 class: a doc cites D-77, no row defines it. Must exit 1, not read as clean.
+
+    Real shape measured on main 2026-10-17: D-56 cited seventeen times, including inside another
+    finding's title, with no `### D-56` heading anywhere -- the definition existed only on an
+    unmerged branch. The collision check passed it, because "used twice" and "never defined" are
+    different questions.
+    """
+    repo = _tmp_repo(
+        tmp_path,
+        {
+            "docs/drift-findings.md": MAIN_D52,
+            "AGENTS.md": "the brake is D-56 plus D-77\n",
+        },
+    )
+    rc, out = _run_main(monkeypatch, repo, repo / "docs" / "drift-findings.md")
+    assert rc == 1, rc
+    assert "DANGLING D-77" in out, out
+    # D-56 is genuinely undefined in THIS fixture's register -- the point of the check is that it
+    # reports exactly that, the way main did with seventeen citations and no row.
+    assert "DANGLING D-56" in out, out
+    # An id the fixture does define must never appear as dangling, or the check would flag
+    # every register's own headings.
+    assert "DANGLING D-52" not in out, out
+
+
+def test_fixture_directories_are_excluded_from_citations(monkeypatch: Any, tmp_path: Path) -> None:
+    """tests/ cites synthetic ids on purpose; treating those as dangling would make the gate noise."""
+    repo = _tmp_repo(
+        tmp_path,
+        {"docs/drift-findings.md": MAIN_D52, "tests/test_fixture.py": "register=['D-52','D-99']\n"},
+    )
+    rc, out = _run_main(monkeypatch, repo, repo / "docs" / "drift-findings.md")
+    assert rc == 0, rc
+    assert "DANGLING D-99" not in out, out
+
+
+def test_unreadable_tree_is_could_not_verify_not_clean(monkeypatch: Any, tmp_path: Path) -> None:
+    """§3/D-23: if the file list cannot be produced, the answer is 2 -- never a silent pass."""
+    repo = tmp_path / "not-a-repo"
+    docs = repo / "docs"
+    docs.mkdir(parents=True)
+    (docs / "drift-findings.md").write_text(MAIN_D52, encoding="utf-8")
+    rc, out = _run_main(monkeypatch, repo, docs / "drift-findings.md")
+    assert rc == 2, rc
+    assert "could not verify" in out.lower() or "UNVERIFIABLE" in out, out
+
+
+def test_real_repo_has_no_dangling_citations() -> None:
+    """Positive control against the actual tree: every D-nn cited in tracked files has a row.
+
+    If this fails, an id was referenced before (or without) being written up -- the defect this
+    register keeps tripping over (D-56, D-57, D-53, and D-58 before the day before yesterday).
+    """
+    text = (ROOT / "docs" / "drift-findings.md").read_text(encoding="utf-8")
+    headings = cfr.parse_headings(text)
+    assert len(headings) > 40, f"expected dozens of headings, saw {len(headings)}"
+    dangling, gaps = cfr.find_dangling_references(headings, ROOT)
+    assert not gaps, gaps
+    assert dangling == [], [d["id"] + " " + d["note"] for d in dangling]
 
 
 def test_main_real_register_is_clean() -> None:

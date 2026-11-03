@@ -2,10 +2,11 @@
 # Jolarca Control Plane — Makefile
 # ──────────────────────────────────────────────────────────────────────────────
 
-.PHONY: help setup validate compliance context-parity context-baseline backup drift fleet-audit org-audit readiness \
-        first-commit evidence-check evidence-register findings-check \
-        init fmt fmt-check lint tf-validate py-lint py-type sh-lint yaml-lint \
-        test plan apply list-repos count-repos clean
+.PHONY: help setup validate compliance context-parity context-baseline backup adoption-block drift fleet-audit org-audit readiness \
+        first-commit evidence-check evidence-register findings-check gate-parity secrets-inventory \
+        apply-path-trigger toolchain-catalogue toolchain-baseline \
+        init fmt fmt-check lint tf-validate py-lint py-fmt-check py-type sh-lint yaml-lint \
+        test plan apply list-repos count-repos clean backup-timer-install backup-timer-status
 
 .DEFAULT_GOAL := help
 
@@ -30,7 +31,7 @@ validate: ## Validate all repo YAML definitions against policy
 compliance: ## Run the full compliance report (JSON)
 	python3 scripts/compliance_check.py
 
-lint: fmt-check tf-validate validate context-baseline py-lint py-type sh-lint yaml-lint test ## Everything CI runs before a plan
+lint: fmt-check tf-validate validate context-baseline gate-parity toolchain-catalogue py-lint py-fmt-check py-type sh-lint yaml-lint test ## Everything CI runs before a plan
 
 fmt: ## Format Terraform files in place
 	terraform fmt -recursive
@@ -49,6 +50,17 @@ tf-validate: ## terraform init (no backend) + validate
 py-lint: ## ruff check over scripts/ and tests/ (rules pinned in pyproject.toml)
 	ruff check scripts/ tests/
 
+# D-83: `fmt-check` above is TERRAFORM fmt; `lint` ran no ruff formatter check, while the CI Lint
+# job does run `ruff format --check`. Measured 2026-10-26: `lint` exited 0 (313 passed) on a branch
+# whose new fixture file that check wanted to reformat in 13 places. This is NOT an unenforced
+# formatter — `.pre-commit-config.yaml` carries `ruff-format`, the hook is installed, and
+# `pre-commit run --all-files` passes all twelve — so the gap is that the surface AGENTS.md §2 tells
+# people to run (`make lint`) does not match CI's list, and a session can sit inside `lint` without
+# ever invoking the hooks. `lint` now covers it; the three surfaces (lint / hooks / CI) are still
+# compared by nothing.
+py-fmt-check: ## ruff format --check over scripts/ and tests/ (the check the CI Lint job runs)
+	ruff format --check scripts/ tests/
+
 py-type: ## mypy --strict over scripts/ (config in pyproject.toml)
 	mypy
 
@@ -58,9 +70,11 @@ sh-lint: ## shellcheck over every shell script
 yaml-lint: ## yamllint over the repo (config: .yamllint; not --strict, see file)
 	yamllint -c .yamllint .
 
-test: ## Regression tests: plan-safety (D-22) + execution mode + backup (D-02) + readiness + first-commit
+test: ## Regression tests: plan-safety (D-22) + execution mode + evidence integrity + credential expiry + backup (D-02)
 	bash tests/test_check_plan_safety.sh
 	bash tests/test_check_workspace_execution_mode.sh
+	bash tests/test_hash_evidence.sh
+	bash tests/test_check_secret_inventory.sh
 	bash tests/test_state_backup.sh
 	.venv/bin/python -m pytest tests/ -q
 
@@ -86,6 +100,36 @@ evidence-check: ## Verify evidence hashes against the committed registry
 evidence-register: ## Regenerate docs/evidence-registry.csv (commit the diff)
 	bash scripts/hash_evidence.sh
 
+# Gate parity: the control that gates the controls (D-80).
+# AGENTS.md §7 requires a negative control for every gate and §3 requires 0/1/2 exits, but
+# nothing checked either rule, so both rotted unnoticed: scripts/check_secret_inventory.sh
+# landed unwired and untested, and tests/test_check_workspace_execution_mode.sh (13 cases)
+# ran only via this Makefile — never in CI, where `pytest tests/` collects .py and cannot
+# collect .sh. Offline, deterministic, no credentials.
+#   0 parity · 1 findings · 2 could not verify (unreadable Makefile or workflow)
+gate-parity: ## Every gate must have a fixture, and every fixture must actually run
+	python3 scripts/check_gate_parity.py
+
+# Credential expiry, read from the machine-read table in docs/security/key-custody.md.
+# STATUS 2026-10-26: exits 1 by design — the TFC_TOKEN row's expiry is `unknown` until the
+# operator reads it in the HCP UI, which is what that register itself says. Deliberately NOT a
+# `lint` prerequisite: a permanently-red local gate trains everyone to ignore red. It runs in
+# deploy-gates.yml, an advisory job, so the signal is visible without blocking every merge.
+# Promote it to a required context only once the row carries a real date.
+secrets-inventory: ## Fail if a dated credential is expired, imminent, or has an unknown expiry
+	bash scripts/check_secret_inventory.sh
+
+# Would this branch's diff arm a production apply, and who authored it? (D-81)
+# apply.yml triggers on `push: main` for repos/**, policy/**, *.tf, *.tfvars and itself, then
+# applies with -auto-approve; a pinned-action bump inside apply.yml therefore is a deploy change,
+# not a dependency chore. Run it on a feature branch: on main the diff against origin/main is
+# empty, and the script reports 2 (could not verify) rather than calling an unread diff clean.
+# Deliberately NOT a `lint` prerequisite: it needs a branch-relative diff that a detached CI
+# checkout may not have, and a red from checkout shape would be an artefact, not a finding.
+#   0 no trigger match, or a human changed one (announced) · 1 a bot would arm it · 2 unverifiable
+apply-path-trigger: ## Report whether this branch would start a production apply, and by whom
+	python3 scripts/check_apply_path_trigger.py --changed "$$(git diff --name-only origin/main...HEAD)"
+
 # Pre-first-commit readiness gate. Registry-driven (repos/*.yml), read-only, and
 # the only tool that inspects the LOCAL working copy — the gap that let D-28
 # (an index holding .idea/ while every real file was untracked) reach commit.
@@ -103,11 +147,43 @@ evidence-register: ## Regenerate docs/evidence-registry.csv (commit the diff)
 findings-check: ## Every `### D-nn` heading must be unique on main and across open PRs
 	python3 scripts/check_findings_register.py --cross-pr
 
+# ADR-0010 M-06. Per-repository mise configuration is the right decision and it has
+# a cost: seventeen lockfiles, one answer per repo, and no way to see divergence.
+# Measured 2026-11-03, 1 of 17 default branches carried any mise configuration at
+# all and nothing in this repository could report it — the number had to be
+# assembled by hand from gh output. docs/security/toolchain-catalogue.yml is the
+# single approved answer; this is the check that reads it.
+#
+# Two modes, deliberately wired differently:
+#   toolchain-catalogue  offline, deterministic, no token. Validates the approval
+#     record itself — exact pins, named reviewer, unexpired deadline, full-SHA
+#     action pin, 64-hex digest, no duplicate YAML key. Runs in `lint` and inside
+#     the required Validate Repo Allow-List job, because it can go green today.
+#   toolchain-baseline   LIVE. Reads every repository's default branch and reports
+#     divergence (L1-L7). NOT a required context: it cannot pass today, and a
+#     required check that cannot be satisfied wedges every pull request in the
+#     repository including the ones that would fix it (D-90).
+#   0 coherent · 1 findings · 2 could not verify (unreadable catalogue, unreachable
+#   repository, empty scope, no gh). Never a silent pass.
+toolchain-catalogue: ## Validate the approved toolchain catalogue itself (offline)
+	python3 scripts/check_toolchain_baseline.py
+
+toolchain-baseline: ## Diff every fleet repository's default branch against the catalogue (live, gh)
+	python3 scripts/check_toolchain_baseline.py --live
+
 readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
+	# No `>/dev/null` here: this script puts its one-line table on stderr and its
+	# detail (findings JSON when OUT= is omitted) on stdout, so redirecting stdout
+	# silently threw the findings away while leaving the table to imply the gate
+	# had simply been terse (D-86, measured 2026-10-26).
+	# NOTE: `make readiness` can never report §3's three-valued code — GNU make
+	# returns 2 for any failed recipe (proved: a `@exit 1` target also yields 2).
+	# Call `.venv/bin/python scripts/repo_readiness_audit.py …` directly when the
+	# difference between "findings" (1) and "could not verify" (2) matters.
 	python3 scripts/repo_readiness_audit.py \
 	  $(if $(REPO),--repo $(REPO)) \
 	  $(if $(OUT),--output $(OUT)) \
-	  $(if $(REPORT),--markdown $(REPORT)) >/dev/null
+	  $(if $(REPORT),--markdown $(REPORT))
 context-parity: ## Declared required status checks must be checks the repo can report
 	python3 scripts/check_declared_contexts.py
 
@@ -121,6 +197,46 @@ context-baseline: ## policy/repo-defaults.yml required_checks must match the dec
 backup: ## Encrypted, decrypt-verified off-host backup of Terraform state
 	@test -n "$(BACKUP_DEST)" || { echo "usage: BACKUP_DEST=<off-host-dir> make backup"; exit 1; }
 	BACKUP_DEST=$(BACKUP_DEST) bash scripts/state_backup.sh
+
+# The systemd units are committed, not hand-written into ~/.config: this target is the
+# only supported way to install them, so the running schedule and the reviewed schedule
+# cannot diverge. Before this existed the schedule lived only in one home directory.
+backup-timer-install: ## Install the nightly state-backup timer from the committed units
+	@install -d "$(HOME)/.config/systemd/user"
+	@for u in service timer; do \
+	  cp "systemd/jolarca-state-backup.$$u" "$(HOME)/.config/systemd/user/" && \
+	  diff -q "systemd/jolarca-state-backup.$$u" "$(HOME)/.config/systemd/user/jolarca-state-backup.$$u" >/dev/null || { echo "FAIL: $$u did not land byte-identically"; exit 1; }; \
+	done
+	systemctl --user daemon-reload
+	systemctl --user enable --now jolarca-state-backup.timer
+	@echo "installed. verify: systemctl --user list-timers | grep jolarca"
+	@test "$$(loginctl show-user $$(whoami) --property=Linger --value 2>/dev/null)" = "yes" \
+	  || echo "WARNING: Linger=no -- a user timer will not run after a reboot with no login. See systemd/jolarca-state-backup.timer."
+
+backup-timer-status: ## Show the backup timer, its next run and the last journal entries
+	systemctl --user list-timers --all | grep jolarca || echo "timer not installed"
+	-loginctl show-user $$(whoami) --property=Linger
+	-journalctl --user -u jolarca-state-backup -n 12 --no-pager
+	@systemctl --user show jolarca-state-backup.service \
+	  --property=Result --property=ExecMainStatus --property=NRestarts | tr '\n' ' '; \
+	  echo ""; \
+	  echo "  read NRestarts: Result describes only the LAST attempt, so a control that failed and then \
+succeeded on retry reports 'success' and the failure is invisible here (measured 2026-10-30: \
+NRestarts=1 with Result=success)"
+
+# Step 6b step 1 of docs/state-migration-runbook.md. The instruction used to be "land this file only
+# in the PR that runs step 2", i.e. transcribe a protection object by hand — the friction D-87 row
+# (3) says trains humans to hand-write protection objects. Two scripted replacements for that failed
+# in structurally different ways before this target existed: a word filter dropped the adoption block
+# because its own comment mentions `pull_request`, and an awk variant emitted zero lines which
+# `terraform fmt -check` then reported as clean. So this extracts by BLOCK syntax, asserts the result
+# is inert, and refuses rather than write something an operator will import.
+#   make adoption-block                 # writes rulesets.tf for jolarca-consent (refuses to overwrite)
+#   make adoption-block REPO=jolarca-vendor OUT=rulesets-vendor.tf   # D-94: any ruleset-only repo
+#   make adoption-block OUT=/tmp/preview.tf
+#   0 one inert adoption · 1 refused (ambiguous, contaminated, or would overwrite) · 2 cannot verify
+adoption-block: ## Extract Step 6b's inert adoption block for terraform import
+	python3 scripts/extract_adoption_block.py --repo $(if $(REPO),$(REPO),jolarca-consent) --out $(if $(OUT),$(OUT),rulesets.tf)
 
 # Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
 # STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target
@@ -137,6 +253,9 @@ first-commit: ## Phase 3 gate: VERIFY→COMMIT→PUSH→REVIEW→MERGE→VERIFY 
 	  echo "usage: make first-commit REPO=<name> [STEP=A|B|C|D|E|F|all]"; \
 	  echo "       [MESSAGE=\"...\"] [ATTEST=\"...\"] [EVIDENCE=<path>] [STRICT=1]"; \
 	  echo "       [SNAPSHOT=1] [NO_LIVE=1]"; exit 2; }
+	# As in `readiness` above: stdout carries the machine-readable verdict, so it
+	# is no longer discarded, and a non-zero exit here is make's generic 2, not
+	# this script's 1-or-2 — invoke the script directly to read the real code (D-86).
 	python3 scripts/first_commit_pipeline.py \
 	  --repo $(REPO) \
 	  $(if $(STEP),--step $(STEP)) \
@@ -146,7 +265,7 @@ first-commit: ## Phase 3 gate: VERIFY→COMMIT→PUSH→REVIEW→MERGE→VERIFY 
 	  $(if $(EXPECTED_SHA),--expected-sha $(EXPECTED_SHA)) \
 	  $(if $(SNAPSHOT),--snapshot) \
 	  $(if $(STRICT),--strict) \
-	  $(if $(NO_LIVE),--no-live) >/dev/null
+	  $(if $(NO_LIVE),--no-live)
 
 # ── Terraform ────────────────────────────────────────────────────────────────
 init: ## Initialize Terraform

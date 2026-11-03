@@ -1,0 +1,777 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Fleet Audit 2026-Q4 — repository record: jolarca-control (the control plane)
+# ──────────────────────────────────────────────────────────────────────────────
+# This is the repository that defines what "correct" means for the other 16.
+# Audited against itself: every claim below cites a file, a line, or a command
+# that was actually run — including three of this repo's own controls, which
+# were tested by experiment rather than by reading.
+# Status vocabulary inherited from audit/soc2-checklist.yml (lines 9-21).
+# ──────────────────────────────────────────────────────────────────────────────
+
+framework_evidence: "jolarca-dev/jolarca-control"
+version: "fleet-audit-2026-Q4"
+owner: "jolarca-dev organization owner (single operator — D-10)"
+verification_date: "2026-10-26"
+verification_method: >-
+  read-only gh api + git + local gate runs, plus one deliberate experiment:
+  scripts/hash_evidence.sh was copied to an isolated tree under /tmp, a file
+  registered, the file deleted, and --check re-run. No repository file was
+  destroyed to learn this.
+
+baseline:
+  branch: "docs/register-data-stores-d79"
+  commit_sha: "1ef4f9b05addc795a1dc8cafa18f1049ca7932fa"
+  origin_main_sha: "bdbe971e3f2df25c0e3e57b3faab968f06351b4b"
+  branch_state: "1 ahead / 1 behind origin/main; PR #85 OPEN, mergeable=MERGEABLE, mergeStateStatus=BEHIND"
+  open_prs: 7
+  uncommitted_at_audit_start: "clean apart from 2 untracked audit docs"
+  scripts: 15
+  test_files: 15
+  test_lines_of_python_and_shell: 5288
+  pytest_collected: 277
+
+controls:
+  - id: "FA-control-01"
+    description: "The evidence-integrity gate detects evidence that is no longer there"
+    evidence: >-
+      EXPERIMENT (isolated /tmp tree, scripts/hash_evidence.sh copied verbatim):
+      registered policy/a.yml, then deleted the file, then ran --check.
+      Output: "Evidence check: 0 files scanned, 0 mismatches / OK: all registered
+      evidence hashes match", exit code 0. The check loop (lines 77-116) iterates
+      files found on disk and never asks whether every registered row still has a
+      file. The precondition guard (lines 52-64) covers a missing or header-only
+      baseline, but there is no floor on the scanned count.
+      Current real state, measured: 52 rows, 0 registered-but-missing — so this is
+      a detection gap, not an active loss.
+    enforcement: "scripts/hash_evidence.sh --check · make evidence-check"
+    status: "implemented"
+    finding: "FA-control-01"
+    severity: "S1"
+    frameworks: ["SOC 2 CC4.1", "ISO/IEC 27001 A.5.31", "PCI-DSS 12.10.1"]
+    note: >-
+      FIXED — LANDED ON main AS e5b9b3f (PR #89) 2026-10-26. --check now runs a reverse pass over every
+      registered path (MISSING -> exit 1) and refuses to report OK when nothing was
+      compared (exit 2). Negative controls live in the new
+      tests/test_hash_evidence.sh (19 cases). Compensating control still worth
+      naming: git history records the deletion, so the loss was always discoverable
+      by anyone who diffed the tree — but the GATE exists so auditors need not, and
+      AGENTS.md §7 is the rule this broke: a gate that reports green has not been
+      shown to detect anything. Running the fixed gate against a clean clone is what
+      exposed FA-control-10.
+
+  - id: "FA-control-02"
+    description: "Evidence integrity is enforced on the merge path"
+    evidence: >-
+      Live required contexts on main (4): Validate Repo Allow-List, Policy
+      Compliance Check, Repository Secret Pattern Scan, SAST (semgrep).
+      evidence-integrity.yml's job name is 'Evidence Integrity Check' —
+      NOT among them. It triggers on schedule + pull_request (paths
+      docs/adr/**, audit/**, policy/**, repos/**, docs/runbooks/**,
+      docs/security/**, the registry itself, and hash_evidence.sh), so it runs
+      and reports, and cannot block.
+    enforcement: "GitHub required_status_checks + new step in the required job"
+    status: "implemented"
+    finding: "FA-control-02"
+    severity: "S1"
+    note: >-
+      FIXED — LANDED ON main AS e5b9b3f (PR #89) 2026-10-26, the way this repo already enforces every
+      other policy gate:
+      `bash scripts/hash_evidence.sh --check` now runs as a step INSIDE the required
+      Validate Repo Allow-List job, so evidence integrity blocks a merge with no
+      branch-protection change at all.
+      Making 'Evidence Integrity Check' itself a required context was proposed by
+      this audit and WITHDRAWN on measurement: that workflow's pull_request trigger
+      is path-filtered to eight patterns, so a PR touching anything else could never
+      report the context and, under strict=true, would sit 'Waiting for status to be
+      reported' forever. scripts/check_required_context_baseline.py:140-141 already
+      refuses a path-filtered job as a required-check backstop — the repo's own gate
+      would have rejected the change this audit first proposed.
+      The workflow logic was never the problem: its header (lines 36-48) documents
+      removing the register step after the tautology was found.
+
+  - id: "FA-control-03"
+    description: "Tests that prove the safety gates can fail are merge-blocking"
+    evidence: >-
+      'Regression Tests' (compliance-scan.yml job `test`) is NOT a required
+      context. It contains the repo's negative controls:
+      tests/test_check_plan_safety.sh (25 cases), tests/test_state_backup.sh
+      (10 cases, incl. skip-verify-is-not-a-pass exit 2), and
+      `python -m pytest tests/ -q` (277 tests). Measured exit 0 today, so the
+      controls currently pass — but nothing prevents a PR that breaks them.
+    enforcement: "GitHub required_status_checks — absent for this job"
+    status: "gap"
+    finding: "FA-control-03"
+    severity: "S1"
+    note: >-
+      apply.yml runs scripts/check_plan_safety.sh before -auto-approve. If the
+      fixtures regress in a merge that also touches an apply path, the refusal
+      gate is weaker than its own test suite believes, and CI will not have
+      objected.
+      NOT fixed here, deliberately: promoting this job to a required context is a
+      live branch-protection mutation. AGENTS.md §5 forbids out-of-band
+      `gh api -X PATCH`, the rules are Terraform-owned, and check_plan_safety.sh
+      refuses protection attribute changes in either direction (D-61) until
+      state-migration runbook step 6 closes. It is an operator decision, not
+      something a docs PR can smuggle. The job's own comment claiming it 'is a
+      required context' was corrected in the same edit that added the fixtures.
+
+  - id: "FA-control-04"
+    description: "Declared mandatory gates are executed somewhere"
+    evidence: >-
+      policy/compliance-gates.yml#code_quality is enforcement:"mandatory",
+      tier governance required list includes code_quality, and its python tool
+      list contains "pytest --cov --cov-fail-under=80". Measured: compliance-
+      scan.yml:180 runs `python -m pytest tests/ -q` (no --cov), and
+      pyproject.toml contains NO [tool.coverage] block and no fail_under.
+    enforcement: "none — the flag is not passed anywhere"
+    status: "declared"
+    finding: "FA-control-04"
+    severity: "S2"
+    note: >-
+      Same defect class the repo found in jolarca-consent (their A-10, fixed
+      there on 2026-09-28 by adding the flag). Here the mandate is unmet in the
+      repo that writes the mandate. Honest qualifier: coverage is a proxy, not a
+      control — this repo's real assurance is the negative-control fixtures, and
+      those DO run (they are just not required, see FA-control-03).
+
+  - id: "FA-control-05"
+    description: "Every gate has a test that proves it detects its defect class"
+    evidence: >-
+      Measured after merging origin/main on 2026-10-26: 16 scripts, 13 with a dedicated
+      tests/test_<script> file. Three without one: check_fleet_separation (.sh),
+      org_delivery_audit (.sh), and check_secret_inventory (.sh) — the last landed from
+      PR #86 while this audit was running, which is the finding recurring rather than a
+      one-off: nothing in CI asks whether a new gate has a negative control. At first
+      measurement the uncovered three were check_fleet_separation, hash_evidence and
+      org_delivery_audit; hash_evidence is now covered by the 19-case fixture added in
+      this PR. Re-measured after the parity gate was written: 17 scripts, 15 with a
+      fixture, 2 baselined with a dated reason and a ceiling of 2 (R4 only lets it
+      shrink). The rule itself is now scripts/check_gate_parity.py, run inside the
+      required Validate Repo Allow-List job, so a PR that adds scripts/<name> without
+      tests/test_<name> fails a required context instead of merging quietly.
+    enforcement: "scripts/check_gate_parity.py R1/R1b/R2/R3/R4 inside required context Validate Repo Allow-List"
+    status: "implemented"
+    finding: "FA-control-05"
+    severity: "S2"
+    note: >-
+      The durable fix was not three more files: it is a gate that fails a PR adding
+      scripts/<name> without a matching tests/test_<name>, plus R2 (a shell fixture must
+      be invoked by a workflow that can trigger on pull_request, because `pytest tests/`
+      cannot collect .sh) and R3 (a script must be invoked by something executable, parsed
+      not grepped, because a comment is documentation). check_secret_inventory.sh now has
+      its own 19-case fixture and tests/test_check_workspace_execution_mode.sh's 13 cases
+      run on the merge path. Two named exceptions remain and are recorded in the gate's own
+      NO_FIXTURE_BASELINE with the reason each is tolerated: check_fleet_separation.sh and
+      org_delivery_audit.sh. FA-control-03 still governs whether the FIXTURE job's results
+      can block: the parity gate is required, but the fixtures it checks run in the
+      advisory Regression Tests job.
+
+  - id: "FA-control-06"
+    description: "Code standard gates block a merge"
+    evidence: >-
+      'Lint' (ruff check, ruff format --check, mypy, shellcheck -x scripts/*.sh
+      tests/*.sh, yamllint -c .yamllint .) and 'Terraform Format'
+      (terraform fmt -check) both run on pull_request and are NOT required
+      contexts. Measured today: make lint exit 0, 277 passed.
+    enforcement: "advisory"
+    status: "gap"
+    finding: "FA-control-06"
+    severity: "S2"
+    note: "Contributes to FA-control-03: 4 of 14 reported job names can block."
+
+  - id: "FA-control-07"
+    description: "Signed commits are enforced where policy claims they are"
+    evidence: >-
+      branches/main/protection.required_signatures.enabled = false on this repo,
+      while git commit -S is a stated convention (CONTRIBUTING/AGENTS §6) and
+      jolarca-consent's three main commits all returned verification.verified=true.
+    enforcement: "convention only"
+    status: "accepted"
+    finding: "FA-control-07"
+    severity: "S2"
+    note: "D-05 pattern. Must not be described as an enforced control."
+
+  - id: "FA-control-08"
+    description: "The CI apply path is understood and current"
+    evidence: >-
+      apply.yml triggers: push to main paths repos/**, policy/**, *.tf, *.tfvars,
+      .github/workflows/apply.yml, plus workflow_dispatch. Job prod-apply declares
+      environment: production (line 57-59) — therefore the environment secret
+      TF_GITHUB_TOKEN IS reachable by that job. Repo-level secrets are
+      TFC_TOKEN and TF_GITHUB_TOKEN_READONLY; org-level secrets: none.
+      actions/variables: STATE_MIGRATION_COMPLETE=true.
+      Environment production protection, measured:
+      [{type: wait_timer, wait_timer: 30}, {type: required_reviewers,
+      reviewers: [JourneyOfLife], prevent_self_review: false}],
+      can_admins_bypass=false.
+      apply.yml run history, last 8 (2026-10-15..2026-10-17): 4 failure, 4
+      cancelled — no success in that window.
+      D-82 read, 2026-10-26, from the HCP side with the operator's own CLI credential (never
+      printed): `GET /api/v2/organizations` -> 200 listing jolarca-dev; the workspace exists
+      (ws-w6NSnTXXmYgh78Su, execution-mode local, terraform 1.16.5, resource-count 48, locked
+      false); `…/runs` -> 200 with THREE runs total since org creation 2026-10-10, every one
+      `source: terraform+cloud` / `Triggered via CLI`. So the GitHub-side apply failures were
+      never reaching HCP at all: no Actions-originated run has ever existed, and the 48-resource
+      state is what the last CLI run left. The caller also lacks can-queue-run/can-queue-apply,
+      which bounds what even this credential could do if it were used from CI.
+    enforcement: "apply.yml + check_plan_safety.sh + prevent_destroy + wait_timer"
+    status: "pending-adoption"
+    finding: "FA-control-08"
+    severity: "S1"
+    note: >-
+      Two conclusions, stated carefully. (1) The reviewer requirement is
+      self-approval: the sole operator is both author and the only listed
+      reviewer, and prevent_self_review is deliberately false — so the 30-minute
+      wait is a cancel window, not an approval. (2) No successful apply in the
+      visible window means the pre-apply refusal gate has never been exercised in
+      production against a real plan; its 25 fixtures are the assurance, and the
+      fixtures are not merge-blocking (FA-control-03).
+
+  - id: "FA-control-09"
+    description: "Corrections to the control plane's own record land promptly"
+    evidence: >-
+      7 open PRs on this repo: #85 D-79 (2026-10-19, BEHIND), #84 D-77
+      (2026-10-19), #82 ruff bump (2026-10-19), #79 (introduces the id its own title
+      cites; unmerged, so that id has no row on main) (2026-10-17), #68
+      upload-artifact bump (2026-10-12), #54 D-33 rehearsal (2026-10-07), #40
+      dead-path fix (2026-10-05).
+    enforcement: "none"
+    status: "gap"
+    finding: "FA-control-09"
+    severity: "S2"
+    note: >-
+      Restates PDA-10 with today's numbers: #40 and #79 are the PRs whose subject
+      is documentation accuracy, unmerged 9-19 days, so main still carries the
+      text they were opened to fix.
+
+  - id: "FA-control-10"
+    description: "Every registry row names a file the repository actually contains"
+    evidence: >-
+      Found by running the FA-control-01 fix against a clean clone rather than the
+      working tree: git clone of the branch into /tmp, new script overlaid, --check
+      -> "46 files scanned, 26 mismatches / FAIL: 26 registered evidence file(s)
+      no longer exist", exit 1. The 26 rows are
+      docs/security/pre-deployment-audit-2026-10-25/* — present on disk, never
+      committed (git status showed 44 untracked files there, git ls-files 0).
+      Before the fix, CI checked 46 files, found nothing, and reported OK: the 26
+      attestations were vacuously true in the only environment that matters.
+      Publication risk checked first because this repo is PUBLIC: gitleaks dir over
+      471 KB -> no leaks; no private-key or token-shaped material; the only emails
+      are the role mailboxes the fleet already publishes in SECURITY.md plus the
+      GitHub noreply identity (D-59).
+    enforcement: "scripts/hash_evidence.sh --check (reverse pass) + tracked-tree enumeration"
+    status: "implemented"
+    finding: "FA-control-10"
+    severity: "S1"
+    frameworks: ["SOC 2 CC4.1", "ISO/IEC 27001 A.5.31", "GDPR Art. 5(2)"]
+    note: >-
+      Root cause is the gate's INPUT, not just its check: register mode walked the
+      working tree, so it could attest files git had never seen. Fixed at the root —
+      enumeration is now `git ls-files -z` (the same scope scripts/check_findings_register.py
+      uses), a non-repo or empty index is exit 2, and a fixture proves an untracked file
+      under an evidence directory acquires NO row. Consequence for this PR: the
+      pre-deployment-audit-2026-10-25 sweep directory is left untracked, because its raw
+      `gh pr list` output quotes an id that only unmerged PR #79 defines; committing it
+      would need either falsifying captured evidence or widening the citation gate's
+      exclusions, and AGENTS.md §5 forbids both. Its 26 rows therefore leave the registry,
+      which is the honest state: the registry now attests 46 files, all of them in git.
+      Verification practice adopted: run --check in a clean clone, not only in the working
+      tree — a green local run proves nothing about the committed tree.
+
+  - id: "FA-control-11"
+    description: "A shipped control must produce a verdict somebody reads (readable input + an invoker)"
+    evidence: >-
+      scripts/check_secret_inventory.sh landed on 2026-10-20 in PR #86 (adds commit bdbe971)
+      with two independent silences. (1) INPUT: its default argument was
+      docs/SECRETS_INVENTORY.md and `git log --all --oneline --diff-filter=A --
+      docs/SECRETS_INVENTORY.md` returns 0 lines, `git ls-files` 0 — the file has never existed
+      on any branch, so running it exactly as documented printed
+      "::error::docs/SECRETS_INVENTORY.md not readable — an unreadable register is not a pass"
+      and exited 2, forever, correctly. (2) INVOKER: `git grep -n check_secret_inventory
+      origin/main -- Makefile '.github/workflows'` → exit 1 (no matches); `git grep -l` finds it
+      only in prose (key-custody.md and this audit's own records). Meanwhile
+      docs/security/key-custody.md:33 declares its table "the single `expires`-bearing block the
+      gate parses", and `:41` sets TFC_TOKEN `expires = unknown` with "until then the gate is red by
+      design" — pointed at the real register today it exits 1 after two `ok:` rows. A control
+      designed to be red, wired to nothing, reports green forever: the fail-closed signal was
+      swallowed by absence, not by `||` or continue-on-error. Same class, second instance: tests/
+      test_check_workspace_execution_mode.sh (13 cases, self-reported "13 passed, 0 failed") was
+      invoked by the Makefile only, and `pytest tests/` cannot collect .sh, so it could never fail
+      a merge (origin/main had four .sh fixtures, three wired).
+    enforcement: "scripts/check_gate_parity.py R2/R3 (required context) + default path repaired + advisory step in deploy-gates.yml"
+    status: "implemented"
+    finding: "FA-control-11"
+    severity: "S1"
+    frameworks: ["SOC 2 CC4.1", "SOC 2 CC7.1", "ISO/IEC 27001 A.8.8", "PCI-DSS 8.3.1"]
+    note: >-
+      Recorded as S1 for the same reason FA-control-01 was: the repository documents a monitoring
+      control that was not operating, so a Type I description written from key-custody.md would be
+      inaccurate, and the evidence registry attests the file's bytes, not its effect. What this
+      row does NOT close: the TFC_TOKEN expiry itself (a production-scope GitHub secret whose
+      date HCP Terraform describes only to a holder of it — CANNOT VERIFY from here, §3), and any
+      claim about the other 16 repositories (the parity gate reads this repo's Makefile and
+      workflows only). Deliberate design choice, stated rather than hidden: the gate is wired into
+      deploy-gates.yml, an ADVISORY job — "Deploy Gates" is not among the four required contexts —
+      because promoting an intentionally-red check to a required context would wedge every PR
+      (A-01's deadlock shape). Its fixture tests/test_check_secret_inventory.sh (19 cases) does
+      run on the merge path, so the script's behaviour is protected even while its verdict is
+      advisory. Observed while measuring and not acted on: check_findings_register.py's HEADING_RE is
+      `^###\s+(D-\d+)\s+·\s+(.+?)\s*$`, so a sub-lettered id is invisible to both the heading parse
+      and the citation scan. Measured 2026-10-26 against the parser itself: 83 lines in
+      docs/drift-findings.md match `^###\s+D-[0-9A-Za-z]+` and `parse_headings()` returns 82 — the one
+      it drops is exactly `D-22a · apply.yml post-apply verification could not fail` at :235, and
+      `D-22a` is written as prose at :456, :482 and :1223. Harmless today, a trap the first time two
+      rows want the same number.
+      CORRECTION OF A CORRECTION, kept because the mistake is the lesson: earlier today this note was
+      rewritten to say no sub-lettered heading exists. That claim came from a `grep` whose output
+      arrived EMPTY through an unreliable capture channel, and an empty result was read as an
+      absence — the exact failure AGENTS.md §1 and §7 exist to prevent, committed by this audit. The
+      heading is present. Measuring means calling the parser and comparing counts, not trusting that a
+      command printed nothing.
+
+  - id: "FA-control-12"
+    description: "Change management must distinguish a considered change from an unattended one"
+    evidence: >-
+      apply.yml triggers on push:main for repos/**, policy/**, *.tf, *.tfvars and itself, then runs
+      `terraform apply -input=false -auto-approve tfplan`. Because AGENTS.md §5 requires actions to
+      be pinned to a full SHA, the pins live inside the workflow files, so dependency automation
+      writes into the apply trigger by construction. Measured on the two open Dependabot PRs:
+      `gh pr diff 87 --name-only` (setup-python 7.0.0->7.1.0) and `gh pr diff 68 --name-only`
+      (upload-artifact 7.0.1->7.0.2) both include `.github/workflows/apply.yml`. Before this change
+      nothing said that merging a version bump is a deploy decision — not in the PR body, not in a
+      check, not in policy/compliance-gates.yml, whose D-58 exception already concedes that no
+      person signs the apply and that the 30-minute wait is delay plus a cancel window.
+    enforcement: "scripts/check_apply_path_trigger.py as a step inside required context Validate Repo Allow-List (pull_request events)"
+    status: "implemented"
+    finding: "FA-control-12"
+    severity: "S2"
+    frameworks: ["SOC 2 CC8.1", "ISO/IEC 27001 A.8.32", "PCI-DSS Req 12.10.1"]
+    note: >-
+      Asymmetric by design and stated in the script: a bot/app PR touching an apply-path file exits
+      1 (refused pre-merge, where a human can author the same diff deliberately), a human PR exits
+      0 with a NOTICE (refusing Terraform work would manufacture the A-01/FA-control-03 deadlock).
+      This is therefore not the dependency-bump deadlock class — the bump stays mergeable, by a
+      person. Trigger patterns are READ from apply.yml's own on.push.paths (T1) so the gate cannot
+      drift from the workflow the way the required-context baseline did (D-62); T5 refuses a trigger
+      set the script cannot model (`!` exclusions, `paths-ignore`) instead of approximating it. The
+      fixture count is 21 collected, counted by `pytest --collect-only`.
+      Three defects were caught before this shipped, which is the point of writing the fixtures
+      first: (a) `lstrip("./")` silently unmatchable `.github/...` (found by running the gate against
+      live `gh pr diff` output, where it reported clean on exactly the PRs to refuse); (b) `gh pr view
+      --json author --jq .author.type` returning an empty string, which would have handed the gate an
+      unknown actor kind; (c) the step could not run at all — it calls `gh api …/pulls/<n>/files`
+      inside a job whose own `permissions:` block sets every unspecified scope to `none`, so the
+      workflow-level `pull-requests: read` never reached it, and the 403 would have reddened the
+      REQUIRED context on every PR in the repository. (c) is pinned by a fixture that reads the
+      workflow YAML, proved by deleting the line (`assert None == 'read'`) and restored.
+      Related but separate: merging these two bumps is NOT
+      done here — it is the operator's call, and D-77/D-82 mean an apply attempt currently dies at
+      HCP init anyway, so no apply has ever happened from CI (three runs total since org creation,
+      all CLI-triggered).
+
+  - id: "FA-control-13"
+    description: "The three gate surfaces (`make lint`, the pre-commit hooks, the CI jobs) must be compared, not assumed equal"
+    evidence: >-
+      Measured 2026-10-26 while landing FA-control-12: `make lint` exited 0 (313 passed) on a branch
+      where `ruff format --check scripts/ tests/` — a step the CI `Lint` job runs and `lint` did not —
+      reported "1 file would be reformatted, 24 files already formatted" (13 hunks in the new fixture
+      file). The Makefile row for `lint` reads "Everything CI runs before a plan".
+      This row was first written as the absence "nothing local enforces the formatter" at S2, and that
+      premise was refuted by two commands: `.pre-commit-config.yaml` declares `id: ruff-format`, the
+      hook is installed (`.git/hooks/pre-commit`, 2026-09-26), `pre-commit run --all-files` passes all
+      twelve hooks, and the commit attempt that prompted the check was itself refused by
+      `end-of-file-fixer`. What is actually true is narrower: three overlapping surfaces (lint,
+      hooks, CI) exist and none of them is compared to another, so a command present in one list and
+      absent from a second is invisible to anyone who runs only the list they were told to run — and
+      AGENTS.md §2 tells an agent to run `make lint`, which this session did dozens of times without
+      invoking the hooks once. Hooks see staged files only; a fresh CI clone has no hooks at all.
+    enforcement: "py-fmt-check now runs inside `make lint`; nothing compares the three lists"
+    status: "gap"
+    finding: "FA-control-13"
+    severity: "S3"
+    frameworks: ["SOC 2 CC4.1", "ISO/IEC 27001 A.8.32"]
+    note: >-
+      Graded S3 rather than the S2 first drafted, on the measured premise: the formatter has a live
+      local enforcer and the `Lint` job is not a required context, so no merge was ever at risk and no
+      control was inert. The fix that landed is the specific gap (D-83: `py-fmt-check` added to `lint`,
+      a gate strengthened, never weakened — §5). The general class stays open:
+      check_gate_parity.py R2 asks whether a fixture that exists is invoked in CI, never whether every
+      command in CI, `lint` and the hooks appears in the other two. Writing that rule is itself a gate
+      change and needs its own negative control, so it is recorded here as a gap rather than closed by
+      assertion. Second-order value of this row: it is the audit catching its own overstatement, which
+      is the same discipline that caught D-81's inert `lstrip` — asserted absences are the cheapest
+      claims to test and the most expensive to leave untested.
+
+  - id: "FA-control-14"
+    description: "A pre-apply brake must cover every protection object class, not only the one it was written for"
+    evidence: >-
+      Measured 2026-10-26 while staging D-46 option A (import consent's ruleset as
+      `github_repository_ruleset`). `grep -ic ruleset scripts/check_plan_safety.sh` -> 0: both
+      protection refusals are scoped to `github_branch_protection` — the create rule by resource
+      address, the attribute rule by a token list (`strict`, `enforce_admins`,
+      `required_status_checks`, `restrict_pushes`, …) that contains no ruleset word. Meanwhile
+      `terraform state list` returns 14 `github_branch_protection` addresses, 0 ruleset addresses,
+      and three fleet repos are protected by rulesets alone (consent 24087580, dr 24136490,
+      vendor 24138288 — D-46). Two synthetic plans in Terraform's own rendering were fed to the
+      unfixed gate: (a) `# github_repository_ruleset.main["jolarca-consent"] will be created`
+      carrying only `rules.deletion` + `rules.non_fast_forward` -> exit 0; (b) the same address
+      `will be updated in-place` with `enforcement = "active" -> "disabled"`,
+      `deletion = true -> false`, `non_fast_forward = true -> false` and a new
+      `bypass_actors { actor_type = "RepositoryAdmin", bypass_mode = "always" }` -> exit 0,
+      printing "Plan contains no destroy, replace, visibility change, protection-layer change or
+      security-feature disable." Case (b) removes protection from a tier-1 GDPR-scoped repo, and
+      `apply.yml` runs `terraform apply -input=false -auto-approve tfplan` on merge.
+    enforcement: "four ruleset refusals in scripts/check_plan_safety.sh; 29 cases in tests/test_check_plan_safety.sh"
+    status: "implemented"
+    finding: "FA-control-14"
+    severity: "S2"
+    frameworks: ["SOC 2 CC8.1", "ISO/IEC 27001 A.8.32", "PCI-DSS Req 12.10.1"]
+    fixes_landed_pr97: >-
+      See the top-level `fixes_landed_pr97` block for the merge record; this is the
+      control's own landing evidence. Landed 2026-10-26 by squash-merge of PR #97;
+      `origin/main` = `a720789`.
+      Verified in a fresh clone of that commit, not from the merge banner:
+      `grep -c '^### D-84' docs/drift-findings.md` -> 1 (the id is defined on main,
+      not only on a branch); `bash tests/test_check_plan_safety.sh` -> **29 passed,
+      0 failed**; `check_gate_parity.py` -> "OK: 18 gate scripts…" exit 0;
+      `check_findings_register.py` -> "OK: 83 headings parsed, no collisions, no
+      dangling citations" exit 0; `hash_evidence.sh --check` -> 46 files, 0
+      mismatches; `pytest tests/ -q` -> **316 passed**; gitleaks over 113 commits
+      -> no leaks. CI on the merged head: `Compliance Scan` and `Static Analysis
+      (SAST)` push runs both `success`. The guard reported `OK: 10 changed file(s),
+      none in apply.yml's push paths (5 pattern(s) read from apply.yml) — no apply
+      armed` with `PR_ACTOR_TYPE: User`, and no `Terraform Apply` run exists after
+      `2026-10-17T19:07:46Z` (cancelled) — third consecutive merge with no apply.
+      Still unexercised against a live plan: no ruleset is in state, so the refusal
+      has only ever been proven against synthetic fixtures. That is the honest
+      boundary of "implemented" here — the fix is proven to detect the shape, not
+      yet observed stopping a real apply.
+    note: >-
+      Latent, not exercised: no configuration in this root declares a ruleset, so no real plan
+      could have contained one while the hole existed. That is why it is graded S2 and fixed
+      BEFORE the adoption rather than after — the adoption's own next change (adding
+      `pull_request` plus the 7 required contexts consent declares and nothing enforces) is a
+      ruleset mutation, and without this fix the single brake between that change and an
+      unattended `-auto-approve` apply was a pattern list structurally incapable of seeing the
+      object. Fourth instance of the D-22 class in this register (a control defined by its first
+      input rather than by the control it claims). Fixed in both directions deliberately, unlike
+      the security-feature rule which allows enabling: tightening a ruleset can deadlock every
+      merge on a repo (a required context no workflow reports — the A-01/FA-control-03 shape
+      already paid for once on `jolarca-identity`), so there is no safe direction to wave through.
+      Coverage is anchored on the action line Terraform prints for every changed resource plus a
+      resource-header belt, because the ruleset attribute vocabulary (`update`, `creation`,
+      `deletion`, `include`, `exclude`, `target`, `name`) is too generic to list without refusing
+      unrelated resources. Non-vacuity is a fixture, not a claim: `ruleset-refresh-only-noise`
+      asserts that Terraform's real `Refreshing state... [id=24087580]` line still exits 0, so the
+      adoption plan in step 6b can pass the gate. NOT closed by this row: `drift_detect.py` reads
+      ruleset content and flags hollow `required_status_checks` but asserts nothing about whether
+      an active branch ruleset carries a `pull_request` rule — the absence that leaves consent's
+      `main` directly pushable — and `repo_readiness_audit.py`'s G-12c probe for exactly that sits
+      inside the empty-repository branch (`return` before any populated repo reaches it), so on
+      consent the readiness gate reports could-not-verify instead of a finding.
+
+  - id: "FA-control-15"
+    description: "A remediation claim must name the artifact that carries it, and its verifier must read that artifact"
+    evidence: >-
+      Measured 2026-10-26 by cloning `jolarca-dev/jolarca-infrastructure` rather
+      than trusting this repo's register. Three governed records asserted the
+      step-1 freeze was applied: `docs/drift-findings.md` D-06 ("Fix applied …
+      See `jolarca-infrastructure` working-tree diff"), D-13 ("Control in place:
+      `lifecycle { prevent_destroy = true }` on every `github_repository`",
+      "Resolved — dual ownership eliminated"), and
+      `docs/state-migration-runbook.md` ("Status: COMPLETE (2026-10-10)"). At
+      `8f02d17` = `origin/main` of a **public** repo the committed tree carried
+      `variable "org"` default `journeyoflife-org` in both files, a live
+      `module "github_org"` with `provider "github" { owner = var.org }`, no
+      committed `terraform.tfvars` for that environment, zero `lifecycle` blocks
+      on the GitHub path (`git grep -n lifecycle HEAD -- environments/production
+      modules/github-org` -> no matches; the four committed `prevent_destroy` are
+      all in `modules/state-bucket`, on GCS/KMS objects), the
+      `variables.tf.bak.20260831-2306` file still tracked, and
+      `git log --all -S "FROZEN — DO NOT PLAN OR APPLY"` -> **0 commits**; the last
+      commit touching that module is `0f5e34a` (2026-08-31), a month before the
+      claimed fix date. The fix was real and lived only in one workstation's
+      working tree: 9 uncommitted entries, +133/-98. Not hypothetical either — that
+      repo's `terraform.yml` runs a `plan` job on every `pull_request` touching
+      `terraform/**`, and runs `39925547516` / `39925560368` (2026-10-23, both
+      success) posted `Plan: 16 to add, 0 to change, 0 to destroy` as comments on
+      public PRs while the default still named the mission-platform org; `apply` is
+      gated to `workflow_dispatch`, which is the only reason nothing was written.
+    enforcement: >-
+      runbook step 1 rewritten to verify the committed tree (git show / git grep
+      against origin/main) instead of grepping a working tree; AGENTS.md section 7
+      gains the rule; D-06 and D-13 carry dated correction rows that do not delete
+      the original text; the freeze itself lands as `jolarca-infrastructure`
+      PR #49 (2eab214 + 693ec82, both GPG-signed)
+    status: "implemented-pending-merge"
+    finding: "FA-control-15"
+    severity: "S1"
+    frameworks: ["SOC 2 CC8.1", "ISO/IEC 27001 A.8.32", "GDPR Art. 5(1)(f)", "PCI-DSS Req 12.10.1"]
+    note: >-
+      Graded S1, not S2, on two grounds the register cannot argue away. (1) The
+      false rows are in the change register itself — the artifact an auditor reads
+      to decide what to test — so the defect is CC8.1/ISO A.8.32 directly, and a
+      reader who trusted "prevent_destroy on every github_repository" would scope
+      work from it. (2) The consequence of the missing freeze was live and public:
+      a wrong-org plan, generated automatically by CI and posted to public PRs, in
+      an org whose isolation ADR-0004 exists to guarantee. Why it lingered is also
+      now measured, because the obvious explanation (nobody did it) was wrong: that
+      repo's required `compliance` context demands seven governance files and
+      `jolarca-infrastructure` is the only fleet repo without `.github/CODEOWNERS`
+      (10 of 11 others have one), so `compliance` failed on every PR including
+      Dependabot's, and `enforce_admins = true` removes the admin bypass. Nothing
+      could merge there — a welded-shut repo is indistinguishable from a neglected
+      one from the outside, and only the required-context list explains it. The
+      second commit on PR #49 adds that file with the identical entry
+      `jolarca-control` publishes; `require_code_owner_reviews` is false both as
+      declared and live, so it adds no review burden. PR #49 is OPEN: this control
+      is not closed by this record, only by that merge.
+
+  - id: "FA-control-16"
+    description: "A gate's three-valued exit code must survive the wrapper that documents it"
+    evidence: >-
+      Measured side by side on identical input, same tree:
+      `.venv/bin/python scripts/repo_readiness_audit.py --repo jolarca-data` ->
+      exit **1** (findings: `READY-WITH-FIXES`, 0 S0 / 0 S1 / 3 S2 / 2 S3);
+      `make readiness REPO=jolarca-data` -> exit **2**, which AGENTS.md section 3
+      reserves for "could not verify". Proven at the tool rather than inferred from
+      this repo: a synthetic Makefile with a `@exit 1` target also returned **2**,
+      so GNU make cannot convey `1` and no `make <gate>` can distinguish findings
+      from an unreachable API. Eleven scripts here implement the three-valued
+      convention (`grep -ln "exit 2" scripts/*`). Second half, also measured per
+      stream because the scripts differ: `repo_readiness_audit.py:2408` prints its
+      table to stderr and its detail to stdout, so `readiness` (Makefile:150-154)
+      and `first-commit` (Makefile:179-193) ending in `>/dev/null` discarded
+      stdout (85 and 128 bytes respectively, both just make echoing the recipe)
+      while the one-line table survived on stderr (373 and 808 bytes) — a reader
+      saw a terse verdict and a generic error, and had no signal that the findings
+      body had been thrown away.
+    enforcement: >-
+      the two recipes no longer redirect stdout; AGENTS.md sections 2 and 3 state
+      that make collapses any non-zero to 2 and that automation must call the
+      script directly
+    status: "implemented-pending-merge"
+    finding: "FA-control-16"
+    severity: "S2"
+    frameworks: ["SOC 2 CC8.1", "ISO/IEC 27001 A.8.32", "PCI-DSS Req 12.10.1"]
+    note: >-
+      FA-control-01 recorded this remap for `make drift` only and treated it as a
+      local annoyance; it is systemic to the command surface AGENTS.md section 2
+      publishes, so the documented contract did not survive the documented
+      commands. Deliberately not tested by a fixture: the behaviour being described
+      is GNU make's exit-status contract, and a test asserting it would test
+      make(1), not this repository. The `readiness` fix was verified live after the
+      edit — same command now yields 7849 bytes of detail on stdout where it had 85
+      — while the exit code remains make's generic 2, which is exactly the
+      limitation the new prose tells the reader to route around. No script's own
+      exit codes were changed: altering them to suit a wrapper would invert the
+      convention section 3 exists to protect.
+
+strengths:
+  - "5 policy gates run INSIDE the required Validate Repo Allow-List job: validate_repos.py, check_required_context_baseline.py, check_declared_contexts.py, check_deploy_gates.py, check_findings_register.py — enforcement is real for those, not advisory"
+  - "required contexts are 4 non-empty names that all match live job names, with strict=true, so a red required context genuinely blocks (measured: ctx list equals 4 reported jobs)"
+  - "enforce_admins=true, required_linear_history=true, allow_force_pushes=false, allow_deletions=false, required_conversation_resolution=true"
+  - "settings match policy/repo-defaults.yml#defaults exactly: squash-only (allow_merge_commit=false, allow_rebase_merge=false), has_projects=false, has_wiki=false"
+  - "secret scanning AND push protection enabled here — the repo that failed that test (.github) is not this one"
+  - "prevent_destroy=true verified to sit inside resource \"github_repository\" \"repo\" (block opens :25, lifecycle :76-77, closes :90) and on the health repo (health-repo.tf:64) — the AGENTS.md claim survives reading the block, not just grepping the keyword"
+  - "vulnerability_alerts enabled; forks=0 (bounded exposure of the governance record)"
+  - "ORG-LEVEL FACTS NOW MEASURED, previously recorded as unverifiable: orgs/jolarca-dev two_factor_requirement_enabled=true (the older two_factor_auth_enabled field is null on Free — the readable field exists), members_can_create_repositories=false (closes D-19's prevention gap), default_repository_permission=none"
+  - "every third-party action in the workflows inspected is SHA-pinned with a version comment"
+  - "regression surface measured 2026-10-26 on the D-81 branch: 316 pytest tests (`make lint`'s own line; 295 earlier the same day, before the gate-parity and apply-path fixtures landed), plus five shell fixtures whose own counters read 29 (plan-safety, was 25 before D-84) / 19 (hash-evidence) / 19 (secret-inventory) / 13 (workspace-mode) / 10 (state-backup). All five run under `make test` AND as steps in compliance-scan.yml, which R2 now enforces — before PR #91 workspace-mode ran only from the Makefile."
+  - "the audit's own error was caught by the audited gate: check_findings_register.py reported a dangling citation introduced by this very record, because the finding id it used exists only on unmerged PR #79 — main's register runs D-71 then D-73. Citation re-pointed at the PR number, and the defect kept in the record rather than quietly reworded"
+  - "writing the negative control first is what found the defect in the control's own wiring: the D-81 gate calls `gh api …/pulls/<n>/files` from a job whose `permissions:` block sets unspecified scopes to `none`. Rehearsing the fixture against the real workflow YAML (and proving it by deleting the scope line) turned a would-be fleet-wide merge deadlock into a one-line change, before the push"
+  - "the pre-apply brake's own coverage was measured by feeding it a synthetic plan of the new object class rather than by reading its passing test summary — which found the ruleset hole (FA-control-14, D-84) before any ruleset config could land, and the same habit then caught a command-substitution bug in the fix's own message string via `make lint`'s shellcheck step"
+  - "before starting repo 2, its COMMITTED tree was read from a fresh clone instead of trusting this register — which found that three governed records asserted a freeze that no branch carried (FA-control-15, D-85), and the same habit applied to my own probes caught two bad greps that had made true claims look false (method note 1)"
+  - "the delay D-85 describes was traced to a mechanism rather than to negligence: that repo's required `compliance` context demands seven governance files, it is the only fleet repo missing `.github/CODEOWNERS`, and `enforce_admins = true` removes the bypass — so no PR could ever have merged there. A register that says 'not done' without saying why is unactionable"
+
+not_run:
+  - item: "confirm the scope of the fine-grained PAT behind TF_GITHUB_TOKEN"
+    reason: >-
+      the secret value is not readable by design; the apply.yml header asserts
+      'Administration: read/write + Contents: read' on jolarca-dev, which is an
+      assertion, not a measurement. The AGENTS.md §5 prohibition on gh api -X
+      PATCH out-of-band is the practical bound
+    would_prove: "whether the CI apply path is over-privileged relative to its job"
+  - item: "run a real plan through apply.yml end-to-end to observe check_plan_safety.sh refusing"
+    reason: "requires triggering a production apply; explicitly not authorized"
+  - item: "verify whether hash_evidence's deletion gap can be triggered by a PR that rm's an evidence file"
+    reason: "would require creating and merging such a PR; the /tmp experiment already establishes the script behaviour"
+
+verdict: "NO-GO — as an assurance claim; CONDITIONALLY OPERATIONAL as a control plane"
+blocking_findings: []
+required_check_blocking_observed: >-
+  CLOSED 2026-10-26 (this item was listed under not_run for five sessions). Throwaway PR #94 added
+  scripts/probe_untested.sh with no fixture and no invoker, deliberately unmerged. Observed on that
+  head SHA: `Validate Repo Allow-List` (a required context) FAILED with `RESULT: 2 parity finding(s):
+  R1=1, R3=1`; `Regression Tests` failed independently on `test_real_repository_has_parity` with the
+  same two findings; PR state `mergeable=MERGEABLE` but `mergeStateStatus=BLOCKED`, and the
+  annotation was `Process completed with exit code 1`. The PR was then closed with the evidence
+  recorded in a comment and the remote branch deleted (`git ls-remote --heads` -> 0 rows). No
+  `Terraform Apply` run was created (latest remains 2026-10-17T19:07:46Z), confirming scripts/**
+  is outside apply.yml's push paths. This replaces the indirect inference from the 2026-10-12 GH006
+  push rejection with a direct observation of the required-check layer.
+s1_findings: ["FA-control-01", "FA-control-02", "FA-control-03", "FA-control-08", "FA-control-10", "FA-control-11", "FA-control-15"]
+s1_fixed_landed:
+  ids: ["FA-control-01", "FA-control-02", "FA-control-10"]
+  commit: "e5b9b3f6a3e70119374a5cabcf807d3d445c6b89"
+  pr: 89
+  merged: "2026-10-26"
+  operating_evidence: >-
+    Push-triggered run 40329048473 (event=push, head_sha=e5b9b3f, conclusion=success) ran
+    the step 'Evidence hashes match the committed registry (CC4.1)' INSIDE the required
+    Validate Repo Allow-List job and printed "Evidence check: 46 files scanned,
+    0 mismatches / OK: all registered evidence hashes match, and every registered file
+    exists". Independent re-verification in a fresh clone of main: same 46/0, exit 0, and
+    `gitleaks git .` over 2.17 MB of history reported no leaks. No Terraform Apply run was
+    created by the merge — latest apply run remains 2026-10-17T19:07:46Z (cancelled).
+    This is a Type I operating observation on the day it landed, not Type II effectiveness
+    over an audit period.
+fixes_landed_pr91:
+  ids: ["FA-control-05", "FA-control-11"]
+  commit: "4e0c22bd64fe9d7ab3ff44eabf7242e322555f34"
+  pr: 91
+  merged: "2026-10-26T14:20:37Z"
+  operating_evidence: >-
+    Push run 40338769793 (event=push, head_sha=4e0c22b, conclusion=success) ran the step
+    'Gate parity — every gate has a control that can fail (D-80)' INSIDE the required
+    Validate Repo Allow-List job and printed "OK: 17 gate scripts each have a fixture or a
+    dated baseline entry; every shell fixture runs in a PR-triggerable workflow; no gate is
+    unreferenced". Same run: all six jobs success (Lint, Policy Compliance Check, Terraform
+    Format, Regression Tests, Repository Secret Pattern Scan, Validate Repo Allow-List) and
+    the evidence step printed "Evidence check: 46 files scanned, 0 mismatches". Independent
+    re-verification in a fresh clone of main: evidence 46/0 exit 0, gate parity exit 0,
+    `gitleaks git .` over 2.60 MB no leaks. `make findings-check` parses 79 D-nn headings with
+    no collisions and no dangling citations, i.e. D-80 is now defined. Protection re-read after
+    merge: 4 required contexts, strict=true, enforce_admins=true, linear history true,
+    required_approving_review_count=0, rulesets []; declared visibility `public` equals live,
+    forks_count=0. No Terraform Apply run was created by this merge — latest apply run remains
+    2026-10-17T19:07:46Z (cancelled). Observed designed red, not a regression: the `Deploy
+    Gates` push run on 4e0c22b concluded failure at the step 'Credential expiry register is
+    dated and unexpired (D-80)' with the annotation "expiry unknown for a row in
+    docs/security/key-custody.md — verify and record it"; mergeStateStatus on #91 read UNSTABLE
+    before the merge, i.e. all required checks passed with one non-required check failing.
+    Type I operating observation on the day it landed, not Type II effectiveness.
+  visibility_of_the_red: >-
+    Measured on main 20e4dc4: deploy-gates.yml is path-filtered (pull_request and push:main
+    fire only on .github/workflows/apply.yml, .github/workflows/deploy-gates.yml and
+    scripts/check_deploy_gates.py) plus a Wed 08:00 UTC schedule and workflow_dispatch. The
+    credential signal therefore appears on PRs/merges touching those three files, weekly, and
+    on dispatch — not on every PR (the docs-only #92 merge created no Deploy Gates run). Side
+    effect recorded, not discovered later: Dependabot PRs that bump an action inside those
+    files now show a red Deploy Gates — measured on PR #87 (setup-python 7.0.0→7.1.0, head
+    357fc84): Deploy Gates FAILURE with all four required contexts SUCCESS,
+    mergeable=MERGEABLE, mergeStateStatus=BEHIND, so it is noise, not a block. Corollary for
+    FA-control-03: promoting Deploy Gates to a required context while `expires = unknown`
+    stands would fail every such Dependabot PR — the dependency-bump deadlock shape the fleet
+    has already recorded. Precondition is a dated row in key-custody.md, not a weaker gate.
+  still_open:
+    - "TFC_TOKEN expiry date: operator reads it in the HCP UI and replaces `unknown` in docs/security/key-custody.md, which turns Deploy Gates green by itself"
+    - "FA-control-03: Regression Tests / Lint / Deploy Gates are still not required contexts (operator branch-protection decision, D-61 refuses it from here)"
+    - "two baselined no-fixture gates: check_fleet_separation.sh, org_delivery_audit.sh (ceiling 2, lowers only)"
+fixes_landed_pr95:
+  ids: ["FA-control-12", "FA-control-13"]
+  commit: "7048116a04ba01c69daf5c1d8220a415862d1262"
+  pr: 95
+  merged: "2026-10-26T17:23:58Z"
+  operating_evidence: >-
+    Pull-request run 40358205519 (event=pull_request, head 5e91d2c, conclusion=success): all six
+    Compliance Scan jobs success, and the step 'An unattended PR must not arm the production apply
+    (D-81)' INSIDE the required Validate Repo Allow-List job printed
+    "OK: 13 changed file(s), none in apply.yml's push paths (5 pattern(s) read from apply.yml) — no
+    apply armed" with env PR_ACTOR=JourneyOfLife, PR_ACTOR_TYPE=User and shell `/usr/bin/bash -e {0}`.
+    That line is the first operating observation of the gate, and it also proves the job-level
+    `pull-requests: read` scope reaches `gh api …/pulls/<n>/files` — the defect that would have made
+    the required context 403 on every PR. Final head 403ad80: all ten reported checks pass,
+    mergeStateStatus=CLEAN, merged by squash with the remote branch deleted
+    (`git ls-remote --heads origin fix/apply-path-trigger-guard-d81` -> 0 rows).
+  scope_of_the_observation: >-
+    The step is gated `if: github.event_name == 'pull_request'`, so on the merge's own push run
+    (40368243557, conclusion=success) it reports conclusion=**skipped** by design: this is a pre-merge
+    brake, and it has now been seen firing in exactly one event class. The bot-refusal path is
+    proven offline (21 collected fixtures, including the real file lists of #87/#68) and has NOT yet
+    been observed rejecting a live Dependabot PR, because #87 and #68 were deliberately left unmerged
+    and un-rerun. A Type I observation on the day it landed; no bot-authored apply-path PR has been
+    refused in production yet.
+  post_merge_verification: >-
+    Fresh clone of main at 7048116: `hash_evidence.sh --check` -> 46 files, 0 mismatches, exit 0;
+    `check_gate_parity.py` -> "OK: 18 gate scripts…", exit 0; `pytest tests/ -q` -> 316 passed;
+    `gitleaks git .` over 2.25 MB of history -> no leaks; `check_findings_register.py` -> 82 headings,
+    no collisions, no dangling. Guard non-vacuity on the committed tree: `--changed
+    .github/workflows/apply.yml,README.md --actor-type Bot` -> exit 1 with the refusal text, and
+    `--changed docs/x.md --actor-type User` -> exit 0 "no apply armed". Protection re-read after
+    merge: required contexts exactly [Validate Repo Allow-List, Policy Compliance Check, Repository
+    Secret Pattern Scan, SAST (semgrep)], strict=true, enforce_admins=true,
+    required_approving_review_count=0, required_linear_history=true,
+    required_conversation_resolution=true, allow_force_pushes=false, allow_deletions=false,
+    required_signatures.enabled=false, rulesets [], branches/main .protected=true. Declared
+    visibility `public` (repos/jolarca-control.yml:21) equals live `public`, forks_count=0. NO
+    Terraform Apply run was created by this merge — the latest apply run remains
+    2026-10-17T19:07:46Z (cancelled), so three consecutive trigger-path-adjacent merges have armed
+    nothing.
+  self_corrections_landed_in_this_pr: >-
+    Two of this PR's own record claims were refuted by measurement before merge and are kept in the
+    text rather than deleted: D-83 first asserted "nothing local runs the formatter" (false —
+    `.pre-commit-config.yaml` carries `ruff-format`, the hook is installed, all twelve hooks pass, and
+    a commit attempt on this very branch was refused by `end-of-file-fixer`), regraded S2 -> S3; and
+    FA-control-11's D-22a note was briefly "corrected" into claiming no sub-lettered heading exists
+    (false — an empty grep through an unreliable capture channel was read as absence; `### D-22a` sits
+    at docs/drift-findings.md:235 and `parse_headings()` returns 82 against 83 raw headings). The
+    second mistake was caught after the branch's intermediate commit e07dc54 and repaired in 403ad80
+    before merge, which is why the squash history carries only the corrected text.
+  still_open:
+    - "D-81 has never refused a live bot PR: #87/#68 remain open and un-rerun pending the operator's deploy decision"
+    - "D-82 / FA-control-08: TFC_TOKEN expiry is still `unknown`; Deploy Gates stays red by design until the operator reads the date"
+    - "FA-control-13: no control compares `make lint`, the pre-commit hooks and the CI job step lists"
+    - "D-22a is invisible to check_findings_register.py's heading parse and citation scan (82 parsed vs 83 raw); sub-lettered ids need a rule of their own"
+fixes_landed_pr97:
+  ids: ["FA-control-14"]
+  commit: "a720789dae6ff3cc83a493e487d3ca8afb1a4da2"
+  pr: 97
+  merged: "2026-10-26"
+  operating_evidence: >-
+    Verified in a fresh clone of `a720789`, with the commands run directly so their
+    own exit codes are read rather than make's (the D-86 rule, applied the same day
+    it was written): `grep -c '^### D-84' docs/drift-findings.md` -> 1, so the id is
+    defined on main and not only on a branch; `bash tests/test_check_plan_safety.sh`
+    -> "plan-gate tests: 29 passed, 0 failed" (also observed in CI on job
+    121755867550); `check_gate_parity.py` -> "OK: 18 gate scripts each have a fixture
+    or a dated baseline entry…" exit 0; `check_findings_register.py` -> "OK: 83
+    `### D-nn` headings parsed, no collisions, no dangling citations" exit 0;
+    `hash_evidence.sh --check` -> 46 files scanned, 0 mismatches; `pytest tests/ -q`
+    -> 316 passed; `gitleaks git .` -> 113 commits, ~2.53 MB, no leaks. CI on the
+    merged head: `Compliance Scan` run 40404668351 and `Static Analysis (SAST)` push
+    runs both `success`; all ten reported checks had passed on `c9408fc` before the
+    squash, with `mergeStateStatus=CLEAN`.
+  scope_of_the_observation: >-
+    The four ruleset refusals have never faced a real Terraform plan. No ruleset is in
+    state (`terraform state list` -> 14 branch-protection addresses, 0 ruleset
+    addresses) and D-46 option A is staged but unexecuted, so what is proven is
+    detection of a synthetic shape, verified by the non-vacuity fixture
+    `ruleset-refresh-only-noise` (a real `Refreshing state…` line must stay exit 0).
+    Type I observation of the code that landed; effectiveness against a live apply is
+    still unobserved, and it cannot be observed without the operator running the import.
+  post_merge_verification: >-
+    The D-81 guard on PR #97's own run 40375094869 printed `OK: 10 changed file(s),
+    none in apply.yml's push paths (5 pattern(s) read from apply.yml) — no apply
+    armed` with `PR_ACTOR_TYPE: User` — the second operating observation of that gate,
+    and the first on a branch whose own subject was the pre-apply brake. No
+    `Terraform Apply` run was created by the merge: the latest remains
+    2026-10-17T19:07:46Z (cancelled), i.e. four consecutive merges with nothing armed.
+    Remote branch deleted with the squash (`git ls-remote --heads` for
+    `fix/plan-safety-ruleset-coverage-d84` -> gone), local checkout returned to `main`.
+  still_open:
+    - "D-46 option A: consent's ruleset 24087580 is still undeclared and unimported; runbook step 6b is staged, and the `terraform import` is the operator's (§5)"
+    - "dr and vendor adoption blocked on provider 6.13.0 not modelling dismissal_restriction / require_extra_approval_for_unattributed_changes"
+    - "consent's three ruleset-inexpressible declaration keys (restrict_pushes, require_conversation_resolution, enforce_admins) still need a mapping or a dated deviation, or `make drift` stays false-red"
+    - "infra PR #49 is open, not merged: D-85 is not closed until the freeze is in that repo's main"
+framework_claims_not_supported:
+  - "SOC 2 CC4.1 / CC7.1 (credential-expiry monitoring) — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: docs/security/key-custody.md documents a gate that was never invoked by anything and could not read its own input, so it produced no verdict anybody could see (FA-control-11, D-80). Landed at 4e0c22b (PR #91) it runs in the advisory Deploy Gates job and exits 1 by design until the operator records the TFC_TOKEN expiry — observed red on that merge's own push run, so a red, visible signal replaces an absent one. That is the honest interim state, not a claim of monitoring effectiveness."
+  - "SOC 2 CC4.1 — NOT SUPPORTED FOR ANY PERIOD BEFORE 2026-10-26: evidence integrity monitoring reported success over zero inputs (FA-control-01) and over 26 rows naming uncommitted files (FA-control-10), and the check was not on the merge path (FA-control-02). Refused by design from e5b9b3f onward; a Type I claim needs this control's operating history, which starts today."
+  - "ISO/IEC 27001 A.5.31 / PCI-DSS 12.10.1 — same boundary: before 2026-10-26 the register was not self-verifying against deletion, and a green local run proved nothing about the committed tree. Retaining the 46-row registry (not 72) is the honest baseline for the period that follows."
+  - "SOC 2 CC8.1 — change management is genuinely enforced for 4 contexts only; the test suite that guards the deploy gate is advisory (FA-control-03)"
+  - "SOC 2 CC3.x / CC8.1 for the register — NOT SUPPORTED as written before 2026-10-26: D-06, D-13 and state-migration-runbook.md step 1 asserted a freeze that existed on no branch, and the runbook's own step-1 check greps a working tree, so it could not detect the difference (FA-control-15, D-85). An auditor reading those rows would have tested a control that was not in the repository. Corrected rows are dated appends; the original claims stay visible."
+  - "code_quality coverage floor — declared mandatory, executed nowhere (FA-control-04)"
+framework_claims_supported:
+  - "SOC 2 CC6.1/CC6.2 for this repository: enforce_admins + strict required contexts + squash-only + no fork + org 2FA requirement true + org members cannot create repositories"
+  - "SOC 2 CC7.1 partial: repository secret pattern scan (gitleaks full history, pinned 8.30.1) and SAST (semgrep) are required contexts"
+  - "SOC 2 CC3.x for the register: check_findings_register.py runs inside a required context and parsed 85 D-nn headings (86 raw, the difference being the sub-lettered D-22a) with no collisions and no dangling citations, in --cross-pr mode, on 2026-10-26"
