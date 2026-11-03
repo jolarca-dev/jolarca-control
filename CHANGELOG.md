@@ -1760,6 +1760,32 @@ lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `mak
 re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
 starts no apply.
 
+### Fixed — 2026-10-17 (tenth batch: D-72 — a dead guard pointer, and a rule the register thought had landed)
+
+- `compliance-scan.yml:178` cited `tests/test_ci_steps_are_real.py`, which **does not exist**
+  (only `test_ci_gates_are_real.py` does). Dead since 2026-10-05, when the module was renamed
+  before the commit that referenced it. Nothing in CI reads comments, so nothing could fail.
+- The bigger finding: the register row for that fix claims PR #40 "also adds the rule that catches
+  it". Measured on `main`, the landed module has five tests — exit-status swallow, `continue-on-error`,
+  phantom interpreter, suite wiring, parse non-vacuity — and **no path-existence test**. `gh pr diff 40`
+  shows the rule lives only on that unmerged branch. So a control was documented as in place while the
+  defect it guards survived twelve days: claim-vs-mechanism again (D-22/D-62/D-67/D-58).
+- Fixed by implementing the rule (`test_cited_repo_paths_in_workflows_exist`), scanning raw workflow
+  text including comments, requiring ≥10 parsed citations so it cannot pass vacuously. **Observed red
+  first** (`1 failed, 5 passed`, naming the file and line), green after. The pointer is corrected with
+  its own history in the comment.
+- Consequence: PR #40 is now superseded for this rule and should be closed rather than merged, or the
+  suite grows two tests asserting one property.
+- Done while closing that gap: #40's unique register row (`| Comment correction (2026-10-05) |`, the fact
+  that the guard's own comment was dead on arrival) is **ported into D-50's table on this branch**, because
+  it exists on no other branch and closing #40 would have lost it. It is ported **corrected** -- that row
+  claimed #40 "also adds the rule that catches it", which is the very falsehood D-72 registers, so the
+  ported text names this PR as where the rule actually lands.
+- #40's own `test_comments_point_at_files_that_exist` is deliberately **not** ported: the rule here
+  (`test_cited_repo_paths_in_workflows_exist`) covers every `tests/…py` and `scripts/…` citation in a
+  workflow including comments, so it is a superset, and two tests asserting one property is the outcome
+  the bullet above warns about.
+
 ### Fixed — 2026-10-17 (eleventh batch: D-73 — ids cited across the repo with no row defining them)
 
 - **`D-56` was cited 17 times and had no row.** Neither did `D-57` (3 citations) or `D-53` (8).
