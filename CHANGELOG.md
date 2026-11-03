@@ -10,6 +10,31 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Added — 2026-11-04 (the D-33 enforcement rehearsal evidence lands; #54's registry conflict resolved by regeneration)
+
+- `docs/security/d33-enforcement-rehearsal-2026-10-08.md` (337 lines) has been PR #54's content since
+  2026-10-07, and D-71's queue audit on `main` records it as **absent** precisely because that PR never
+  merged. It is the only retained record of two refusals actually exercised against the protected branch:
+  a direct `git push` to `main` rejected with `GH006`, and canary secrets rejected by push protection.
+- **The merge conflicted on exactly one file, `docs/evidence-registry.csv`, and it was resolved by
+  regenerating — never by hand-merging hashes.** Take `main`'s registry whole, run `hash_evidence.sh`, and
+  the result differs from `main` by one added row, the new artifact, with every pre-existing row untouched
+  (verified: `49 files scanned, 0 mismatches`). Hand-merging a registry is a failure this repository has
+  already recorded — a cherry-pick once resolved a registry conflict to `main`'s rows and left a newly
+  hashed file unattested.
+- **A claim from the queue sweep is corrected here rather than repeated.** It was reported that `main`
+  cited this file as evidence and that its absence made the citation a dead pointer. That is wrong: the
+  single mention sits inside D-71's 2026-10-16 audit row enumerating each open PR's files, which says
+  `#54 (docs/security/d33-enforcement-rehearsal-2026-10-08.md) — absent` — i.e. `main` correctly recording
+  an unmerged PR. The artifact's value is that it is unique evidence `main` lacks, not that a reference is
+  broken.
+- The document already carries `## Status note, added at rebase 2026-10-17 — read this before acting on
+  anything below`, recording that the `required_approving_review_count: 1` flip was rehearsal-only and that
+  the matching `repos/jolarca-control.yml` declaration was dropped at rebase. It is left intact, and the
+  live value was re-read today: `0` on `main` (D-04), with `strict=true` and `enforce_admins=true`.
+- This section also supplies the changelog entry #54 itself never had; the rehearsal doc changes a hashed
+  path, so under §6 the audit trail and the registry both have to move with it.
+
 ### Corrected — 2026-11-04 (AGENTS.md §8 described two brakes that are not what they say)
 
 - **The reviewer claim was flatly false.** §8's production-apply bullet asserted "no reviewer signs
