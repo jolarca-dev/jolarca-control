@@ -1776,6 +1776,15 @@ starts no apply.
   its own history in the comment.
 - Consequence: PR #40 is now superseded for this rule and should be closed rather than merged, or the
   suite grows two tests asserting one property.
+- Done while closing that gap: #40's unique register row (`| Comment correction (2026-10-05) |`, the fact
+  that the guard's own comment was dead on arrival) is **ported into D-50's table on this branch**, because
+  it exists on no other branch and closing #40 would have lost it. It is ported **corrected** -- that row
+  claimed #40 "also adds the rule that catches it", which is the very falsehood D-72 registers, so the
+  ported text names this PR as where the rule actually lands.
+- #40's own `test_comments_point_at_files_that_exist` is deliberately **not** ported: the rule here
+  (`test_cited_repo_paths_in_workflows_exist`) covers every `tests/…py` and `scripts/…` citation in a
+  workflow including comments, so it is a superset, and two tests asserting one property is the outcome
+  the bullet above warns about.
 
 ### Fixed — 2026-10-17 (eleventh batch: D-73 — ids cited across the repo with no row defining them)
 
