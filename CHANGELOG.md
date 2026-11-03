@@ -10,6 +10,57 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Found — 2026-11-03 (D-60 re-measured: a squash merge also replaces the operator's signature with GitHub's)
+
+- One dated status row appended to **D-60** in `docs/drift-findings.md`. **No new finding id**, because
+  the defect is already recorded: D-60's "Correction later the same day" row measured on 2026-10-15 that
+  a squash merge takes the commit author from the GitHub account email setting rather than from local
+  `git config`. A second row for the same defect would duplicate it, so the new measurement went into
+  the row that owns it.
+- **What was not recorded is the signature half.** PR #129's branch commit `e17e9cd` was authored with
+  the noreply form and signed `sig=G` by `609F7926A8254CDB`; the squash commit on `main` (`f414672`) is
+  authored with the base mailbox, committed `noreply@github.com`, and signed by `B5690EEEBB952194` —
+  GitHub's own key. Across all 130 commits on `main`: **105 GitHub-signed, 23 operator-signed,
+  2 unsigned**, and every one of the twelve most recent is GitHub-signed. That key is absent from the
+  operator's keyring, so `main` reads `sig=E` locally while GitHub's API reports the signature present
+  and `reason: "valid"` — the API field is the evidence, not the local status. D-05's compensating
+  control ("signed operator commits"; PCI-DSS Req 8.2, SOC 2 CC6.2, ISO 27001 A.8.16) therefore rests on
+  GitHub's assertion on the default branch rather than on the operator's key. `B5690EEE` appeared nowhere
+  in the register before this row.
+- **The noreply identity does survive the squash**, as a `Co-authored-by` trailer inside the commit
+  payload, so §6's authorship rule is honoured on `main` only in a field nobody reads for attribution.
+- **D-60's Evidence row is stale in one particular**, and the new row says so rather than leaving it
+  standing: it records `gh api user/emails` returning exactly one address, while the account holds two
+  today. The addition is a second personal mailbox, not the noreply form, so the outstanding owner
+  decision is unchanged and its symptom still reproduces — `reason: "bad_email"` on a commit made
+  nineteen days after the fix was applied.
+- D-60 keeps its status (**S2 · FORWARD-FIXED, history residual ACCEPTED**). What the row adds is the
+  scope of that forward fix: it reaches branch commits and does not reach `main`.
+
+### Added — 2026-11-03 (QODER.md: a behavioural layer for agents that points at AGENTS.md instead of restating it)
+
+- `QODER.md` at the repository root carries four principles — think before coding, simplicity first,
+  surgical changes, goal-driven execution — derived from Andrej Karpathy's published observations on how
+  LLM coding agents fail: assuming on the user's behalf without checking, overcomplicating until 1000
+  lines do what 100 would, and editing code and comments they do not sufficiently understand. Each is
+  bound to an artefact that already exists here rather than left as advice: blast-radius routing (§4),
+  the pinning rule and gate-parity's R1–R4 (§5, §7), the evidence and changelog companion edits, the
+  three-valued exit-code contract (§3), and "proven red before green" (§7).
+- **It is deliberately not a second source of truth.** `AGENTS.md` keeps precedence and is cited by
+  section number, the way `scripts/` and `.github/workflows/` already cite it. Volatile facts are pointed
+  at, not copied — required contexts to `policy/repo-defaults.yml`, the backup schedule to
+  `systemd/jolarca-state-backup.timer`, finding status to `docs/drift-findings.md`, unenforced controls
+  to `AGENTS.md` §8 — because §8 itself records one schedule value going stale five times while prose
+  tried to carry it.
+- **It cites no finding ids.** A reference whose register heading lives only on an unmerged branch
+  reddens the required `Validate Repo Allow-List` context through the dangling-reference guard, so each
+  lesson is attributed to the section that carries it instead of to a finding number.
+- Location was chosen, not defaulted. A root-level `.md` matches none of `apply.yml`'s push paths and no
+  `EVIDENCE_DIRS` entry in `scripts/hash_evidence.sh`, so merging this arms no production apply and needs
+  no hash re-registration; the same text under `policy/` would do both. Measured before committing:
+  `check_apply_path_trigger.py --changed QODER.md --actor-type User` exits 0 reporting "no apply armed",
+  and `hash_evidence.sh --check` still reports 48 files scanned, 0 mismatches.
+
 ### Fixed — 2026-10-31 (D-94 closed in code: the adoption generator is no longer consent-only)
 
 - `scripts/extract_adoption_block.py` takes `--repo` (defaulting to the historical target so every
