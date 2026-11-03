@@ -38,6 +38,17 @@ Catalogue self-check, always run, offline and deterministic:
       `covers` list names the rules it actually excuses.
   C7  a duplicated YAML key is a finding. yaml.safe_load silently keeps the LAST
       duplicate, so `python:` twice does not error — it quietly deletes an approval.
+  C8  every `workflow_exceptions` entry names a file, a reason, an expiry and the
+      rules it covers.
+
+Runtime check, always run, offline and deterministic (M-10):
+  R8  every `actions/setup-python` step must declare `python-version` equal to the
+      approved release, and every `hashicorp/setup-terraform` step must declare
+      `terraform_version` equal to it. A prefix such as `"3.12"` is a request: the
+      hosted runner answers it with whatever its image ships. Measured 2026-11-03 —
+      the same unchanged declarations produced 3.12.15 on one run and 3.12.16 an
+      hour later. Absent is worse: the version is then whatever the action defaults
+      to, which is announced nowhere.
 
 Fleet check, run against a real source (--live or --from-dir):
   L1  a declared tool absent from the catalogue and not overridden for that repo
@@ -230,7 +241,98 @@ def catalogue_errors(cat: dict[str, Any], today: datetime.date) -> list[str]:
             errors.append(
                 f"C6: exceptions[{index}] ({exception.get('repo')!r}) expired {expires.isoformat()}"
             )
+    for index, exception in enumerate(cat.get("workflow_exceptions") or []):
+        if not isinstance(exception, dict):
+            errors.append(f"C8: workflow_exceptions[{index}] is not a mapping")
+            continue
+        for field in ("file", "reason", "expires"):
+            if not exception.get(field):
+                errors.append(f"C8: workflow_exceptions[{index}] omits {field}")
+        if not isinstance(exception.get("covers"), list):
+            errors.append(
+                f"C8: workflow_exceptions[{index}] omits covers — an exception must name the "
+                "rules it excuses, or it pardons every rule"
+            )
+        expires = isodate(exception.get("expires"))
+        if expires is not None and expires <= today:
+            errors.append(
+                f"C8: workflow_exceptions[{index}] ({exception.get('file')!r}) expired "
+                f"{expires.isoformat()}"
+            )
     return errors
+
+
+RUNTIME_ACTIONS = {
+    "actions/setup-python": ("python-version", "python"),
+    "hashicorp/setup-terraform": ("terraform_version", "terraform"),
+}
+
+
+def runtime_errors(cat: dict[str, Any], workflows_dir: Path, repo: str) -> tuple[list[str], int]:
+    """R8: the interpreter a required check runs on must be the approved release.
+
+    Returns (findings, steps_examined). The count is the non-vacuity guard: a glob
+    that matched nothing would otherwise report a clean pass over zero files, and
+    this repository has been fooled by that shape three times already.
+    """
+    findings: list[str] = []
+    tools_raw = cat.get("tools")
+    tools: dict[str, Any] = tools_raw if isinstance(tools_raw, dict) else {}
+    approved: dict[str, str] = {}
+    for name, entry in tools.items():
+        if not isinstance(entry, dict):
+            continue
+        approved[name] = str(entry.get("version", ""))
+        per = entry.get("per_repository_overrides")
+        if isinstance(per, dict) and repo in per:
+            approved[name] = str(per[repo])
+
+    exc: dict[str, set[str]] = {}
+    for item in cat.get("workflow_exceptions") or []:
+        if isinstance(item, dict) and isinstance(item.get("covers"), list):
+            exc[str(item.get("file"))] = {str(rule) for rule in item["covers"]}
+
+    examined = 0
+    for path in sorted(workflows_dir.glob("*.yml")):
+        covered = exc.get(f".github/workflows/{path.name}", set())
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as parse_error:
+            findings.append(f"R8: {path.name}: could not be parsed ({parse_error})")
+            continue
+        if not isinstance(doc, dict):
+            continue
+        jobs = doc.get("jobs")
+        if not isinstance(jobs, dict):
+            continue
+        for job_id, job in jobs.items():
+            if not isinstance(job, dict):
+                continue
+            for step in job.get("steps") or []:
+                if not isinstance(step, dict) or not isinstance(step.get("uses"), str):
+                    continue
+                ref = step["uses"].split("@", 1)[0]
+                spec = RUNTIME_ACTIONS.get(ref)
+                if spec is None:
+                    continue
+                field, tool = spec
+                examined += 1
+                if "R8" in covered:
+                    continue
+                with_block = step.get("with")
+                value = with_block.get(field) if isinstance(with_block, dict) else None
+                want = approved.get(tool)
+                if value is None:
+                    findings.append(
+                        f"R8: {path.name}:{job_id} runs {ref} with no {field}; the version "
+                        "is whatever the action defaults to and is announced nowhere"
+                    )
+                elif not want or str(value) != want:
+                    findings.append(
+                        f"R8: {path.name}:{job_id} declares {tool} {value!r}, approved is "
+                        f"{want!r}; a prefix is a request, not a release"
+                    )
+    return findings, examined
 
 
 def declared_scope() -> list[str]:
@@ -374,6 +476,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="comma-separated repository names, overriding the repos/ allow-list (for tests)",
     )
+    parser.add_argument(
+        "--workflows-dir",
+        type=Path,
+        default=REPO_ROOT / ".github" / "workflows",
+        help="workflow directory to apply R8 to (for tests)",
+    )
+    parser.add_argument(
+        "--repo",
+        default=REPO_ROOT.name,
+        help="repository name whose per-repo overrides apply (for tests)",
+    )
     parser.add_argument("--today", default=None, help="override the clock (ISO date, for tests)")
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args(argv)
@@ -405,6 +518,26 @@ def main(argv: list[str] | None = None) -> int:
     errors = catalogue_errors(cat, today)
     unverifiable: list[str] = []
 
+    runtime_findings, examined = runtime_errors(cat, args.workflows_dir, args.repo)
+    errors.extend(runtime_findings)
+
+    # Non-vacuity: the catalogue approves runtimes, so if no step that consumes them
+    # was found, R8 graded nothing and its silence is not a pass. A zero from a probe
+    # that cannot return non-zero is the failure mode AGENTS.md §3 exists to forbid.
+    approved_tools_raw = cat.get("tools")
+    approved_tools: dict[str, Any] = (
+        approved_tools_raw if isinstance(approved_tools_raw, dict) else {}
+    )
+    approved_runtimes = [name for name in ("python", "terraform") if name in approved_tools]
+    if approved_runtimes and examined == 0:
+        print(
+            f"CANNOT VERIFY: catalogue approves {', '.join(approved_runtimes)} but no "
+            f"setup-python or setup-terraform step was found under {args.workflows_dir}; "
+            "R8 examined nothing, so its silence is not evidence",
+            file=sys.stderr,
+        )
+        return 2
+
     if args.live or args.from_dir is not None:
         scope = [name.strip() for name in args.scope.split(",")] if args.scope else declared_scope()
         if not scope:
@@ -430,6 +563,7 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 {
                     "catalogue": str(args.catalogue),
+                    "runtime_steps_examined": examined,
                     "findings": errors,
                     "unverifiable": unverifiable,
                 },
@@ -453,7 +587,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL: {len(errors)} finding(s)", file=sys.stderr)
         return 1
     print(
-        f"OK: catalogue coherent ({args.catalogue.name}); {len(cat.get('tools') or {})} approved tool(s)"
+        f"OK: catalogue coherent ({args.catalogue.name}); {len(cat.get('tools') or {})} "
+        f"approved tool(s); {examined} workflow runtime step(s) examined against the "
+        "approved releases"
     )
     return 0
 

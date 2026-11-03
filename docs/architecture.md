@@ -243,6 +243,12 @@ each gap means.
 
 ### The approved catalogue is not yet connected to what executes (M-10)
 
+**Closed for nine of ten declarations on 2026-11-03 — see the Closure section of
+ADR-0010.** Rule R8 in `scripts/check_toolchain_baseline.py` now reads every
+workflow in this repository and requires `python-version` and `terraform_version` to
+equal the approved release. The text below is kept as the measurement that justified
+the rule.
+
 `docs/security/toolchain-catalogue.yml` names the approved toolchain and
 `scripts/check_toolchain_baseline.py` validates it — in `make lint` and as a step
 inside the required `Validate Repo Allow-List` job. But the gate reads `mise.toml`
@@ -256,3 +262,8 @@ in both commits. Agreement with the approved 3.12.16 today is coincidence, not a
 control — and "which version was in force when this evidence was produced" (SOC 2
 CC7.1, ISO 27001 A.8.19) currently has no answer in this repository. See ADR-0010
 M-10 for the two ways to close it.
+
+The remaining gap is `apply.yml`: it holds the tenth declaration and is itself an
+apply trigger path, so pinning it is a deploy decision rather than a toolchain edit.
+It is excused by a dated `workflow_exceptions` entry covering R8 only, expiring
+2027-05-03.
