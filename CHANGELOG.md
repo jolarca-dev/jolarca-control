@@ -43,6 +43,44 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 - Companion edit required by the repository's own rule: `docs/security/key-custody.md` is inside
   `EVIDENCE_DIRS`, so `docs/evidence-registry.csv` is re-registered in this same commit — the integrity gate
   attests the committed tree, so a hash left stale would fail `make evidence-check`.
+### Fixed — 2026-11-03 (the D-94 label guard could be bypassed by the very flag its refusal message recommended)
+
+- **This corrects the section below it, written the same day.** #131's entry and commit `8a2ce48` claim
+  "the refusal, the no-write property and the exit code are unchanged" and that the contract is enforced
+  "in exactly one place". Both hold for the default path and are **false for the flag path**. Appended as a
+  dated correction rather than edited in place, because this file is the audit trail.
+- **The defect.** `vet()` computed `want = resource_name or default_resource_name(repo)` and compared the
+  parsed fence against `want`, while the emitted body was the fence **verbatim**. So `--resource-name` could
+  only lower the expectation, never rename anything: `--resource-name main` on a `main`-labelled vendor
+  fence returned **rc=0 and wrote the file**, while the correct label `vendor` was **refused**. The refusal
+  message ended "…or pass `--resource-name vendor`" — recommending the argument that defeated the guard.
+- **Proven with the real toolchain, both directions.** Placing the bypassed output beside the tracked
+  `rulesets.tf` gives, on Terraform **v1.16.1** (the approved release): `Error: Duplicate resource
+  "github_repository_ruleset" configuration … already declared at rulesets-vendor.tf:2,1-44`. The positive
+  control the other way: generating consent and vendor from one runbook with the fixed tool yields `"main"`
+  + `"vendor"`, and `terraform validate` reports `Success! The configuration is valid.`
+- **Fix.** The flag is deleted — a CLI argument whose only effect is to weaken a contract should be removed,
+  not documented — and the label is now derived from `repo` alone in `vet()` and in the emitted import hint.
+  `make adoption-block` never threaded the flag, so no documented path changes.
+- **New `label_problem()`** refuses the three derivations that must never be emitted: the empty slug falling
+  back to `"main"` for a second repository (`jolarca-`, `jolarca--`), a label invalid as a Terraform
+  identifier (`jolarca-2fa` → `2fa`), and a slug that silently dropped case (`jolarca-Vendor` → `endor`).
+  Each is a fixture; the grandfathering of `"main"` for the historical target is asserted unchanged.
+- **Four tests, proven red before green** against `956efc2` (`4 failed, 403 passed` — a real red, with the
+  module importing cleanly): the flag is no longer parsed (argparse rc=2, nothing written), a
+  `main`-labelled fence cannot be admitted by any argument, the refusal no longer recommends the flag, and
+  `label_problem` refuses the three bad derivations. After the fix: `27 passed` in the file, **407 passed**
+  for the suite, and consent's emitted bytes remain **identical** to the pre-#131 tool (`cmp` rc=0).
+- D-94's heading in `docs/drift-findings.md` said **OPEN** although #117 and #131 had landed and no dated
+  status row had ever been appended. Its status segment now reads **FIXED in code**, with the title segment
+  kept byte-identical because `check_findings_register.py` compares exactly that segment for collisions.
+  What genuinely remains is content, not code: the runbook still holds no vendor adoption fence.
+- **The process lesson, recorded because this register is where it belongs.** The flag had **zero test
+  coverage** — `grep resource_name tests/` matched only `default_resource_name()` assertions — so four
+  required contexts, 403 tests, a mutation control and a fresh-clone sweep all stayed green over a guard
+  that was bypassable by design. Mutation testing proved the check could fail; it never asked whether the
+  check could be **sidestepped**. §4 rates `scripts/**` high blast radius because the operator is the only
+  reviewer, and this defect survived a review conducted by its own author.
 
 ### Fixed — 2026-11-03 (D-94's second half: the resource LABEL was a consent-specificity too)
 

@@ -30,8 +30,14 @@ behind: the block it emitted was always labelled ``"main"``. That label is not f
 is tracked, declares ``resource "github_repository_ruleset" "main"`` for the historical target, and
 that address is in state, so a second file reusing it fails ``terraform validate`` with a duplicate
 resource error. ``default_resource_name()`` derives a per-repo label and ``main`` is grandfathered
-only for the historical target, so the tree this tool can emit is always planable. The contract is
-enforced in exactly one place, :func:`vet`, which runs before anything is written.
+only for the historical target, so the tree this tool can emit is always planable. The label is
+**derived, never supplied**: ``--resource-name`` was added and removed the same day, because ``vet()``
+compared the fence against the value the flag provided while emitting the block verbatim, so passing the
+fence's own ``"main"`` satisfied the check and wrote a duplicate -- reproduced with ``terraform validate``
+on Terraform v1.16.1. A flag whose only effect is to weaken a contract is deleted, not documented.
+:func:`label_problem` further refuses a derivation that lands on ``main`` for a second repository, on an
+identifier Terraform would reject, or on a slug that quietly dropped case. The contract is enforced in
+one place, :func:`vet`, before anything is written.
 
 Exit codes follow AGENTS.md §3: 0 verified, 1 refused (a real finding), 2 could not verify.
 """
@@ -46,6 +52,11 @@ import sys
 RUNBOOK = "docs/state-migration-runbook.md"
 RESOURCE = "github_repository_ruleset"
 DEFAULT_REPO = "jolarca-consent"
+REPO_PREFIX = "jolarca-"
+# Terraform resource labels begin with a letter or underscore, then letters, digits or underscores.
+# The derived label is checked against this grammar before it is enforced, because the alternative is
+# to demand a name `terraform validate` will reject.
+_LABEL_RE = re.compile(r"[a-z_][a-z0-9_]*")
 
 _HEADER = re.compile(r'^resource "github_repository_ruleset"', re.M)
 _RULE_BLOCK = re.compile(r"^\s*(pull_request|required_status_checks|bypass_actors)\s*\{", re.M)
@@ -69,8 +80,36 @@ def default_resource_name(repo: str) -> str:
     """
     if repo == DEFAULT_REPO:
         return "main"
-    slug = re.sub(r"[^a-z0-9_]", "_", repo.replace("jolarca-", "")).strip("_")
+    slug = re.sub(r"[^a-z0-9_]", "_", repo.replace(REPO_PREFIX, "")).strip("_")
     return slug or "main"
+
+
+def label_problem(repo: str, want: str) -> str | None:
+    """Why ``want`` cannot be this repository's resource label, or ``None`` when it can.
+
+    Terraform resource labels are one namespace shared by every ``.tf`` file, and the tracked
+    ``rulesets.tf`` already declares ``"main"`` for the historical target. The failure modes refused
+    here are the same mistake in different clothing: a derivation that lands on a value another
+    repository owns, or one ``terraform validate`` would reject outright. Neither is a reason to
+    guess -- a colliding label and an invalid label both fail at apply time, quietly.
+    """
+    if repo != DEFAULT_REPO and want == "main":
+        return (
+            f'cannot derive a resource label for {repo!r}: the fallback "main" is already declared '
+            f"for {DEFAULT_REPO} in the tracked rulesets.tf"
+        )
+    if not _LABEL_RE.fullmatch(want):
+        return (
+            f"derived resource label {want!r} for {repo!r} is not a valid Terraform identifier "
+            "(must start with a letter or underscore, then letters, digits or underscores)"
+        )
+    stem = repo[len(REPO_PREFIX) :] if repo.startswith(REPO_PREFIX) else repo
+    if stem != stem.lower():
+        return (
+            f"repository name {repo!r} contains uppercase, which the label would silently drop "
+            f"({stem!r} -> {want!r}); refusing rather than emitting a name nobody asked for"
+        )
+    return None
 
 
 def _repo_pattern(repo: str) -> re.Pattern[str]:
@@ -122,10 +161,17 @@ def adoption_repos(text: str) -> list[str]:
     return seen
 
 
-def vet(block: str, repo: str = DEFAULT_REPO, resource_name: str | None = None) -> list[str]:
-    """Structural requirements for a block an operator is about to import."""
+def vet(block: str, repo: str = DEFAULT_REPO) -> list[str]:
+    """Structural requirements for a block an operator is about to import.
+
+    The label is derived from ``repo`` and never supplied: an argument that could set ``want`` made
+    this check vacuous, because passing the fence's own colliding label satisfied it.
+    """
     problems: list[str] = []
-    want = resource_name or default_resource_name(repo)
+    want = default_resource_name(repo)
+    bad = label_problem(repo, want)
+    if bad:
+        problems.append(bad)
     if len(_RESOURCE_BLOCK.findall(block)) != 1:
         problems.append(
             f"{len(_RESOURCE_BLOCK.findall(block))} resource blocks; expected exactly 1"
@@ -137,8 +183,7 @@ def vet(block: str, repo: str = DEFAULT_REPO, resource_name: str | None = None) 
             f'`{RESOURCE}.{want}["{repo}"]` would not exist, and a label two repos both declare '
             "is a hard `terraform validate` error (measured 2026-10-31: Duplicate resource "
             '"github_repository_ruleset" configuration) -- `rulesets.tf` is tracked and declares '
-            f'"main" for {DEFAULT_REPO}. Rename the fence in the runbook to `{want}`, or pass '
-            f"--resource-name {want}."
+            f'"main" for {DEFAULT_REPO}. Rename the fence in the runbook to `{want}`.'
         )
     if not _FOR_EACH.search(block):
         problems.append(f'no for_each -> address {want}["{repo}"] does not exist')
@@ -163,13 +208,6 @@ def main(argv: list[str] | None = None) -> int:
         "--repo",
         default=DEFAULT_REPO,
         help=f"ruleset-only repository to adopt (default: {DEFAULT_REPO}, the historical target)",
-    )
-    ap.add_argument(
-        "--resource-name",
-        default=None,
-        help="Terraform resource label; defaults to `main` for the historical target and a "
-        "repo-derived slug otherwise, because two `main` blocks for different repos make "
-        "`terraform validate` fail",
     )
     ap.add_argument("--out", default="rulesets.tf")
     ap.add_argument("--check", action="store_true", help="select and vet, write nothing")
@@ -219,8 +257,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     body = candidates[0].rstrip() + "\n"
-    resource_name = args.resource_name or default_resource_name(args.repo)
-    problems = vet(body, args.repo, resource_name)
+    label = default_resource_name(args.repo)
+    problems = vet(body, args.repo)
     if problems:
         print("REFUSED: the selected block is not a safe adoption:", file=sys.stderr)
         for p in problems:
@@ -257,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
         "next: discover the ruleset id, then import --\n"
         f"      gh api repos/jolarca-dev/{args.repo}/rulesets --jq '.[] | \"\\(.id)\\t\\(.name)\"'\n"
         f"      terraform import -input=false "
-        f"'{RESOURCE}.{resource_name}[\"{args.repo}\"]' '{args.repo}:<ruleset-id>'"
+        f"'{RESOURCE}.{label}[\"{args.repo}\"]' '{args.repo}:<ruleset-id>'"
     )
     return 0
 
