@@ -748,11 +748,13 @@ def test_apply_yml_is_still_unpinned_and_that_is_excused_not_invisible(tmp_path:
     a dated exception. This test fails the moment someone pins it without removing the
     exception, or removes the exception without pinning it."""
     text = (REPO_ROOT / ".github" / "workflows" / "apply.yml").read_text(encoding="utf-8")
-    import yaml
-
-    cat = yaml.load(
-        (REPO_ROOT / "docs" / "security" / "toolchain-catalogue.yml").read_text(encoding="utf-8"),
-        Loader=tb.DuplicateKeyLoader if hasattr(tb, "DuplicateKeyLoader") else yaml.SafeLoader,
+    # safe_load, not load: bandit runs `-ll -ii` and flagged B506 on the first draft of
+    # this line. The Loader argument I passed was provably safe and bandit still
+    # refused it, because a conditional expression naming a class that no longer exists
+    # is not something a static checker can resolve — a dead fallback is not only dead,
+    # it blinded the scanner.
+    cat = yaml.safe_load(
+        (REPO_ROOT / "docs" / "security" / "toolchain-catalogue.yml").read_text(encoding="utf-8")
     )
     exc = {
         str(e.get("file")): [str(c) for c in (e.get("covers") or [])]
