@@ -3,7 +3,11 @@
 **Date:** 2026-11-03
 **Status:** Accepted
 **Deciders:** Gintaras Kazlauskas (organization owner)
-**Scope:** all 17 `jolarca-dev` repositories; 17 draft PRs open on 2026-11-03
+**Scope:** all 17 `jolarca-dev` repositories. Seventeen draft PRs were open when
+this was published on 2026-11-03; `jolarca-control` PR #121 has since merged as
+`42f309a`, leaving sixteen drafts. Front matter is read as current state, not as a
+dated claim, so it is amended in place; every narrative sentence below keeps its
+timestamp and is answered by the dated Status change, Closure and Landed sections.
 
 ---
 
@@ -603,6 +607,42 @@ finding.
 **Verification:** gate rc=0 `13 workflow runtime step(s) examined`; 48 fixture tests
 pass; `terraform fmt -check -recursive` rc=0; `apply.yml` absent from the diff.
 
+### Landed — PR #128, and the head I verified is not the head that merged
+
+The section above was written while #128 was open. It merged as `0ebc198` at
+`2026-11-03T20:29:43Z`, so rule R8, the nine pins and the `apply.yml` exception are on
+this repository's default branch. The step's own printed verdict on the merge push —
+run `41713077841`, job `126185936151` — is the evidence, not the badge:
+
+```text
+OK: catalogue coherent (toolchain-catalogue.yml); 4 approved tool(s);
+    13 workflow runtime step(s) examined against the approved releases
+```
+
+**The commit I signed is not the commit that merged.** I pushed `2ed617d`; the PR
+merged from `5d016f2`, which synced `main` into the branch and back-filled
+`CHANGELOG.md` — a file this change had not touched, and a gap another session closed
+while I was reporting the PR as open. Two consequences stated rather than smoothed:
+the verification I ran against `2ed617d` was not, strictly, verification of what
+landed; and a CHANGELOG entry I did not write is now attributed to this change. So the
+merged tree was re-verified rather than assumed:
+
+| check on the merged tree | result |
+|---|---|
+| previously merged steps still in `compliance-scan.yml` | **12 of 12** — the silent-step-deletion regression this repository's history records did not recur |
+| `def runtime_errors` / `runtime_steps_examined` / non-vacuity exit 2 | 1 / 1 / 1 |
+| catalogue `workflow_exceptions` / `test_r8*` cases | 1 / 8 |
+| pins | 9 × `3.12.16`, **0 unpinned**, except `apply.yml` (1, intended) |
+| fmt job `terraform_version` | 1 |
+| clean clone at `956efc2` | evidence 48 files / 0 mismatches rc=0 · `pytest` 403 passed · `bandit -ll -ii` rc=0 with 0 issues · gate rc=0 |
+| gitleaks, full history | 150 commits scanned, `no leaks found` |
+| new `apply.yml` run | **none** — newest remains `40568492494` of 2026-10-27 |
+| `Deploy Gates`, `Validate & Plan` | fail, and **neither is a required context**; the plan dies at `terraform init` on the D-56 credential |
+
+M-10 is therefore closed on `main` for nine of ten declarations. What remains open is
+`apply.yml`'s own pin — a deploy decision behind a dated exception expiring
+2027-05-03 — and the fact that R8 governs only this repository's workflows, which is
+the arrangement ADR-0010 argues for rather than an oversight.
 ---
 
 **References:**
@@ -616,6 +656,8 @@ pass; `terraform fmt -check -recursive` rc=0; `apply.yml` absent from the diff.
 - `docs/architecture.md` §Toolchain Management — the pointer to this decision
 - `jolarca-control` PR #121, branch `codex/mise-adoption-2026-11-03`, base
   `8f24aac2cef544836bb458bb0768d4f7972d9bbf`
+- PR #128 (rule R8): pushed `2ed617d`, merged from `5d016f2` as `0ebc198` at
+  `2026-11-03T20:29:43Z`; CI evidence run `41713077841` job `126185936151`
 - Measured 2026-11-03 via `gh`: `gh pr view <n> --json files` for all 17 draft
   PRs; `gh pr checks 121 --repo jolarca-dev/jolarca-control` (10 green);
   `gh api repos/jolarca-dev/jolarca-security/actions/permissions[/selected-actions]`;
