@@ -10,6 +10,33 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Found — 2026-11-03 (D-60 re-measured: a squash merge also replaces the operator's signature with GitHub's)
+
+- One dated status row appended to **D-60** in `docs/drift-findings.md`. **No new finding id**, because
+  the defect is already recorded: D-60's "Correction later the same day" row measured on 2026-10-15 that
+  a squash merge takes the commit author from the GitHub account email setting rather than from local
+  `git config`. A second row for the same defect would duplicate it, so the new measurement went into
+  the row that owns it.
+- **What was not recorded is the signature half.** PR #129's branch commit `e17e9cd` was authored with
+  the noreply form and signed `sig=G` by `609F7926A8254CDB`; the squash commit on `main` (`f414672`) is
+  authored with the base mailbox, committed `noreply@github.com`, and signed by `B5690EEEBB952194` —
+  GitHub's own key. Across all 130 commits on `main`: **105 GitHub-signed, 23 operator-signed,
+  2 unsigned**, and every one of the twelve most recent is GitHub-signed. That key is absent from the
+  operator's keyring, so `main` reads `sig=E` locally while GitHub's API reports the signature present
+  and `reason: "valid"` — the API field is the evidence, not the local status. D-05's compensating
+  control ("signed operator commits"; PCI-DSS Req 8.2, SOC 2 CC6.2, ISO 27001 A.8.16) therefore rests on
+  GitHub's assertion on the default branch rather than on the operator's key. `B5690EEE` appeared nowhere
+  in the register before this row.
+- **The noreply identity does survive the squash**, as a `Co-authored-by` trailer inside the commit
+  payload, so §6's authorship rule is honoured on `main` only in a field nobody reads for attribution.
+- **D-60's Evidence row is stale in one particular**, and the new row says so rather than leaving it
+  standing: it records `gh api user/emails` returning exactly one address, while the account holds two
+  today. The addition is a second personal mailbox, not the noreply form, so the outstanding owner
+  decision is unchanged and its symptom still reproduces — `reason: "bad_email"` on a commit made
+  nineteen days after the fix was applied.
+- D-60 keeps its status (**S2 · FORWARD-FIXED, history residual ACCEPTED**). What the row adds is the
+  scope of that forward fix: it reaches branch commits and does not reach `main`.
+
 ### Added — 2026-11-03 (QODER.md: a behavioural layer for agents that points at AGENTS.md instead of restating it)
 
 - `QODER.md` at the repository root carries four principles — think before coding, simplicity first,
