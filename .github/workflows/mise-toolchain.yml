@@ -94,7 +94,7 @@ jobs:
           fi
           printf '%s\n' "$out"
           if ! printf '%s' "$out" | grep -q 'bidi-decoy'; then
-            echo '::error::the decoy is invisible even with no ceiling, so this runner proves nothing about ceiling_paths'
+            echo '::error::decoy invisible even with no ceiling: this runner cannot test ceiling_paths'
             exit 1
           fi
           echo 'OK: with no ceiling mise discovers the parent config and adopts its tool.'
@@ -159,12 +159,12 @@ jobs:
           data="$(mktemp -d)"
           if out="$(MISE_DATA_DIR="$data" mise install "$first" 2>&1)"; then
             printf '%s\n' "$out"
-            echo "::error::plain mise install ACCEPTED $first with no lockfile present - locked mode is not a property of the repository"
+            echo "::error::mise install ACCEPTED $first with no lockfile: locked mode is not a repo property"
             exit 1
           fi
           printf '%s\n' "$out"
           if ! printf '%s' "$out" | grep -qi 'lock'; then
-            echo '::error::install failed, but the refusal does not name the lockfile, so the cause is unrelated and this leg proves nothing'
+            echo '::error::install failed for a reason other than the lockfile, so this leg proves nothing'
             exit 1
           fi
           echo 'OK: refused, and the refusal names the lockfile.'
