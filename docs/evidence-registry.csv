@@ -4,7 +4,7 @@ docs/adr/0006-remote-state-backend.md,052502fddac83eb9ac2e08be0e9362f9fa82712f25
 docs/adr/0007-public-marketplace-repository.md,45f13893068cffd89a3bc8c38bad0dd386ed102d3adf3d4e75129717a6db17c8,2026-10-15
 docs/adr/0008-soc2-type-ii-observation.md,6d3eb39b5cfc56e83614b74e9c638956547c8fbe04630da0cfd1dd215849c751,2026-10-15
 docs/adr/0009-bugs-found-and-fixed.md,4b0372865450c63c473650f3ce03c0a5a402cee4ee17181bf83816bf3966399a,2026-10-15
-docs/adr/0010-per-repository-toolchain-configuration.md,af6391908819618fde333180f72d4d3b1fd5bd7a2cd5b352f0bac260fb2a41e2,2026-11-03
+docs/adr/0010-per-repository-toolchain-configuration.md,b8727f74bc2b57f8aa51251da436149255720b66a4696934107f3213defc59db,2026-11-03
 audit/gdpr-checklist.yml,9728f940a09c4d506271428848cdfac4bc5fd0f728a07b340548feb5fca2b681,2026-10-15
 audit/iso27001-checklist.yml,0678f8b9a75285f42b2d94a46d4f5915d629b2f306f13d90697c1d622545bf4e,2026-10-15
 audit/pci-dss-checklist.yml,ee7a331b328b2be04d530c72ddad52b76953f6f20727867653c3393698b97fe5,2026-10-15
@@ -46,3 +46,4 @@ docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9a
 docs/security/key-custody.md,852524669f5e43be89ba03826b11d69351eec2ea20fc80a9367003d91e1541f1,2026-10-26
 docs/security/sast-mandatory-gate-2026-10-08.md,e4aa6f562a7a08295029ae2b8bcf5592b87447f9c2ce4fc09691ca5d2937625c,2026-10-15
 docs/security/soc2-type-i-readiness.md,5d8ba2f3f7bf4bf601f4633d0ed1ade0731718219d02ab02c72a49b2552061c8,2026-10-15
+docs/security/toolchain-catalogue.yml,bb292672f9847dfa22a1ada48900555d46191d991559c619e3f3a331cf4f8beb,2026-11-03
