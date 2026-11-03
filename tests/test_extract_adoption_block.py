@@ -191,7 +191,10 @@ def test_each_rule_shape_is_treated_as_mutation(rule: str) -> None:
 VENDOR_ADOPTION = """```hcl
 # rulesets-vendor.tf — D-46 option A, vendor next (D-93 step 1).
 # Mirrors live ruleset 24138288 measured 2026-10-31; changes NOTHING about what GitHub enforces.
-resource "github_repository_ruleset" "main" {
+# Labelled "vendor", not "main": rulesets.tf is tracked and declares "main" for jolarca-consent, so a
+# second file reusing that label fails `terraform validate`. See VENDOR_FENCE_NAMED_MAIN below for the
+# shape that must be refused.
+resource "github_repository_ruleset" "vendor" {
   for_each = toset(["jolarca-vendor"])
 
   repository  = each.value
@@ -268,7 +271,7 @@ def test_the_emitted_import_command_carries_no_hardcoded_ruleset_id(
     assert "24087580" not in printed, "a literal ruleset id leaked back into the hint"
     assert "<ruleset-id>" in printed
     assert "gh api repos/jolarca-dev/jolarca-vendor/rulesets" in printed
-    assert 'github_repository_ruleset.main["jolarca-vendor"]' in printed
+    assert 'github_repository_ruleset.vendor["jolarca-vendor"]' in printed
 
 
 def test_vet_reports_the_repo_it_was_asked_for_not_a_default_one() -> None:
@@ -276,3 +279,71 @@ def test_vet_reports_the_repo_it_was_asked_for_not_a_default_one() -> None:
     blocks = ex.fences(VENDOR_ADOPTION)
     problems = ex.vet(blocks[0] + "\n", "jolarca-consent")
     assert any("jolarca-consent" in p and "jolarca-vendor" in p for p in problems), problems
+
+
+# --- D-94, second half: the resource NAME was a second consent-specificity. ---------------------
+
+# The shape that must never be emitted. `rulesets.tf` is tracked and declares
+# resource "github_repository_ruleset" "main" for jolarca-consent, whose state address already is
+# github_repository_ruleset.main["jolarca-consent"], so a second file reusing the label fails
+# `terraform validate` with a duplicate-resource error. Derived from the correct fixture so the only
+# difference between them is the label under test.
+VENDOR_FENCE_NAMED_MAIN = VENDOR_ADOPTION.replace(
+    'resource "github_repository_ruleset" "vendor"',
+    'resource "github_repository_ruleset" "main"',
+)
+
+
+def test_default_resource_name_is_grandfathered_for_consent_only() -> None:
+    """`main` is already the address consent holds in state; silently renaming it would orphan it."""
+    assert ex.default_resource_name("jolarca-consent") == "main"
+    assert ex.default_resource_name("jolarca-vendor") == "vendor"
+    assert ex.default_resource_name("jolarca-hermes-agents") == "hermes_agents"
+
+
+def test_a_second_repo_fence_named_main_is_refused(tmp_path: pathlib.Path, capsys) -> None:
+    """The defect this fixture keeps dead: two files declaring resource "main" for different repos make
+    `terraform validate` fail with a duplicate-resource error, so the generator must refuse to produce
+    the second one rather than emit an unplanable tree."""
+    assert VENDOR_FENCE_NAMED_MAIN != VENDOR_ADOPTION, (
+        "rename did not apply; this test proved nothing"
+    )
+    rb = write_runbook(tmp_path, VENDOR_FENCE_NAMED_MAIN)  # names "main", targets vendor
+    out = tmp_path / "rulesets-vendor.tf"
+    rc = ex.main(["--runbook", str(rb), "--repo", "jolarca-vendor", "--out", str(out)])
+    assert rc == 1
+    assert not out.exists(), "it emitted a config that cannot be validated"
+    err = capsys.readouterr().err
+    assert "REFUSED" in err, "the refusal went somewhere other than stderr"
+    assert "Rename the fence in the runbook to `vendor`" in err, err
+
+
+def test_a_renamed_vendor_fence_is_generated_and_the_hint_follows(
+    tmp_path: pathlib.Path, capsys
+) -> None:
+    rb = write_runbook(tmp_path, VENDOR_ADOPTION)
+    out = tmp_path / "rulesets-vendor.tf"
+    assert ex.main(["--runbook", str(rb), "--repo", "jolarca-vendor", "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert 'github_repository_ruleset.vendor["jolarca-vendor"]' in printed, printed
+    assert 'resource "github_repository_ruleset" "vendor"' in out.read_text(encoding="utf-8")
+    assert "24087580" not in printed
+
+
+def test_consent_generation_is_byte_for_byte_unchanged_by_the_name_change(
+    tmp_path: pathlib.Path, capsys
+) -> None:
+    """Back-compat: the historical invocation must emit exactly what it emitted before this change."""
+    rb = write_runbook(tmp_path, ADOPTION)
+    out = tmp_path / "rulesets.tf"
+    assert ex.main(["--runbook", str(rb), "--out", str(out)]) == 0
+    body = out.read_text(encoding="utf-8")
+    printed = capsys.readouterr().out
+    assert 'resource "github_repository_ruleset" "main"' in body
+    # The state address is in the PRINTED import hint, never in the emitted file:
+    # measured, `main["jolarca-consent"]` is absent from `body` and present in stdout.
+    # An earlier revision asserted it against `body` with `or True` appended, which
+    # made the assertion unfailable — and the hint is precisely the artefact D-94
+    # changed, so the dead assert sat on the one line that mattered.
+    assert 'github_repository_ruleset.main["jolarca-consent"]' in printed, printed
+    assert "<ruleset-id>" in printed, printed

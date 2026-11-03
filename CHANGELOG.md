@@ -10,6 +10,57 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-11-03 (D-94's second half: the resource LABEL was a consent-specificity too)
+
+- `scripts/extract_adoption_block.py` parameterised the *target* repository in PR #117 but still emitted
+  every block under the label `"main"`. That label is not free: `rulesets.tf` is tracked, declares
+  `resource "github_repository_ruleset" "main"` for `jolarca-consent`, and consent's state address already
+  *is* `github_repository_ruleset.main["jolarca-consent"]` (imported 2026-10-27; runbook lines 701 and 818),
+  so a second file reusing the label fails `terraform validate` with `Duplicate resource
+  "github_repository_ruleset" configuration` (measured 2026-10-31). `default_resource_name()` now derives a
+  per-repo label and `main` is grandfathered **only** for the historical target, so the tree this tool can
+  emit is always planable.
+- **The contract is enforced in one place now.** A standalone early refusal was removed: its
+  `len(candidates) == 1` test was always true at that point (the real candidate-count refusal returns
+  above it), it printed to **stdout** where every other refusal in the file uses stderr, and it duplicated
+  what `vet()` already asserts. `vet()` runs before anything is written, so the refusal, the no-write
+  property and the exit code are unchanged — and its message now names the colliding file and the remedy
+  instead of only the symptom.
+- **Three already-shipped fixtures were asserting an unplanable shape.** `VENDOR_ADOPTION` carried the
+  label `"main"` while targeting `jolarca-vendor`, and
+  `test_the_emitted_import_command_carries_no_hardcoded_ruleset_id` positively asserted the hint said
+  `main["jolarca-vendor"]`. Both are corrected to `vendor`. Per AGENTS.md §5 the gate was fixed together
+  with its fixtures rather than deleted to make the suite pass, and the bad shape keeps its own fixture
+  (`VENDOR_FENCE_NAMED_MAIN`, derived from the good one so the label is the only difference) so the
+  refusal still has something to refuse.
+- **An earlier reading of this was wrong and is corrected here rather than dropped.** The refusal was
+  first characterised as an over-refusal, on the grounds that it fired on a lone vendor fence in an
+  isolated fixture where no duplicate existed. That is true only of the fixture: the collision is with
+  `rulesets.tf`, which the tool never reads. Measured before this sentence was written —
+  `git show origin/main:rulesets.tf` declares `"main"` for consent, and that address is in state. The
+  guard was correct and is kept.
+- **Consent's output is byte-for-byte unchanged**, proven against the artifact rather than asserted: the
+  committed tool from `origin/main` and this one, both run over the real runbook, emit identical bytes
+  (`cmp` rc=0) with an identical import hint. The reproducibility property Step 6b depends on survives.
+  Separately, regenerating `rulesets.tf` itself is still expected to differ — the file is stage 2 while the
+  runbook's step-1 fence is the stage-1 mirror, which D-94's earlier row already records.
+- **Proven red before green:** disabling `vet()`'s name check makes exactly
+  `test_a_second_repo_fence_named_main_is_refused` fail (1 failed / 22 passed, rc=1) with the module
+  importing cleanly, so the red is a real failure and not a collection error; the script was then restored
+  byte-identically (sha256 equal). The first attempt at that control produced `if False and if …` — a
+  SyntaxError and pytest rc=2 — which proved nothing and was redone.
+- Gates, exit codes captured with no intervening pipe: `pytest tests/` **403 passed** rc=0 (this tree read
+  3 failed / 400 passed before the fix) · `ruff check` 0 · `ruff format --check` 0 · `mypy --strict` 0 over
+  13 files · `check_gate_parity.py` 0 (20 scripts) · `check_findings_register.py` 0 (92 headings) ·
+  `hash_evidence.sh --check` 0, 48 files, 0 mismatches (`scripts/**`, `tests/**` and `CHANGELOG.md` are all
+  outside `EVIDENCE_DIRS`, so no re-registration) · `compliance_check.py` 0 · `check_toolchain_baseline.py`
+  0 · `validate_repos.py` 0 · `check_apply_path_trigger.py` 0 — "2 changed file(s), none in apply.yml's
+  push paths — no apply armed".
+- This commit carries the operator's in-flight D-94 work — the derived label, `--resource-name` and four
+  new fixtures — together with the corrections above, at the operator's explicit request. The three
+  failures it resolves were that in-flight work's own guard reporting a contract conflict, not a
+  regression introduced here.
+
 ### Fixed — 2026-11-03 (M-10 route (a): rule R8 pins the CI runtimes, and a dead fallback that blinded bandit)
 
 - **This section was missing when the two commits landed** (`a779f18` and `2ed617d`, both 2026-11-03) and is
