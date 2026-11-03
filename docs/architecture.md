@@ -224,8 +224,13 @@ is what makes identical commits resolve differently across machines.
 `mise.toml`, `mise.lock`, `MISE-ADOPTION.md` and an additive smoke workflow.
 None is merged. Sixteen report the new mise check green; `jolarca-security`
 reports `startup_failure` because its Actions allow-list rejects
-`jdx/mise-action`. Only `platforms.linux-x64` is locked, and no `.miserc.toml`
-exists yet, so the inheritance bound above is *intended* rather than enforced.
-The existing Makefile, workflows and required status checks remain authoritative;
-mise is a declaration and verification surface, not a task runner or a CI entry
-point.
+`jdx/mise-action`. `.miserc.toml` and `[tool_config] locked = true` — the bound on
+config inheritance and repository-level lockfile mode — now exist on **twelve**
+repositories' draft branches and are measured there by a four-leg refusal test;
+they exist on **no default branch**, so the inheritance bound is proven in CI and
+not yet enforced. `jolarca-security` carries the two files but cannot prove them,
+and four repositories whose drafts were already blocked by unrelated failing checks
+carry neither. Only `platforms.linux-x64` is locked anywhere. The existing Makefile,
+workflows and required status checks remain authoritative; mise is a declaration and
+verification surface, not a task runner or a CI entry point. See ADR-0010 findings
+M-01, M-02, M-04 and M-08 for what each of those gaps means.
