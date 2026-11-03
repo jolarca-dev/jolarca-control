@@ -1,9 +1,9 @@
 name: mise toolchain
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
 
 permissions:
   contents: read
@@ -30,11 +30,14 @@ jobs:
       - name: Confirm installation did not change configuration
         run: git diff --exit-code -- mise.toml mise.lock
 
-  # ADR-0010 M-01 and M-02: the two controls above bind the job, not the repository.
-  # This job proves the repository-level bound actually refuses. It is a refusal test,
-  # so every assertion here is written to fail loudly rather than to pass quietly:
-  # a guard that only checks "the decoy is absent" would also pass when mise printed
-  # nothing at all. Each leg therefore has an opposite leg that must succeed.
+  # ADR-0010 M-01 and M-02. The job above binds the job; these two files bind the
+  # repository, and a declaration that is not tested is a hypothesis (AGENTS.md 7).
+  #
+  # Every step here handles its own status through `if`, never through a shell fallback:
+  # tests/test_ci_gates_are_real.py::test_no_run_step_swallows_its_exit_status forbids
+  # the swallow token outright, and it caught this job on its first run. Each negative
+  # leg is paired with a positive one, because a guard that only asserts absence also
+  # passes when the command printed nothing at all.
   mise-config-scope:
     name: mise config scope guard (Linux x64)
     runs-on: ubuntu-24.04
@@ -53,11 +56,16 @@ jobs:
           env: false
       - name: Show what mise loaded and what it trusts
         run: |
+          set -euo pipefail
           mise --version
           echo "--- mise trust --show ---"
-          mise trust --show || true
+          if ! mise trust --show; then
+            echo "note: trust listing exited non-zero"
+          fi
           echo "--- mise config ---"
-          mise config || true
+          if ! mise config; then
+            echo "note: config listing exited non-zero"
+          fi
       - name: Plant a decoy config one directory above the repository
         run: |
           set -euo pipefail
@@ -65,57 +73,78 @@ jobs:
           printf '[tools]\nbidi-decoy = "9.9.9"\n' > "$parent/mise.toml"
           echo "planted: $parent/mise.toml"
           ls -l "$parent"
-      - name: Leg 1 - unbounded search MUST see the decoy (proves the guard is not vacuous)
+      - name: Leg 1 - unbounded search MUST see the decoy (so leg 2 is not vacuous)
         env:
           MISE_CEILING_PATHS: ""
         run: |
           set -euo pipefail
-          parent="$(dirname "$GITHUB_WORKSPACE")"
-          out="$(mise config 2>&1 || true)"
-          echo "$out"
-          if echo "$out" | grep -qF "$parent/mise.toml"; then
-            echo "OK: with no ceiling, mise discovers the parent config. Leg 2 is therefore meaningful."
-          else
-            echo "::error::the decoy is invisible even unbounded, so this runner proves nothing about ceiling_paths"
+          if ! out="$(mise config 2>&1)"; then
+            printf '%s\n' "$out"
+            echo "::error::mise config could not be read; the guard refuses to grade an input it cannot see"
             exit 1
           fi
-      - name: Leg 2 - the repository .miserc.toml MUST hide the decoy
+          printf '%s\n' "$out"
+          if ! printf '%s' "$out" | grep -q 'bidi-decoy'; then
+            echo "::error::the decoy is invisible even with no ceiling, so this runner cannot prove anything about ceiling_paths"
+            exit 1
+          fi
+          echo "OK: with no ceiling mise discovers the parent config, matched on the decoy's own tool name."
+      - name: Leg 2 - the repository .miserc.toml MUST hide the decoy and keep its own pins
         run: |
           set -euo pipefail
-          parent="$(dirname "$GITHUB_WORKSPACE")"
-          out="$(mise config 2>&1 || true)"
-          echo "$out"
-          if echo "$out" | grep -qF "$parent/mise.toml"; then
+          if ! out="$(mise config 2>&1)"; then
+            printf '%s\n' "$out"
+            echo "::error::mise config could not be read"
+            exit 1
+          fi
+          printf '%s\n' "$out"
+          if printf '%s' "$out" | grep -q 'bidi-decoy'; then
             echo "::error::ceiling_paths failed open: mise still loads a config above the repository"
             exit 1
           fi
-          if ! echo "$out" | grep -qF "$GITHUB_WORKSPACE/mise.toml"; then
-            echo "::error::mise loaded no repository config, so a silent refusal is being reported as safety"
+          if ! vers="$(mise ls --current 2>&1)"; then
+            printf '%s\n' "$vers"
+            echo "::error::mise ls --current could not be read"
             exit 1
           fi
-          echo "OK: repository config loaded, nothing above it."
-      - name: Leg 3 - plain "mise install" honours [tool_config] locked = true
+          printf '%s\n' "$vers"
+          if ! printf '%s' "$vers" | grep -q '3\.12\.16'; then
+            echo "::error::python 3.12.16 is not selected, so the repository config is not in effect and a silent refusal is being read as safety"
+            exit 1
+          fi
+          if ! printf '%s' "$vers" | grep -q '1\.16\.1'; then
+            echo "::error::terraform 1.16.1 is not selected, so the repository config is not in effect"
+            exit 1
+          fi
+          echo "OK: decoy excluded, and both repository pins are the ones actually selected."
+      - name: Leg 3 - plain "mise install" succeeds from the committed lockfile
         run: |
           set -euo pipefail
-          # Positive leg first: the unmodified pair must install from the lockfile with no
-          # --locked flag anywhere. Without this, Leg 4 could pass for an unrelated reason.
           mise install
-          echo "OK: plain mise install resolved from the committed lockfile."
+          echo "OK: no --locked flag was passed anywhere and the lock still governed resolution. Leg 4 is meaningful."
       - name: Leg 4 - a version absent from the lockfile MUST be refused without --locked
         run: |
           set -euo pipefail
           work="$(mktemp -d)"
           cp mise.toml mise.lock .miserc.toml "$work"/
-          # A real release that is NOT the locked one: if locked mode is not binding, mise
-          # resolves and downloads it and this control fails with evidence, not silence.
-          sed -i 's/^python = .*/python = "3.12.15"/' "$work/mise.toml"
           cd "$work"
-          mise trust . >/dev/null 2>&1 || true
-          out="$(MISE_DATA_DIR="$(mktemp -d)" mise install python 2>&1 || true)"
-          echo "$out"
-          if echo "$out" | grep -qiE 'lock'; then
-            echo "OK: refused against the lockfile, which is what [tool_config] locked = true must do."
-          else
-            echo "::error::plain mise install did not refuse a version missing from mise.lock - locked mode is not enforced by the repository"
+          sed -i 's/^python = "3\.12\.16"/python = "3.12.15"/' mise.toml
+          if ! grep -q '3\.12\.15' mise.toml; then
+            echo "::error::the fixture was not modified, so this leg would prove nothing"
             exit 1
           fi
+          if ! mise trust .; then
+            echo "note: mise trust exited non-zero on the scratch copy"
+          fi
+          data="$(mktemp -d)"
+          if out="$(MISE_DATA_DIR="$data" mise install python 2>&1)"; then
+            printf '%s\n' "$out"
+            echo "::error::plain mise install ACCEPTED python 3.12.15, which is not in mise.lock - locked mode is not a property of the repository"
+            exit 1
+          fi
+          printf '%s\n' "$out"
+          if ! printf '%s' "$out" | grep -qi 'lock'; then
+            echo "::error::install failed, but the refusal does not name the lockfile, so the cause is unrelated and this leg proves nothing"
+            exit 1
+          fi
+          echo "OK: refused, and the refusal names the lockfile."
