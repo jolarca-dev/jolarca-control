@@ -4,7 +4,7 @@
 
 .PHONY: help setup validate compliance context-parity context-baseline backup adoption-block drift fleet-audit org-audit readiness \
         first-commit evidence-check evidence-register findings-check gate-parity secrets-inventory \
-        apply-path-trigger \
+        apply-path-trigger toolchain-catalogue toolchain-baseline \
         init fmt fmt-check lint tf-validate py-lint py-fmt-check py-type sh-lint yaml-lint \
         test plan apply list-repos count-repos clean backup-timer-install backup-timer-status
 
@@ -31,7 +31,7 @@ validate: ## Validate all repo YAML definitions against policy
 compliance: ## Run the full compliance report (JSON)
 	python3 scripts/compliance_check.py
 
-lint: fmt-check tf-validate validate context-baseline gate-parity py-lint py-fmt-check py-type sh-lint yaml-lint test ## Everything CI runs before a plan
+lint: fmt-check tf-validate validate context-baseline gate-parity toolchain-catalogue py-lint py-fmt-check py-type sh-lint yaml-lint test ## Everything CI runs before a plan
 
 fmt: ## Format Terraform files in place
 	terraform fmt -recursive
@@ -146,6 +146,30 @@ apply-path-trigger: ## Report whether this branch would start a production apply
 # use this target before opening a PR, where that trade-off is worth paying.
 findings-check: ## Every `### D-nn` heading must be unique on main and across open PRs
 	python3 scripts/check_findings_register.py --cross-pr
+
+# ADR-0010 M-06. Per-repository mise configuration is the right decision and it has
+# a cost: seventeen lockfiles, one answer per repo, and no way to see divergence.
+# Measured 2026-11-03, 1 of 17 default branches carried any mise configuration at
+# all and nothing in this repository could report it — the number had to be
+# assembled by hand from gh output. docs/security/toolchain-catalogue.yml is the
+# single approved answer; this is the check that reads it.
+#
+# Two modes, deliberately wired differently:
+#   toolchain-catalogue  offline, deterministic, no token. Validates the approval
+#     record itself — exact pins, named reviewer, unexpired deadline, full-SHA
+#     action pin, 64-hex digest, no duplicate YAML key. Runs in `lint` and inside
+#     the required Validate Repo Allow-List job, because it can go green today.
+#   toolchain-baseline   LIVE. Reads every repository's default branch and reports
+#     divergence (L1-L7). NOT a required context: it cannot pass today, and a
+#     required check that cannot be satisfied wedges every pull request in the
+#     repository including the ones that would fix it (D-90).
+#   0 coherent · 1 findings · 2 could not verify (unreadable catalogue, unreachable
+#   repository, empty scope, no gh). Never a silent pass.
+toolchain-catalogue: ## Validate the approved toolchain catalogue itself (offline)
+	python3 scripts/check_toolchain_baseline.py
+
+toolchain-baseline: ## Diff every fleet repository's default branch against the catalogue (live, gh)
+	python3 scripts/check_toolchain_baseline.py --live
 
 readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
 	# No `>/dev/null` here: this script puts its one-line table on stderr and its
