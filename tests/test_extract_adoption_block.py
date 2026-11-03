@@ -347,3 +347,83 @@ def test_consent_generation_is_byte_for_byte_unchanged_by_the_name_change(
     # changed, so the dead assert sat on the one line that mattered.
     assert 'github_repository_ruleset.main["jolarca-consent"]' in printed, printed
     assert "<ruleset-id>" in printed, printed
+
+
+# --- the naming contract had an escape hatch: --resource-name lowered the expectation -------
+
+
+def test_resource_name_flag_is_not_accepted(tmp_path: pathlib.Path) -> None:
+    """The flag could only weaken the contract -- it never renamed the emitted block -- so it is
+    deleted rather than documented. argparse rejecting it is the fixed behaviour."""
+    rb = write_runbook(tmp_path, VENDOR_ADOPTION)
+    out = tmp_path / "rulesets-vendor.tf"
+    try:
+        rc = ex.main(
+            [
+                "--runbook",
+                str(rb),
+                "--repo",
+                "jolarca-vendor",
+                "--resource-name",
+                "vendor",
+                "--out",
+                str(out),
+            ]
+        )
+    except SystemExit as exc:  # argparse exits 2 on an unknown flag
+        assert exc.code == 2, exc.code
+        assert not out.exists()
+        return
+    raise AssertionError(f"--resource-name was accepted and returned rc={rc}")
+
+
+def test_a_main_labelled_fence_cannot_be_admitted_by_a_flag(tmp_path: pathlib.Path) -> None:
+    """The defect this fixture keeps dead: vet() compared the fence against `want`, and
+    --resource-name could set `want` to the colliding label itself -- so the guard's own refusal
+    message recommended the argument that bypassed it. rc=0 here means an unplanable file was
+    written, reproduced with `terraform validate` on the approved Terraform v1.16.1."""
+    rb = write_runbook(tmp_path, VENDOR_FENCE_NAMED_MAIN)
+    out = tmp_path / "rulesets-vendor.tf"
+    try:
+        rc = ex.main(
+            [
+                "--runbook",
+                str(rb),
+                "--repo",
+                "jolarca-vendor",
+                "--resource-name",
+                "main",
+                "--out",
+                str(out),
+            ]
+        )
+    except SystemExit:
+        rc = 2  # the flag is gone: refusing to parse it is a refusal like any other
+    assert rc != 0, "the guard admitted a main-labelled fence for a second repository"
+    assert not out.exists(), "it wrote a file duplicating the label rulesets.tf already owns"
+
+
+def test_the_refusal_does_not_recommend_the_argument_that_defeated_it(
+    tmp_path: pathlib.Path, capsys
+) -> None:
+    """A remedy that reopens the hole is not a remedy. The message must name the runbook edit only."""
+    rb = write_runbook(tmp_path, VENDOR_FENCE_NAMED_MAIN)
+    out = tmp_path / "rulesets-vendor.tf"
+    assert ex.main(["--runbook", str(rb), "--repo", "jolarca-vendor", "--out", str(out)]) == 1
+    err = capsys.readouterr().err
+    assert "--resource-name" not in err, err
+    assert "Rename the fence in the runbook to `vendor`" in err, err
+
+
+def test_derived_labels_that_cannot_be_emitted_are_refused() -> None:
+    """`or "main"` was the one value a second repository must never be given, and the slug could
+    also produce an invalid identifier or silently drop case. Refuse, do not guess."""
+    check = getattr(ex, "label_problem", None)
+    assert check is not None, "no label validator exists -- this test is the defect itself"
+    assert check("jolarca-", "main") is not None, "empty slug fell back to the colliding label"
+    assert check("jolarca--", "main") is not None, "empty slug fell back to the colliding label"
+    assert check("jolarca-2fa", "2fa") is not None, "digit-leading label is not a valid identifier"
+    assert check("jolarca-Vendor", "endor") is not None, "uppercase was silently dropped"
+    assert check("jolarca-vendor", "vendor") is None
+    assert check("jolarca-hermes-agents", "hermes_agents") is None
+    assert check("jolarca-consent", "main") is None, "the historical target keeps `main`"
