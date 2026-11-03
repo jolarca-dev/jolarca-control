@@ -192,3 +192,40 @@ govern team membership once teams are created. Until then, the RBAC policy
 serves as the target-state definition, not live enforcement. The separation
 between `jolarca-identity` (IAM machinery) and `jolarca-compliance` (access
 review evidence) is deliberate — policy and proof must not share a repository.
+
+## Toolchain Management (mise)
+
+**Decision: toolchain configuration is per repository; the baseline that governs
+it is central.** See `docs/adr/0010-per-repository-toolchain-configuration.md`
+for the rationale, the rejected alternatives and the open findings.
+
+The split by layer, as of 2026-11-03:
+
+- The `mise` executable — once per workstation and runner image, one approved
+  version, one recorded digest. It is the trust root, so it is not replicated
+  per repository.
+- The approved tool catalogue, exception process and fleet drift gate — central,
+  owned by this repository.
+- `mise.toml`, `mise.lock` and `.miserc.toml` — one set per repository, committed
+  and reviewed in the PR that changes them.
+- Package dependencies (`requirements*.txt`, `package-lock.json`,
+  `.terraform.lock.hcl`) — per repository and **unchanged** by mise. A pinned
+  interpreter does not make an unpinned `pip install` reproducible.
+
+Per repository is a correctness requirement, not a convention: mise inherits
+configuration by *filesystem ancestry*, loading every config file from the
+filesystem root down to the current directory, and `[tools]` merges per tool with
+unlisted tools inherited from parents. A hosted runner checks out to
+`/home/runner/work/<repo>/<repo>/`, where no org-level parent can exist — so a
+central configuration has no directory to live in, and an unbounded local search
+is what makes identical commits resolve differently across machines.
+
+**Current status, not aspiration.** Seventeen draft PRs (one per repository) add
+`mise.toml`, `mise.lock`, `MISE-ADOPTION.md` and an additive smoke workflow.
+None is merged. Sixteen report the new mise check green; `jolarca-security`
+reports `startup_failure` because its Actions allow-list rejects
+`jdx/mise-action`. Only `platforms.linux-x64` is locked, and no `.miserc.toml`
+exists yet, so the inheritance bound above is *intended* rather than enforced.
+The existing Makefile, workflows and required status checks remain authoritative;
+mise is a declaration and verification surface, not a task runner or a CI entry
+point.
