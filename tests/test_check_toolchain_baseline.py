@@ -74,6 +74,17 @@ CATALOGUE: dict[str, Any] = {
     },
     "not_yet_approved": ["gitleaks"],
     "exceptions": [],
+    # Mirrors the shipped catalogue. Without it every test that leaves --workflows-dir
+    # at its default would also grade this repository's real apply.yml, whose
+    # python-version stays a request under a dated exception.
+    "workflow_exceptions": [
+        {
+            "file": ".github/workflows/apply.yml",
+            "reason": "apply trigger path; pinning it is a deploy decision",
+            "expires": "2027-05-03",
+            "covers": ["R8"],
+        }
+    ],
 }
 
 
@@ -552,3 +563,202 @@ def test_scope_includes_the_org_defaults_repo() -> None:
     scope = tb.declared_scope()
     assert ".github" in scope
     assert "jolarca-control" in scope
+
+
+# ── R8: the interpreter a required check actually runs on (ADR-0010 M-10) ───────
+#
+# M-10 was measured, not theorised: the same unchanged `python-version: "3.12"`
+# declarations produced 3.12.15 on one hosted-runner job and 3.12.16 on the next, an
+# hour apart. These cases exist so the rule that closes it can be shown firing.
+
+
+def workflow_dir(tmp_path: Path, body: str) -> Path:
+    d = tmp_path / "workflows"
+    d.mkdir(exist_ok=True)
+    (d / "sample.yml").write_text(body, encoding="utf-8")
+    return d
+
+
+SP_TEMPLATE = """name: sample
+on: push
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+{steps}
+"""
+
+
+def with_setup_python(version: str | None) -> str:
+    if version is None:
+        return (
+            "      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
+        )
+    return (
+        "      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0\n"
+        f'        with:\n          python-version: "{version}"'
+    )
+
+
+def run_r8(tmp_path: Path, body: str, mutate=None, *extra: str) -> int:
+    cat = write_catalogue(tmp_path, mutate)
+    d = workflow_dir(tmp_path, body)
+    return tb.main(["--catalogue", str(cat), "--workflows-dir", str(d), "--today", TODAY, *extra])
+
+
+def test_r8_fires_on_a_floating_request(tmp_path: Path, capsys) -> None:
+    body = SP_TEMPLATE.format(steps=with_setup_python("3.12"))
+    assert run_r8(tmp_path, body) == 1
+    assert "declares python '3.12', approved is '3.12.16'" in capsys.readouterr().out
+
+
+def test_r8_fires_on_a_wrong_exact_release(tmp_path: Path, capsys) -> None:
+    """An exact but unapproved version is the more dangerous case: it looks pinned."""
+    body = SP_TEMPLATE.format(steps=with_setup_python("3.11.9"))
+    assert run_r8(tmp_path, body) == 1
+    assert "declares python '3.11.9'" in capsys.readouterr().out
+
+
+def test_r8_fires_when_the_version_is_not_declared_at_all(tmp_path: Path, capsys) -> None:
+    """Absent is worse than floating: the action's own default now decides."""
+    body = SP_TEMPLATE.format(steps=with_setup_python(None))
+    assert run_r8(tmp_path, body) == 1
+    assert "with no python-version" in capsys.readouterr().out
+
+
+def test_r8_fires_on_setup_terraform_without_a_version(tmp_path: Path, capsys) -> None:
+    """This is the skew ADR-0010's Context table row 3 measured: fmt unpinned while
+    plan and apply pinned 1.16.1."""
+    body = SP_TEMPLATE.format(
+        steps=(
+            "      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e"
+            " # v4.0.1\n      - run: terraform fmt -check -recursive"
+        )
+    )
+    assert run_r8(tmp_path, body) == 1
+    assert "with no terraform_version" in capsys.readouterr().out
+
+
+def test_r8_accepts_the_approved_release(tmp_path: Path) -> None:
+    body = SP_TEMPLATE.format(steps=with_setup_python("3.12.16"))
+    assert run_r8(tmp_path, body) == 0
+
+
+def test_r8_honours_a_per_repository_override(tmp_path: Path) -> None:
+    body = SP_TEMPLATE.format(
+        steps=(
+            "      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e"
+            ' # v4.0.1\n        with:\n          terraform_version: "1.9.8"'
+        )
+    )
+    cat = write_catalogue(tmp_path)
+    d = workflow_dir(tmp_path, body)
+    assert (
+        tb.main(
+            [
+                "--catalogue",
+                str(cat),
+                "--workflows-dir",
+                str(d),
+                "--repo",
+                "other-repo",
+                "--today",
+                TODAY,
+            ]
+        )
+        == 0
+    )
+
+
+def test_r8_is_suppressed_only_by_an_exception_that_covers_it(tmp_path: Path, capsys) -> None:
+    """The M-09 lesson applied to the new rule: an exception must not become an off
+    switch for something it was not written to excuse."""
+    body = SP_TEMPLATE.format(steps=with_setup_python("3.12"))
+
+    def covering(data: dict) -> None:
+        data["workflow_exceptions"] = [
+            {
+                "file": ".github/workflows/sample.yml",
+                "reason": "apply trigger path",
+                "expires": "2027-05-03",
+                "covers": ["R8"],
+            }
+        ]
+
+    def unrelated(data: dict) -> None:
+        data["workflow_exceptions"] = [
+            {
+                "file": ".github/workflows/sample.yml",
+                "reason": "apply trigger path",
+                "expires": "2027-05-03",
+                "covers": ["L4"],
+            }
+        ]
+
+    assert run_r8(tmp_path, body, covering) == 0
+    assert run_r8(tmp_path, body, unrelated) == 1
+    assert "R8:" in capsys.readouterr().out
+
+
+def test_c8_requires_file_reason_expiry_and_covers(tmp_path: Path, capsys) -> None:
+    def mutate(data: dict) -> None:
+        data["workflow_exceptions"] = [{"file": "workflows/x.yml", "covers": ["R8"]}]
+
+    assert run_r8(tmp_path, SP_TEMPLATE.format(steps=with_setup_python("3.12.16")), mutate) == 1
+    out = capsys.readouterr().out
+    assert "C8: workflow_exceptions[0] omits reason" in out
+    assert "C8: workflow_exceptions[0] omits expires" in out
+
+
+def test_c8_an_expired_workflow_exception_is_a_finding(tmp_path: Path, capsys) -> None:
+    def mutate(data: dict) -> None:
+        data["workflow_exceptions"] = [
+            {"file": "workflows/x.yml", "reason": "r", "expires": "2026-01-01", "covers": ["R8"]}
+        ]
+
+    assert run_r8(tmp_path, SP_TEMPLATE.format(steps=with_setup_python("3.12.16")), mutate) == 1
+    assert "C8: workflow_exceptions[0]" in capsys.readouterr().out
+
+
+def test_r8_refuses_to_pass_over_zero_examined_steps(tmp_path: Path, capsys) -> None:
+    """Non-vacuity. An empty workflows directory would otherwise report a clean pass
+    over nothing, which is the failure mode AGENTS.md §3 exists to forbid."""
+    empty = tmp_path / "workflows"
+    empty.mkdir()
+    cat = write_catalogue(tmp_path)
+    assert tb.main(["--catalogue", str(cat), "--workflows-dir", str(empty), "--today", TODAY]) == 2
+    assert "examined nothing" in capsys.readouterr().err
+
+
+def test_this_repositorys_own_workflows_pass_r8_and_are_actually_counted(
+    tmp_path: Path, capsys
+) -> None:
+    """The shipped-artifact positive control, and the non-vacuity assertion for the
+    default invocation: M-10's whole claim is that these files were unpinned, so the
+    rule must be shown reading the real ones and finding the real count."""
+    rc = tb.main(["--today", TODAY])
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "13 workflow runtime step(s) examined" in out, out
+
+
+def test_apply_yml_is_still_unpinned_and_that_is_excused_not_invisible(tmp_path: Path) -> None:
+    """apply.yml is an apply trigger path, so its python-version stays a request under
+    a dated exception. This test fails the moment someone pins it without removing the
+    exception, or removes the exception without pinning it."""
+    text = (REPO_ROOT / ".github" / "workflows" / "apply.yml").read_text(encoding="utf-8")
+    # safe_load, not load: bandit runs `-ll -ii` and flagged B506 on the first draft of
+    # this line. The Loader argument I passed was provably safe and bandit still
+    # refused it, because a conditional expression naming a class that no longer exists
+    # is not something a static checker can resolve — a dead fallback is not only dead,
+    # it blinded the scanner.
+    cat = yaml.safe_load(
+        (REPO_ROOT / "docs" / "security" / "toolchain-catalogue.yml").read_text(encoding="utf-8")
+    )
+    exc = {
+        str(e.get("file")): [str(c) for c in (e.get("covers") or [])]
+        for e in cat.get("workflow_exceptions") or []
+    }
+    assert 'python-version: "3.12"\n' in text, "apply.yml was pinned; remove its exception too"
+    assert exc.get(".github/workflows/apply.yml") == ["R8"], exc

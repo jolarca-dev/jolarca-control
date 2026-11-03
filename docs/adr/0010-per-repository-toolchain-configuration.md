@@ -247,7 +247,9 @@ should be promoted into the D-series if and when it is accepted for remediation.
   deterministic, no protection mutation, but it will fail on first run, so it must
   land together with the ten declarations it turns into pins, in one PR; **(b)**
   make the workflows consume mise, which is the workflow migration the next section
-  defers to its own ADR. (a) is the next step.
+  defers to its own ADR. (a) is the next step. _(Closed the same day by route (a)
+  for nine of the ten declarations, plus the Terraform format skew; `apply.yml` is
+  the deliberate exception, recorded below.)_
 
 ### What this decision does not do
 
@@ -308,6 +310,9 @@ Revisit this ADR:
   checks receive the same two files (M-01, M-02) and the lint discipline (M-08);
 - when a second platform's lock entries exist (M-05);
 - when the machine baseline for M-04 is recorded;
+- when `apply.yml`'s own `python-version` is pinned in the deploy decision that
+  removes its `workflow_exceptions` entry — until then R8 is excused on exactly one
+  file, and the exception expires 2027-05-03;
 - when M-10 is closed — until then the catalogue's approved python is connected to
   nothing that executes, and the required checks' interpreter is chosen by a runner
   image that changes on its own schedule;
@@ -543,6 +548,60 @@ pull request and is recorded rather than glossed.
 neither global nor system config, and every workstation is still unbounded — plus
 M-05, M-06, M-07, M-08, and sixteen repositories whose default branches carry no
 bound at all.
+
+---
+
+## Closure — 2026-11-03 (later): M-10, route (a), nine of ten plus a bonus skew
+
+**Rule R8** now reads every `.github/workflows/*.yml` in this repository, finds each
+`actions/setup-python` and `hashicorp/setup-terraform` step, and requires the
+approved release. It is offline, deterministic and token-free, so it runs in
+`make lint` and as a step inside the required `Validate Repo Allow-List` job — the
+same placement that made M-06's check enforceable.
+
+**Observed firing before it was fixed, not assumed correct.** First run:
+`FAIL: 10 finding(s)` — nine `python-version: "3.12"` requests plus
+`compliance-scan.yml:terraform runs hashicorp/setup-terraform with no
+terraform_version; the version is whatever the action defaults to`. `runtime_steps_examined`
+reported 13, which is the non-vacuity count: 10 python + 3 terraform steps.
+
+**What changed:** 9 python declarations pinned to `3.12.16` across
+`compliance-scan.yml` (4), `sast.yml` (2), `context-parity.yml`, `deploy-gates.yml`
+and `plan.yml`; and the Terraform Format job given `terraform_version: "1.16.1"`.
+That last one closes row 3 of this ADR's Context table — `terraform fmt -check` ran
+with no version while `plan.yml` and `apply.yml` pinned 1.16.1 — which was a
+pre-existing defect the M-10 rule happened to expose. A rule found by accident is
+still a rule found.
+
+**What was deliberately not changed, and why.** `apply.yml` holds the tenth
+declaration and is **one of `apply.yml`'s own `on.push.paths`**, so editing it arms a
+real `terraform apply -input=false -auto-approve tfplan` on merge, gated only by the
+production environment's 30-minute wait timer — which AGENTS.md §8 records as delay,
+not approval (D-58, D-70) — plus `check_plan_safety.sh`. Pinning it inside a toolchain
+PR would bundle a production apply attempt into a documentation-class change. It is
+instead excused by a dated `workflow_exceptions` entry covering **R8 only**, expiring
+2027-05-03, and the exception is enforced by C8 to name the rules it excuses — the
+M-09 lesson applied before it could repeat.
+
+**Non-vacuity, proven three ways.** (1) `runtime_steps_examined` is printed in the OK
+line, so a clean pass over zero files is visible rather than silent; (2) if the
+catalogue approves python or terraform and no consuming step is found, the gate exits
+**2** `CANNOT VERIFY`, never 0; (3) reverting one pin in `sast.yml` turned the
+shipped-artifact test red with the exact R8 line and the file restored byte-identical
+(`48 passed` again). Nine further R8 fixtures show the rule firing on a floating
+request, a wrong-but-exact release, a missing `python-version`, a missing
+`terraform_version`, an override honoured, an exception that does not cover R8
+failing to suppress it, and an empty workflows directory refusing to pass.
+
+**Limits of this closure, stated.** R8 reads **this repository's** workflows. The
+other sixteen are not covered by it — their runtime declarations are their own
+repositories' decision, and per ADR-0010 that is the correct arrangement, not an
+oversight. And R8 says nothing about the interpreter a *self-hosted* runner uses, nor
+about the operator's workstation: M-04 is untouched and remains the load-bearing open
+finding.
+
+**Verification:** gate rc=0 `13 workflow runtime step(s) examined`; 48 fixture tests
+pass; `terraform fmt -check -recursive` rc=0; `apply.yml` absent from the diff.
 
 ---
 

@@ -155,3 +155,24 @@ exceptions:
       reported as not adopted until PR jolarca-security#9 merges, and resolving this
       needs an approved installation approach, not a policy workaround.
     expires: "2027-05-03"
+
+# Workflow runtime declarations answer to the same approval, because
+# `python-version: "3.12"` in a workflow is a REQUEST the hosted runner answers with
+# whatever its image ships. ADR-0010 M-10 measured that directly: the same unchanged
+# declarations produced 3.12.15 on one run and 3.12.16 an hour later. Rule R8 in
+# scripts/check_toolchain_baseline.py enforces this offline on every PR, as a step
+# inside the required Validate Repo Allow-List job.
+workflow_exceptions:
+  - file: .github/workflows/apply.yml
+    covers: [R8]
+    reason: >-
+      `.github/workflows/apply.yml` is one of apply.yml's own `on.push.paths`, so
+      editing this file arms a real `terraform apply -input=false -auto-approve
+      tfplan` on merge. What stands between that and production is the production
+      environment's 30-minute wait timer — which AGENTS.md §8 records as delay, not
+      approval (D-58, D-70) — plus check_plan_safety.sh. Its single
+      `python-version: "3.12"` is therefore left unpinned by a toolchain change: the
+      pin is a deploy decision the operator makes deliberately, in a PR whose only
+      purpose is that decision, where the resulting plan can be read. This exception
+      covers R8 only; it excuses nothing about adoption, lockfiles or any other file.
+    expires: "2027-05-03"

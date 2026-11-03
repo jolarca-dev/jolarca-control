@@ -10,6 +10,54 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Fixed — 2026-11-03 (M-10 route (a): rule R8 pins the CI runtimes, and a dead fallback that blinded bandit)
+
+- **This section was missing when the two commits landed** (`a779f18` and `2ed617d`, both 2026-11-03) and is
+  added afterwards in its own commit, because this file declares itself part of the SOC 2 CC8.1 /
+  ISO 27001 A.8.32 audit trail and is not optional. Recorded as a late entry rather than quietly backfilled.
+- **The gap R8 closes.** ADR-0010's M-10 measured that the toolchain gate read only `mise.toml`, so the
+  interpreter producing this repository's required-check evidence was announced nowhere: run 41690569251
+  got Python **3.12.15** from `python-version: "3.12"` and run 41693066694 got **3.12.16** an hour later
+  with no file changed. R8 walks every `.github/workflows/*.yml`, finds each `actions/setup-python` and
+  `hashicorp/setup-terraform` step, and requires the approved release. Offline, deterministic and
+  token-free, so it runs in `make lint` via `toolchain-catalogue` and as a step inside the required
+  `Validate Repo Allow-List` job.
+- **Observed firing before it was satisfied, not assumed correct.** The first run returned
+  `FAIL: 10 finding(s)` — nine floating python requests plus `compliance-scan.yml`'s terraform-format job
+  running `setup-terraform` with no `terraform_version` at all, a pre-existing skew the new rule exposed
+  by accident, closing row 3 of ADR-0010's Context table.
+- **Nine `python-version` declarations now pin `3.12.16`** — `compliance-scan.yml` (4), `sast.yml` (2),
+  `context-parity.yml`, `deploy-gates.yml`, `plan.yml` — and `terraform_version: "1.16.1"` was added to the
+  format job. Re-measured on the branch rather than taken from the commit message:
+  `grep -rn 'python-version:' .github/workflows/` returns those nine plus exactly one other.
+- **`apply.yml` is deliberately NOT pinned.** It holds the tenth declaration (`apply.yml:81`,
+  `python-version: "3.12"`) and is one of its own `on.push.paths`, so editing it arms a real
+  `terraform apply -input=false -auto-approve tfplan` on merge, gated only by the production environment's
+  30-minute wait timer — delay, not approval (D-58, D-70) — plus `check_plan_safety.sh`. Bundling a
+  production apply into a toolchain PR is the failure mode this repository documents, so the pin stays an
+  operator decision, excused by a dated `workflow_exceptions` entry in
+  `docs/security/toolchain-catalogue.yml` that `covers: [R8]` only and **expires 2027-05-03**.
+- **Non-vacuity, three ways:** `runtime_steps_examined` is printed in the OK line so a clean pass over zero
+  files is visible; if the catalogue approves python or terraform and no consuming step is found the gate
+  exits **2 CANNOT VERIFY**, never 0; and reverting one pin in `sast.yml` turned the shipped-artifact test
+  red with the exact R8 line, then was restored byte-identically. Nine further fixtures cover a floating
+  request, a wrong-but-exact release, a missing `python-version`, a missing `terraform_version`, an honoured
+  override, an exception that does not cover R8 failing to suppress it, and an empty workflows directory
+  refusing to pass.
+- **The bandit red on this PR was this branch's own and is attributed that way**, not filed as noise.
+  `bandit -ll -ii` reported B506 `yaml_load` at `tests/test_check_toolchain_baseline.py:753`. That line's
+  `Loader=tb.DuplicateKeyLoader if hasattr(...) else yaml.SafeLoader` referenced a class deleted two commits
+  earlier, when duplicate-key detection moved to `compose()` — so the conditional was dead code, and a
+  conditional a static checker cannot resolve is indistinguishable from an unsafe loader. A dead fallback is
+  not merely dead: it blinded the scanner. Fixed to `safe_load`, verified with the exact CI invocation and
+  pinned version — `bandit -r scripts/ tests/ -ll -ii` → rc=0 over 12060 lines, so the pass is not a scanner
+  that found nothing to look at.
+- **The pin is proven by a CI log line, not by the diff:** the bandit job reports
+  `pythonLocation: /opt/hostedtoolcache/Python/3.12.16/x64`, where M-10 measured 3.12.15 before the change.
+- Two authoring errors were recorded in the commit rather than dropped: a C8 insertion silently moved C6's
+  expiry check into the new loop and deleted it from the old one, and two ADR heading edits lost content's
+  position. Both were caught by reading the diff back and re-listing headings — not by a gate.
+
 ### Found — 2026-11-03 (D-60 re-measured: a squash merge also replaces the operator's signature with GitHub's)
 
 - One dated status row appended to **D-60** in `docs/drift-findings.md`. **No new finding id**, because
