@@ -163,16 +163,20 @@ should be promoted into the D-series if and when it is accepted for remediation.
   approved catalogue, following the existing `scripts/drift_detect.py` and
   `make fleet-audit` pattern. Without it the central catalogue is documentation,
   not a control.
-- **M-07 — the action pin is unenforced by the platform.** Both the org and
-  `jolarca-security` return `sha_pinning_required: false` (measured 2026-11-03).
-  AGENTS.md §5 requires every GitHub Action to be pinned to a full commit SHA,
-  and the mise smoke workflows do comply — but nothing on the platform refuses a
-  tag or a branch ref, here or in the other 16 repositories. This is a
-  pre-existing gap, not one mise introduces; mise adoption inherits it and adds
-  17 more workflows that depend on review alone. *Control to add:* set
-  `sha_pinning_required: true` fleet-wide, or add a gate that reads each
-  workflow's `uses:` lines and refuses a ref that is not 40 hex characters.
-  Until one of those exists, "SHA-pinned" describes a convention.
+- **M-07 — the platform does not enforce the action pin, and the remedy first
+  written here was wrong.** Both the org and `jolarca-security` return
+  `sha_pinning_required: false` (measured 2026-11-03), so GitHub itself accepts a
+  tag or a branch ref anywhere in the fleet. _(Amended the same day — the two
+  claims that followed were inaccurate: an offline guard that does refuse a tag
+  ref already exists in this repository and is already enforced on the merge
+  path, and the `sha_pinning_required` PATCH is refused by the API. Read the
+  Amendment section at the end of this file before acting on this bullet.)_ What
+  survives is narrower: the **platform** enforces nothing, and the 16 sibling
+  repositories carry no equivalent of this repository's guard, so the 17 new mise
+  smoke workflows land on the fleet with pin review enforced in one repository out
+  of seventeen. The unbuilt residual — live tag resolution, the one thing the
+  offline guard structurally cannot catch — is already registered as **D-51**.
+  This is a pre-existing gap, not one mise introduces; mise adoption inherits it.
 
 ### What this decision does not do
 
@@ -236,6 +240,82 @@ Revisit this ADR:
 - if a self-hosted runner is ever introduced. A hosted runner cannot see
   `/etc/mise` or `~/.config/mise`; a self-hosted one can, and inheritance then
   becomes an attacker-reachable input on every PR from a fork.
+
+---
+
+## Amendment — 2026-11-03 (M-07): the finding overstated the gap and its remedy is refused
+
+M-07 was published in `b3fba1b` claiming that "nothing on the platform refuses a
+ tag or a branch ref, **here** or in the other 16 repositories", and prescribing
+`sha_pinning_required: true` as the cheap fix. Both halves failed on contact with
+the artifacts. Recorded here rather than silently rewritten, because a corrected
+record has to show what was wrong.
+
+**The guard already exists, and it is already enforced.**
+`tests/test_action_pin_labels.py` (125 lines) asserts over every `.github/workflows/*.yml`:
+that each `uses:` ref is a 40-hex full SHA, that one `(action, commit)` never
+carries two different labels across workflows, and that one `(action, label)`
+never points at two commits. Run today: `4 passed in 0.07s`. It reaches the merge
+path because `compliance-scan.yml:269` runs `python -m pytest tests/ -q` inside
+the required `Validate Repo Allow-List` job — the context list M-07 was written
+to complain about. So "here" was false: in this repository a tag ref does fail a
+required check. The word that should have carried the claim is **platform**, alone.
+
+**The residual is already registered, with a date and a status.** That test's own
+docstring limits it: it "cannot catch a label that is wrong in *every* file
+consistently — that needs live tag resolution". `docs/drift-findings.md:776`
+records exactly that as **D-51**, from the real defect it was built for
+(`actions/checkout` pinned to v5.0.0 under a `# v4.3.0` comment, the false label
+then carried onto v7.0.1 by a bump), and its heading states the current position:
+"labels fixed in #34 (pending merge); offline detection added here; **live
+resolution still unbuilt**". A fleet-wide pin scan across the 16 allow-listed
+repos plus `.github` was also already performed on 2026-10-04 and is registered as
+D-43. M-07 re-derived a known gap and cited neither entry, which is the failure
+mode AGENTS.md §7 exists to catch — and caught here only because the user acted on
+the prescription before I had tested it.
+
+**The prescribed remedy is refused by the API, and would have been wrong anyway.**
+Measured when `gh api -X PATCH orgs/jolarca-dev/actions/permissions -f
+allowed_actions=all -f sha_pinning_required=true` was run against live state:
+HTTP **404**. Re-read after the failure confirms **nothing was mutated** —
+`{"enabled_repositories":"all","allowed_actions":"all","sha_pinning_required":false}`,
+byte-identical to the pre-change GET. The cause is not established by these two
+requests and must not be asserted: a Free-plan capability gate is the likely
+reading, consistent with this repository's measured history that
+`orgs/jolarca-dev/audit-log` likewise returns 404 on the same plan, but a
+plan-tier conclusion needs evidence this probe does not carry.
+
+It should not have been recommended regardless of the outcome, for a reason
+stronger than the API refusing it. Actions permissions are **outside Terraform's
+scope entirely**: a broad grep over every `*.tf` for
+`actions_permis|allowed_actions|sha_pinning|selected_actions` returns nothing
+(exit 1), and `terraform state list` exits **0 with 49 addresses**, none of which
+match `action|organiz` — so this is a genuine empty result, not a failed command.
+The only organisation-scoped resource declared here is
+`github_organization_webhook.audit_stream`. A successful PATCH would therefore
+have changed a live setting that no declaration names and that `drift_detect.py`
+cannot observe — an invisible setting is worse than a silently reverted one, and
+AGENTS.md §5's stated mechanism ("Terraform is the source of truth, out-of-band
+PATCHes are reverted") does not cover this object, which is exactly why the
+command should have been recognised as ungoverned before it was written out.
+
+**What M-07 should have said, and what is now the action:** the platform enforces
+nothing; this repository's offline guard does, on the merge path; the unbuilt
+residual is live tag resolution, already tracked as D-51; and the fleet gap is
+that the 16 sibling repositories have no copy of the guard. Closing it is a
+per-repository test file plus its workflow wiring, reviewed in each repo — which
+is the same conclusion this ADR reaches about configuration, arrived at from the
+other direction.
+
+**References added by this amendment:**
+- `tests/test_action_pin_labels.py` — the guard M-07 failed to find; `4 passed` on 2026-11-03
+- `.github/workflows/compliance-scan.yml:269` — `python -m pytest tests/ -q`, inside the required job
+- `docs/drift-findings.md:776` **D-51** — "offline detection added here; live resolution still unbuilt"
+- `docs/drift-findings.md:4` **D-43** — fleet-wide pin scan across the 16 repos plus `.github`, 2026-10-04
+- `scripts/repo_readiness_audit.py:722,796` — `workflow_action_pins()` enumerates workflow pins;
+  whether it refuses a non-SHA ref was **not established**, and nothing above rests on it
+- Measured 2026-11-03: `gh api -X PATCH orgs/jolarca-dev/actions/permissions` → HTTP 404,
+  re-read unchanged; `grep -rn` over `*.tf` → no match; `terraform state list` → rc 0, 49 addresses
 
 ---
 
