@@ -238,5 +238,21 @@ Only `platforms.linux-x64` is locked anywhere, and no bound reaches global or sy
 config, so every workstation remains unbounded (M-04). The existing Makefile,
 workflows and required status checks remain authoritative; mise is a declaration and
 verification surface, not a task runner or a CI entry point. See ADR-0010 findings
-M-01, M-02, M-04 and M-08, and its dated status-change section, for what each gap
-means.
+M-01, M-02, M-04, M-08, M-09 and M-10, and its dated status-change section, for what
+each gap means.
+
+### The approved catalogue is not yet connected to what executes (M-10)
+
+`docs/security/toolchain-catalogue.yml` names the approved toolchain and
+`scripts/check_toolchain_baseline.py` validates it — in `make lint` and as a step
+inside the required `Validate Repo Allow-List` job. But the gate reads `mise.toml`
+only, and ten `python-version: "3.12"` declarations across six workflows request a
+prefix rather than a release. The interpreter that produces this repository's
+required-check evidence is therefore chosen by the hosted runner image, on its own
+schedule. Measured 2026-11-03 as an A/B on an unchanged tree: run `41690569251` job
+`126107728895` reported Python **3.12.15**, and run `41693066694` job `126116360439`
+an hour later reported **3.12.16**, with the declarations at identical line numbers
+in both commits. Agreement with the approved 3.12.16 today is coincidence, not a
+control — and "which version was in force when this evidence was produced" (SOC 2
+CC7.1, ISO 27001 A.8.19) currently has no answer in this repository. See ADR-0010
+M-10 for the two ways to close it.
