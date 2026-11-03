@@ -118,15 +118,19 @@ appended to the `docs/drift-findings.md` D-series because they arise from an
 assessment of an unmerged proposal, not from measured drift in live state; each
 should be promoted into the D-series if and when it is accepted for remediation.
 
-- **M-01 — config discovery is unbounded in all 17 drafts.** No `.miserc.toml`
-  is present in any of them (all 17 file lists read, 2026-11-03). This matters
+- **M-01 — config discovery was unbounded in all 17 drafts.** No `.miserc.toml`
+  was present in any of them (all 17 file lists read, 2026-11-03). This matters
   because `ceiling_paths` set under `[settings]` in `mise.toml` "has no effect on
   config discovery": mise reads `.miserc.toml` *before* any `mise.toml`. It is
   also the one config file that loads without trust, precisely because "it can
-  only choose which config files load". *Control to add:* a committed
-  `.miserc.toml` bounding the search at the repository root, or
-  `MISE_CEILING_PATHS` set in the workflow. Until one of those exists,
-  Rationale 2 is a live exposure, not a theoretical one.
+  only choose which config files load". _(Amended the same day — the control was
+  built and measured on twelve repositories' draft branches, and the wording this
+  bullet first used, "bounding the search at the repository root", was wrong: a
+  ceiling directory is not searched itself, so a ceiling naming the root stops mise
+  loading the root's own `mise.toml`. Read the second Amendment section before
+  acting on this bullet.)_ *Control:* a committed `.miserc.toml` whose
+  `ceiling_paths` names the **parent** of the repository root, or
+  `MISE_CEILING_PATHS` set in the workflow.
 - **M-02 — `--locked` binds the CI job, not the repository.** The workflows pass
   `install_args: --locked`, so a developer running plain `mise install` resolves
   unlocked against whatever the lockfile does not constrain. *Control to add:*
@@ -134,7 +138,9 @@ should be promoted into the D-series if and when it is accepted for remediation.
   root's tools to resolve and install from their lockfiles" and travels with the
   repository instead of with the invocation. Its documented limit — it "does not
   affect tools inherited from global, system, or parent config roots" — is why
-  M-02 must ship together with M-01.
+  M-02 must ship together with M-01. _(Amended the same day: measured on twelve
+  repositories' draft branches, one of which tests shellcheck rather than python,
+  so the bound is not python-specific. On no default branch yet.)_
 - **M-03 — provenance strength is asymmetric inside one lockfile.** In
   `jolarca-control`'s `mise.lock`, python (`backend = "core:python"`) carries
   `provenance = "github-attestations"`, while terraform
@@ -177,6 +183,18 @@ should be promoted into the D-series if and when it is accepted for remediation.
   of seventeen. The unbuilt residual — live tag resolution, the one thing the
   offline guard structurally cannot catch — is already registered as **D-51**.
   This is a pre-existing gap, not one mise introduces; mise adoption inherits it.
+- **M-08 — a shared artifact is judged by each repository's own lint limit.**
+  Propagating one guard file broke `ci` in exactly two repositories and nowhere
+  else, and the reason is in the files rather than the code: `jolarca-data` and
+  `jolarca-legal` run `yamllint` with `line-length: {max: 140}`, while this
+  repository's `.yamllint` allows 160. A 141-character line passed locally and
+  failed there. Attributed to my own commit by an A/B on the same workflow —
+  `jolarca-legal` `ci` was success at `61102be5` and failure at `c13a8c4f`, with
+  only my push between — not assumed from its merely being red. *Control:* write
+  anything intended to cross repositories to the **strictest limit in the fleet**
+  and lint it locally at that limit before pushing, not at the local one. This is
+  Rationale 3 arriving as a defect: centralising a file does not centralise the
+  rules that judge it.
 
 ### What this decision does not do
 
@@ -230,8 +248,11 @@ separately reviewed change.
 
 Revisit this ADR:
 
-- when M-01 and M-02 are implemented, to replace the finding text with the
-  shipped control;
+- when the M-01 and M-02 branches merge, to move them from findings to controls on
+  the default branch — until then they are proven only in CI on open draft
+  branches, and every default branch in the fleet is still unbounded;
+- when the four repositories whose drafts were already blocked by unrelated failing
+  checks receive the same two files (M-01, M-02) and the lint discipline (M-08);
 - when a second platform's lock entries exist (M-05);
 - when the machine baseline for M-04 is recorded;
 - before any workflow migration that makes `mise` the CI entry point — that
@@ -316,6 +337,95 @@ other direction.
   whether it refuses a non-SHA ref was **not established**, and nothing above rests on it
 - Measured 2026-11-03: `gh api -X PATCH orgs/jolarca-dev/actions/permissions` → HTTP 404,
   re-read unchanged; `grep -rn` over `*.tf` → no match; `terraform state list` → rc 0, 49 addresses
+
+---
+
+## Amendment — 2026-11-03 (M-01, M-02, M-08): the bound was built, measured, and broke two repositories on the way
+
+**Status in one line: proven in CI on twelve repositories' open draft branches;
+enforced on none of their default branches.** Every one of those pull requests is
+still `isDraft: true`, so `main` in all thirteen remains unbounded as this is
+written. A control that exists only on an unmerged branch is a hypothesis with
+better evidence than before, not a control — which is why M-01 and M-02 stay open
+above rather than being marked closed.
+
+**What was added.** `.miserc.toml` with
+`ceiling_paths = ["{{ config_root | dirname }}"]`, `[tool_config] locked = true` in
+`mise.toml`, and a `mise-config-scope` job. The first draft of the bound said
+"bound the search at the repository root", which is wrong in a way that would have
+passed unnoticed: a ceiling directory is not searched itself, so a ceiling naming
+the root stops mise loading the root's own `mise.toml`. The bound would have
+"succeeded" by disabling the thing it guards. The value must name the parent.
+
+**What was measured, and why it is not vacuous.** The guard has four legs, and each
+negative leg is paired with a positive one, because a guard that only asserts
+absence also passes when the command printed nothing at all.
+
+| Leg | Assertion | Printed evidence from the runner |
+|---|---|---|
+| 1 | with `MISE_CEILING_PATHS=""` the decoy **must** be discovered | `~/work/jolarca-control/mise.toml  bidi-decoy` |
+| 2 | with the committed `.miserc.toml` the decoy must be absent **and** every declared version still selected | `OK: python 3.12.16 is the selected version.` / `OK: terraform 1.16.1 is the selected version.` |
+| 3 | plain `mise install`, no `--locked` anywhere, must succeed from the lock | `OK: no --locked flag was passed anywhere and the lock still governed resolution.` |
+| 4 | the same plain install must be refused when `mise.lock` is absent | `python@3.12.16 is not in the lockfile`, hint naming `tool_config.locked`, 0 ms |
+
+Runs: `41677451440` job `126061779796` (jolarca-control, portable form),
+`41669118323` job `126032389384` (its first version), `41678304758` job
+`126064791417` (jolarca-docs), `41679375350` (`.github`), `41679434760`
+(jolarca-identity), `41679517782` (jolarca-vendor). Leg 4 in jolarca-identity
+tested `shellcheck@0.11.0` rather than python, because the job reads the declared
+tool set out of each repository's own `mise.toml` instead of naming versions. That
+is what makes one file correct across the fleet — and it is this ADR's own
+per-repository conclusion, applied to the guard that carries it.
+
+**Three failures are part of the evidence, not footnotes.**
+
+1. `tests/test_ci_gates_are_real.py::test_no_run_step_swallows_its_exit_status`
+   named four of my steps for using a shell fallback, in this repository, before CI
+   could. The rule is AGENTS.md §3 in executable form: a verdict handed to a
+   fallback reports an unreadable input as a clean scan.
+2. The decoy assertion matched a path spelling mise does not print — mise
+   abbreviates `HOME`, so `~/work/...` never equals `$GITHUB_WORKSPACE/...`. The leg
+   failed **while the decoy was genuinely loaded**. Had the matcher been quietly
+   satisfied instead, the inheritance would have been recorded as bounded on
+   evidence of nothing at all.
+3. Propagation broke `ci` in jolarca-data and jolarca-legal only, because their
+   yamllint limit is 140 and this repository's is 160. Registered as **M-08**. The
+   file is now 119 characters at its longest and is linted locally at 140 and 120
+   before any push.
+
+**What the bound does not reach.** A project `.miserc.toml` cannot ignore global or
+system config; the same documentation page that offers `ignored_config_paths`
+states that a project's file cannot ignore global or system config, and a project
+`.miserc.toml` leaves `env` empty, so the file cannot read the environment to
+compensate.
+`~/.config/mise/config.toml` and `/etc/mise` therefore still merge into every
+project on the machine, and `ceiling_paths` **fails open** — an unrendered template
+becomes a literal path matching nothing, silently, because the file is read before
+logging starts. **M-04 remains the load-bearing open finding:** the other half of
+the bound is a machine baseline and nothing in any repository enforces it. Leg 2 is
+what converts a fail-open declaration into a control; deleting that leg deletes the
+control.
+
+**jolarca-security is the honest exception, and is not counted among the twelve.**
+Its `.miserc.toml` and `locked = true` are committed on the branch, but no CI proof
+is available there: runs `41654550029`, `41678712745` and `41679508071` all
+concluded `startup_failure`, and its `selected-actions` still reads
+`github_owned_allowed: true`, `patterns_allowed: ["DavidAnson/*"]`,
+`verified_allowed: false`. The configuration there is **declared and unproven**.
+
+**Not propagated:** jolarca, jolarca-compliance, jolarca-consent and
+jolarca-infrastructure, whose draft PRs were already blocked by failing checks this
+work did not touch. Four repositories unbounded while twelve are bounded is exactly
+the divergence-by-omission M-06 predicts, and it is recorded here rather than
+smoothed over.
+
+**References added by this amendment:**
+- `jolarca-control` PR #121, branch `codex/mise-adoption-2026-11-03`, head `5f88618a`
+- `.github/workflows/mise-toolchain.yml`, job `mise-config-scope` — the four-leg guard, portable
+- `tests/test_ci_gates_are_real.py` — the no-swallow rule that rejected the first draft
+- Measured 2026-11-03: `gh pr checks` across 13 repositories; `gh run view --log --job`
+  for each quoted verdict;
+  `gh api repos/jolarca-dev/jolarca-security/actions/permissions/selected-actions`
 
 ---
 
