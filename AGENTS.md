@@ -390,10 +390,18 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   was **skipped** — so no apply happened. Read that as the current state of a
   broken CI credential (D-56), not as a control; after the init fix in D-64 the
   plan gets further before dying, and once the token is repaired the refusal gate
-  is what has to stop it. Measured 2026-10-26 against HCP directly (D-82): the
-  workspace has **three runs, all `Triggered via CLI`**, and none originated from
+  is what has to stop it. Measured 2026-10-26 against HCP directly (D-82) and
+  re-measured 2026-11-04: the workspace has **three runs, all `source:
+  terraform+cloud`**, newest `2026-10-12T10:54:52Z`, and none originated from
   GitHub Actions — the CI apply path has never reached the backend at all, so the
-  48-resource state is what the last human CLI run left.
+  state is whatever the last human CLI run left. **The resource count is pointed at
+  here, not carried:** read the workspace `resource-count`, or
+  `terraform state list | wc -l`. This bullet asserted "48-resource" from
+  2026-10-26 until 2026-11-04, when measurement returned **49** — the extra address
+  is consent's adopted ruleset, imported 2026-10-27, so the state grew as recorded
+  and only the prose went stale. Same failure this file already documents for the
+  backup schedule: a sentence that carries a number rots faster than the gate that
+  reads it.
 - **The production apply now has a 30-minute wait, and it is not an approval.**
   Measured 2026-10-16 after `gh api -X PUT
   repos/jolarca-dev/jolarca-control/environments/production -F wait_timer=30
@@ -407,20 +415,47 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   prompts and a non-interactive shell looks like it failed). Proven 2026-10-16 on
   run 38813823199: cancelled mid-wait with `steps_started: 0` and the workspace
   unchanged at 48 resources, i.e. nothing executed before the stop.
-  (2) Delay is not approval —
-  `required_approving_review_count` is still 0 and no reviewer signs anything, so
-  treat the merge as the apply decision, as before; (3) assert on the **array**, not
+  (2) Delay is not approval, and **the rest of this clause was false from
+  2026-10-17 until 2026-11-04**: `required_approving_review_count` is still 0, so no
+  *pull request* needs a sign-off — but the `production` environment has had a
+  **required reviewer** since D-75. Re-read 2026-11-04, `protection_rules` is
+  `[{type: wait_timer, wait_timer: 30}, {type: required_reviewers,
+  prevent_self_review: false, reviewers: [JourneyOfLife]}]` with
+  `can_admins_bypass: false` and `last_deployed_at: null`. A deployment approval is
+  therefore mandatory, and one `gh run approve` by the same sole identity releases it
+  — friction, not separation of duties, so D-58 stays open. Treat the merge as the
+  apply decision, as before, and `check_plan_safety.sh` as the substantive brake;
+  (3) assert on the **array**, not
   the scalar: the top-level `wait_timer` field reads `null` even when the timer is
   active (this is the trap that made an earlier probe report "no wait configured"
   when the row was then written as fact); (4) `-F` not `-f` — that endpoint wants an
-  integer and a boolean, and `-f` answers HTTP 422 having changed nothing. Reviewers
-  were deliberately **not** added: the solo-operator self-approval constraint is
-  untested here, and an unsatisfiable reviewer would wedge every deploy. See D-70 and
-  D-58.
+  integer and a boolean, and `-f` answers HTTP 422 having changed nothing. The
+  sentence that used to close this bullet — that reviewers "were deliberately **not**
+  added" — was overtaken by D-75 on 2026-10-17 and is removed rather than left
+  standing, because a description of a brake that has changed is worse than no
+  description: an agent trusting it would not expect an approval step, would not look
+  for a run sitting in `status=waiting` on the deployment gate, and could leave an
+  apply armed. See D-70, D-75 and D-58.
 - **There is no targeted-apply mechanism.** `apply.yml` runs a whole-state
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`
   appears only as printed advice in `scripts/repo_readiness_audit.py`.
+- **The PR-time plan gate does not run on most merges — silence, not a red badge.**
+  `plan.yml` is path-filtered on both events: `pull_request` fires on `**.tf`,
+  `**.tfvars`, `repos/**`, `policy/**`, `.terraform.lock.hcl` and the workflow itself;
+  `push: main` on that list minus the workflow. Measured 2026-11-03: twelve merge
+  commits reached `main` that day and
+  `GET /repos/…/actions/workflows/plan.yml/runs` shows **none** of them — all six runs
+  were `pull_request` events on branches that did touch Terraform, and every one of
+  those failed at `terraform init` on the D-56 credential. So for a `docs/**`,
+  `scripts/**`, `tests/**` or `.github/workflows/**` change there is no plan-review
+  signal at PR time either, and `Validate & Plan` is deliberately not a required
+  context (`repos/jolarca-control.yml`: requiring a path-filtered check would wedge
+  docs-only PRs — the D-90 shape). This is arranged, not broken; the brake on the
+  apply path lives inside `apply.yml`. The trap is reading "continuously red" and
+  "never triggered" as the same defect — for any gate, ask first *did it run for this
+  commit*, then *did the step execute or was it skipped behind a guard*, and only
+  then *what was its conclusion* (§7).
 - **The previously-red required contexts now pass AND are enforced.** Verified
   2026-10-06 on PRs #42/#43: `Policy Compliance Check` is green
   (`jolarca-hermes-agents` now declares `pci-dss`) and `Repository Secret Pattern

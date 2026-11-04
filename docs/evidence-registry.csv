@@ -33,6 +33,7 @@ docs/runbooks/deployment-rehearsal.md,ce07bd6ef407b9a5850150f61fd35cf018f89d3d11
 docs/runbooks/first-commit-pipeline.md,eb9461e3c61f38f13f3faa27dd7231cb273d44d15629c7b83eb31cb5470439ec,2026-10-15
 docs/runbooks/github-token-rotation.md,8f639ea547349c0dc4d305430c075173a51a6755a13b20186d59cbf4043f6b0c,2026-10-26
 docs/runbooks/workload-identity-federation.md,2953cc6ce183d28a7bfed099e1e515e45fd7de603b9d0e18ad0927225579510e,2026-10-15
+docs/security/d33-enforcement-rehearsal-2026-10-08.md,464294ca220d530edce38d4fbb5b7a50ae381a0348ee77e121a48593a2181bbd,2026-11-03
 docs/security/dpia-marketplace-launch.md,125af31733cedd11b75752d91befff024bd8e828d6233f03e1c85533626f4470,2026-10-15
 docs/security/f01-l16-synthetic-fixture-acceptance.md,bd4647063bce9a09829ace0b833bf6abc09967505a7b3696733ed4c55034823f,2026-10-15
 docs/security/fleet-audit-2026-Q4/dot-github.md,31320c83d86086d8abb8de4e54bac2f27fab579fccc968264cb039a1205c4f8d,2026-10-26
@@ -43,7 +44,7 @@ docs/security/fleet-audit-2026-Q4/jolarca-consent.yml,3ec070ba3ccb244ff0a366b288
 docs/security/fleet-audit-2026-Q4/jolarca-control.md,9e77beb8f49d4dda8cfcfb65f2deafcf97a3027be9f19e89b9307f6dd47b1d5f,2026-10-26
 docs/security/fleet-audit-2026-Q4/jolarca-control.yml,571ed04d2fb55a2f7738975228de39bd2080ab4f7aa836b7ea9d2de3c3eff923,2026-10-26
 docs/security/isolation-model.md,2ad5b04e6f134988f6a00eca859bcc18f02fa22c0b88a9ae8c43694991343c80,2026-10-15
-docs/security/key-custody.md,852524669f5e43be89ba03826b11d69351eec2ea20fc80a9367003d91e1541f1,2026-10-26
+docs/security/key-custody.md,8511f1710cf8b28f3d6c47239e4f6e4126b90cba86994945558de703e056bfae,2026-11-03
 docs/security/sast-mandatory-gate-2026-10-08.md,e4aa6f562a7a08295029ae2b8bcf5592b87447f9c2ce4fc09691ca5d2937625c,2026-10-15
 docs/security/soc2-type-i-readiness.md,5d8ba2f3f7bf4bf601f4633d0ed1ade0731718219d02ab02c72a49b2552061c8,2026-10-15
 docs/security/toolchain-catalogue.yml,cd223a19dc01420fe505603e75e6f78d351e4e31ae3f8a119f5bea4144c3a9e7,2026-11-03
