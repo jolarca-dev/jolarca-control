@@ -384,7 +384,13 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   that it "does not catch required-context, `strict`, linear-history or
   code-owner changes" is superseded for those attribute classes. What is still
   NOT caught: an attribute change to `github_repository` settings that is not in
-  the refused list. Measured outcome of the merge of this repo's #69 (run
+  the refused list, and the gap has now been watched working rather than inferred: on
+  2026-11-04 a real `-refresh=false` plan rendered this root's permanent
+  `github_repository.repo["jolarca-legal"]` `template` line beside a consent-ruleset change,
+  and `check_plan_safety.sh` exited 1 naming only the ruleset lines while
+  `grep -c jolarca-legal` over its own output returned 0 (D-89 records the measurement;
+  D-87 records why a plan's aggregate exit code is not a per-address verdict). Measured
+  outcome of the merge of this repo's #69 (run
   38781192964, 2026-10-15): `Terraform Plan` failed on
   `Error acquiring the state lock / resource not found` and `Terraform Apply`
   was **skipped** — so no apply happened. Read that as the current state of a

@@ -10,6 +10,51 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Changed — 2026-10-27 (D-91: `Dependency review` suspended on consent under a dated exception, because it could never pass)
+
+- Measured, not inferred: consent's `main` has **no** `requirements.txt` (only `pyproject.toml`, which
+  dependency-review-action cannot resolve), `GET /dependency-graph/sbom` exits 1 on `main` **and** on
+  the PR head, and `Dependency review` is `failure` on all six open consent PRs. The manifest that
+  would build the graph lives only on the branch the requirement blocks, and `main` is protected, so
+  there is no third door. This is a required-but-unsatisfiable check — the A-01/D-44/D-47 class — and
+  it was created by this session one day after writing the AGENTS.md §7 rule that forbids it. D-90's
+  row records the recurrence; D-91 is the finding.
+- **A correction to my own earlier advice:** "tick the Dependency graph, then `sbom_rc=0`" rested on a
+  false discriminator. The 404 also occurs with the toggle on and nothing indexed, so it proves
+  nothing, and the box-ticking could not have unblocked anything.
+- Suspend the one context in `rulesets.tf` **and** `repos/jolarca-consent.yml` together (one file only
+  would make `drift_detect.py` report a change that did not happen), under a new
+  `policy/compliance-gates.yml` exception: `expires 2027-01-25`, exit trigger = re-add once the
+  context has been **observed passing**.
+- Not weakened: `pull_request` (so consent's `main` stays un-pushable and D-46 stays closed), the
+  other six contexts, `strict = true`, and `bypass_actors = []` — no admin bypass was added to fix a
+  queue.
+- Sequencing that the operator must respect: merge → **apply** → then merge consent #12 → graph builds
+  → verify → restore. Merging #12 first changes nothing, because the apply is what edits the ruleset.
+### Docs — 2026-11-04 (D-89 re-measured: a refused plan and a waved-through line, in one rendering)
+
+- PR #107's tree was run through the sanctioned offline plan (`terraform plan -input=false
+  -refresh=false`, rendered with `terraform show -no-color` into a real file) **to read it,
+  not to apply it** — no apply ran and nothing armed. The plan is `0 to add, 2 to change,
+  0 to destroy`: this root's permanent `github_repository.repo["jolarca-legal"]` `template`
+  line (D-89, byte-unchanged eight days after it was opened) plus the consent-ruleset trim
+  that PR exists to make.
+- `scripts/check_plan_safety.sh` exited **1** with four `::error::` classes naming lines 23,
+  24, 32, 35 and 37 — every one inside the ruleset block — and `grep -c jolarca-legal` over
+  the gate's own output returned **0**. So D-89's "the gate exits 0 on it" describes **one
+  address**, never a plan's aggregate verdict: a plan can be refused and still carry this
+  line unnoticed in the same run. D-87's row (2) already states the rule; what is new is
+  that both halves are now visible in one real plan, which is why this is a dated row on
+  D-89 rather than a new finding id.
+- Kept deliberately narrow. Step 6 packet row 14 is still `[ ]` and is already bound to D-89
+  ("tick only once you have also decided how to live with the permanent `1 to change`"), so
+  no option is re-offered and no approver or date is recorded on anyone's behalf — re-offering
+  a decision the register had taken is exactly why D-88 was retracted.
+- AGENTS.md §8's "What is still NOT caught" sentence now cites this measurement, so the gap
+  stops being an inference a reader has to re-derive.
+- No hashed artifact changed: drift-findings.md, AGENTS.md and this file are all outside
+  `EVIDENCE_DIRS`, so no evidence re-registration is required and the registry stays as is.
+
 ### Added — 2026-11-04 (the D-33 enforcement rehearsal evidence lands; #54's registry conflict resolved by regeneration)
 
 - `docs/security/d33-enforcement-rehearsal-2026-10-08.md` (337 lines) has been PR #54's content since
