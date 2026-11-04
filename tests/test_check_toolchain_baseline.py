@@ -69,7 +69,7 @@ CATALOGUE: dict[str, Any] = {
             "reviewed_by": "JourneyOfLife",
             "reviewed_on": "2026-11-03",
             "review_due": "2027-05-03",
-            "per_repository_overrides": {"other-repo": "1.9.8"},
+            "per_repository_overrides": {"other-repo": "1.9.8", "jolarca-infrastructure": "1.9.8"},
         },
     },
     "not_yet_approved": ["gitleaks"],
@@ -610,7 +610,10 @@ def run_r8(tmp_path: Path, body: str, mutate=None, *extra: str) -> int:
 def test_r8_fires_on_a_floating_request(tmp_path: Path, capsys) -> None:
     body = SP_TEMPLATE.format(steps=with_setup_python("3.12"))
     assert run_r8(tmp_path, body) == 1
-    assert "declares python '3.12', approved is '3.12.16'" in capsys.readouterr().out
+    captured = capsys.readouterr().out
+    assert "declares python '3.12'" in captured
+    assert "approved is '3.12.16'" in captured
+    assert "via sample.yml" in captured
 
 
 def test_r8_fires_on_a_wrong_exact_release(tmp_path: Path, capsys) -> None:
@@ -762,3 +765,234 @@ def test_apply_yml_is_still_unpinned_and_that_is_excused_not_invisible(tmp_path:
     }
     assert 'python-version: "3.12"\n' in text, "apply.yml was pinned; remove its exception too"
     assert exc.get(".github/workflows/apply.yml") == ["R8"], exc
+
+
+# ── R8 composite-action resolution (the jolarca-infrastructure blind spot) ──────
+#
+# Measured before this rule existed: running main's committed gate against the REAL
+# .github/workflows/terraform.yml plus .github/actions/terraform-setup/action.yml
+# fetched from jolarca-dev/jolarca-infrastructure returned
+#   CANNOT VERIFY: ... R8 examined nothing, so its silence is not evidence
+# i.e. exit 2. The non-vacuity guard correctly refused to pass, but coverage was zero:
+# infrastructure's only Terraform pin lives in a composite input default, not in a
+# workflow. These fixtures reproduce that shape offline so the gap cannot return.
+
+
+COMPOSITE_CALLER = """name: terraform
+on:
+  pull_request:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/terraform-setup
+{extra}
+"""
+
+COMPOSITE_BODY = """name: terraform setup
+description: pin the terraform binary
+inputs:
+  terraform_version:
+    description: version
+    default: "{version}"
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      with:
+        terraform_version: ${{{{ inputs.terraform_version }}}}
+"""
+
+
+def composite_tree(tmp_path: Path, version: str, extra: str = "") -> tuple[Path, Path, Path]:
+    root = tmp_path / "tree"
+    wf = root / ".github" / "workflows"
+    actions_root = root / ".github" / "actions"
+    act = actions_root / "terraform-setup"
+    wf.mkdir(parents=True, exist_ok=True)
+    act.mkdir(parents=True, exist_ok=True)
+    (wf / "terraform.yml").write_text(COMPOSITE_CALLER.format(extra=extra), encoding="utf-8")
+    (act / "action.yml").write_text(COMPOSITE_BODY.format(version=version), encoding="utf-8")
+    # The actions ROOT is what --actions-dir means; returning the composite's own
+    # directory here is what made the first fixture miss the sweep entirely.
+    return root, wf, actions_root
+
+
+def run_composite(
+    tmp_path: Path, mutate=None, repo: str = "jolarca-infrastructure", *extra: str
+) -> int:
+    cat = write_catalogue(tmp_path, mutate)
+    root, wf, act = composite_tree(tmp_path, "1.9.8")
+    return tb.main(
+        [
+            "--catalogue",
+            str(cat),
+            "--root",
+            str(root),
+            "--workflows-dir",
+            str(wf),
+            "--actions-dir",
+            str(act),
+            "--repo",
+            repo,
+            "--today",
+            TODAY,
+            *extra,
+        ]
+    )
+
+
+def test_composite_input_default_is_honoured_through_the_per_repo_override(tmp_path: Path) -> None:
+    """The real infrastructure shape: caller passes nothing, the composite's input
+    default is 1.9.8, and the catalogue approves 1.9.8 for that repository."""
+    assert run_composite(tmp_path) == 0
+
+
+def test_composite_default_is_refused_when_it_is_not_the_approved_release(
+    tmp_path: Path, capsys
+) -> None:
+    """Same tree, a repo with no override. Before the fix this returned exit 2 with
+    'R8 examined nothing' — the pin was invisible, not merely wrong."""
+    assert run_composite(tmp_path, repo="some-other-repo") == 1
+    out = capsys.readouterr().out
+    assert "declares terraform '1.9.8'" in out
+    assert "default in .github/actions/terraform-setup/action.yml" in out
+
+
+def test_a_template_value_is_not_mistaken_for_the_pin(tmp_path: Path, capsys) -> None:
+    """The composite step carries `${{ inputs.terraform_version }}`, not a version.
+
+    Comparing that string against the approved release would raise a false finding on
+    every correctly written composite, and the fleet response to a gate that cries wolf
+    is an exception, not a fix. So a template must fall through to the input default.
+    """
+    assert run_composite(tmp_path, repo="some-other-repo") == 1
+    out = capsys.readouterr().out
+    assert "${{" not in out, "the template was graded as if it were a version"
+
+
+def test_the_caller_with_wins_over_the_composite_default(tmp_path: Path, capsys) -> None:
+    """GitHub applies the caller's value; the gate must judge that one instead."""
+    cat = write_catalogue(tmp_path)
+    root, wf, act = composite_tree(tmp_path, "1.9.8", extra="")
+    caller = (
+        "      - uses: ./.github/actions/terraform-setup\n"
+        "        with:\n"
+        '          terraform_version: "1.2.3"\n'
+    )
+    (wf / "terraform.yml").write_text(COMPOSITE_CALLER.format(extra=caller), encoding="utf-8")
+    assert (
+        tb.main(
+            [
+                "--catalogue",
+                str(cat),
+                "--root",
+                str(root),
+                "--workflows-dir",
+                str(wf),
+                "--actions-dir",
+                str(act),
+                "--repo",
+                "jolarca-infrastructure",
+                "--today",
+                TODAY,
+            ]
+        )
+        == 1
+    )
+    assert "declares terraform '1.2.3'" in capsys.readouterr().out
+
+
+def test_an_unreferenced_composite_is_still_swept(tmp_path: Path, capsys) -> None:
+    """A floating pin must not hide by having no caller today."""
+    cat = write_catalogue(tmp_path)
+    root, wf, act = composite_tree(tmp_path, "9.9.9")
+    (wf / "terraform.yml").write_text(
+        "name: nothing\non: push\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - run: echo hi\n",
+        encoding="utf-8",
+    )
+    assert (
+        tb.main(
+            [
+                "--catalogue",
+                str(cat),
+                "--root",
+                str(root),
+                "--workflows-dir",
+                str(wf),
+                "--actions-dir",
+                str(act),
+                "--repo",
+                "jolarca-infrastructure",
+                "--today",
+                TODAY,
+            ]
+        )
+        == 1
+    )
+    out = capsys.readouterr().out
+    assert "(unreferenced)" in out
+    assert "9.9.9" in out
+
+
+def test_a_local_uses_that_resolves_to_nothing_is_a_finding_not_silence(
+    tmp_path: Path, capsys
+) -> None:
+    cat = write_catalogue(tmp_path)
+    root, wf, act = composite_tree(tmp_path, "1.9.8")
+    (wf / "broken.yml").write_text(
+        "name: broken\non: push\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - uses: ./.github/actions/does-not-exist\n",
+        encoding="utf-8",
+    )
+    assert (
+        tb.main(
+            [
+                "--catalogue",
+                str(cat),
+                "--root",
+                str(root),
+                "--workflows-dir",
+                str(wf),
+                "--actions-dir",
+                str(act),
+                "--repo",
+                "jolarca-infrastructure",
+                "--today",
+                TODAY,
+            ]
+        )
+        == 1
+    )
+    assert "resolves to no action.yml" in capsys.readouterr().out
+
+
+def test_composite_only_tree_counts_steps_instead_of_exiting_2(tmp_path: Path, capsys) -> None:
+    """Non-vacuity for the new object class. Before the fix this tree produced
+    'R8 examined nothing' and exit 2; now it must report the three call sites."""
+    cat = write_catalogue(tmp_path)
+    root, wf, act = composite_tree(tmp_path, "1.9.8")
+    rc = tb.main(
+        [
+            "--catalogue",
+            str(cat),
+            "--root",
+            str(root),
+            "--workflows-dir",
+            str(wf),
+            "--actions-dir",
+            str(act),
+            "--repo",
+            "jolarca-infrastructure",
+            "--today",
+            TODAY,
+            "--json",
+        ]
+    )
+    assert rc == 0
+    import json
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["runtime_steps_examined"] >= 1, payload
