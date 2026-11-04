@@ -10,6 +10,29 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Docs — 2026-11-04 (runbook: enacting the D-91 suspension by hand)
+
+- `docs/runbooks/d91-consent-dependency-review-hand-apply.md` records the sequence, because PR #107 left the
+  exception **committed but not enacted**: `main` declares six required contexts for `jolarca-consent` while
+  live ruleset `24087580` still enforces seven including `Dependency review`, that check still concludes
+  `failure` on every open consent PR, and D-91's expiry is `2027-01-25` — the window is being spent without
+  the relief being real.
+- Written against measurements rather than recollection: the live context list is read from
+  `parameters.required_status_checks` (the strict flag is `strict_required_status_checks_policy`, and the
+  legacy `branches/main/protection` endpoint answers HTTP 404 for this repo), the refusal is the four
+  `::error::` classes `check_plan_safety.sh` printed for this exact plan, and the second change in that plan
+  is D-89's permanent write-only `template` line, which the gate waves through — so the runbook says to read
+  per address and not to mistake a waved-through line for an unfinished one.
+- Three traps named where an operator would otherwise meet them: the gate must be fed a **real file**
+  (process substitution yields exit `2`, could-not-verify, never `0`); the plan must be rendered
+  `-no-color`; and `terraform apply` takes the **same** `-out=` plan that was read, never a fresh one.
+- The step that closes the loop is ordered, not optional: apply, prove live, only then merge consent #12,
+  let the graph build, and require `Dependency review` observed `success` before re-adding it to both
+  governed places and deleting the exception — emission proving satisfiability is the D-90 mistake.
+- Registered: `docs/runbooks/` is attested, so the new file was staged and `hash_evidence.sh` re-run in the
+  same commit (registry 49 -> 50 rows, `--check` rc=0). Expect a registry conflict against PR #140, which
+  takes the same file to 75 rows; resolve by regeneration, never by hand-merging hashes.
+
 ### Docs — 2026-11-04 (D-91 re-measured: merged but NOT enacted, and one forecast that did not come true)
 
 - PR #107 squash-merged as `d21b56b`; its armed `Production — Apply` run was force-cancelled at
