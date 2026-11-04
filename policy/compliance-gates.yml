@@ -286,6 +286,31 @@ exceptions:
     - "Approval from the organization owner"
     - "Link to the relevant ADR in docs/adr/"
   active:
+    - id: "D-91"
+      gate: "jolarca-consent ruleset 24087580 required_status_checks omits `Dependency review`"
+      risk: >-
+        SOC 2 CC8.1 / PCI-DSS Req 6.5.1 — for the duration of this window a pull request to
+        jolarca-consent can introduce a dependency with a published vulnerability without a gate
+        refusing it, on a repository that handles consent records.
+      compensating_control: >-
+        Six of the seven required contexts stay enforced on the same ruleset, including
+        `Gitleaks (secret scanning)` and `CodeQL (python)`, and the `pull_request` rule is
+        untouched, so main remains un-pushable and D-46 stays closed for consent. What is absent
+        is dependency-graph gating, not scanning: CodeQL still analyses the tree, `make compliance`
+        and the fleet SAST gate are unchanged, and the manifest that makes the check meaningful
+        (requirements.txt, 17 pinned entries) is itself the payload of the blocked PR #12.
+      approved_by: "Gintaras Kazlauskas"
+      approved_on: "2026-10-27"
+      # The approval event is the merge of the PR carrying this entry; a dated record is not
+      # self-approving. 90 days is the policy maximum above, and the date is deliberately short
+      # of a quarter so a forgotten exception cannot quietly become permanent (D-25's shape).
+      expires: "2027-01-25"
+      exit_trigger: >-
+        Re-add the required_check to rulesets.tf AND repos/jolarca-consent.yml in the same PR that
+        closes this entry, once consent's main carries a resolvable manifest, `GET
+        /repos/jolarca-dev/jolarca-consent/dependency-graph/sbom` exits 0, and `Dependency review`
+        has been observed `success` on a consent pull request. AGENTS.md §7: a required check must
+        be proven passing, not merely producible.
     - id: "D-58"
       gate: "production apply requires a human approval (deploy-gates / CC8.1-04)"
       risk: >-

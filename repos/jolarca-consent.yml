@@ -60,7 +60,11 @@ branch_protection:
       - "Test (pytest)"
       - "Repository smoke-check"
       - "Gitleaks (secret scanning)"
-      - "Dependency review"
+      # "Dependency review" suspended 2026-10-27 under exception D-91; see the dated note in
+      # rulesets.tf for the measurement. It must be removed from BOTH files together, or the
+      # declaration and the applied ruleset disagree and drift_detect reports consent as
+      # weakened or strengthened when neither is true. Restore it in the PR that closes D-91,
+      # once the context has been observed passing on main (AGENTS.md §7).
       - "CodeQL (python)"
     required_pull_request_reviews:
       required_approving_review_count: 0
