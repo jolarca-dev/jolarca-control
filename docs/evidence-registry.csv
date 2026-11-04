@@ -29,6 +29,7 @@ repos/jolarca-security.yml,896121a4a011525a90e986e34bac2c9a65ae833cdb8a3cc7c0617
 repos/jolarca-vendor.yml,c44e6e8403f7d74ee744c6f26e1a76408789a531473717d47e6be6247e073aee,2026-10-15
 repos/jolarca.yml,2eb19ebbf27d057ad94504a755071d39fb559b867796548ead5f24ddfaadb6c9,2026-10-15
 docs/runbooks/d31-regulated-records-removal.md,356e0897b62754d31c47f96a02585c87ef84116e63f7b3ee129153a554ba1a49,2026-10-15
+docs/runbooks/d91-consent-dependency-review-hand-apply.md,5110b29b936766cec28eed30a39840403165b5c01c003c0bccd31fdd0322d46f,2026-11-04
 docs/runbooks/deployment-rehearsal.md,ce07bd6ef407b9a5850150f61fd35cf018f89d3d119765ec2b2269e1f05e790b,2026-10-15
 docs/runbooks/first-commit-pipeline.md,eb9461e3c61f38f13f3faa27dd7231cb273d44d15629c7b83eb31cb5470439ec,2026-10-15
 docs/runbooks/github-token-rotation.md,8f639ea547349c0dc4d305430c075173a51a6755a13b20186d59cbf4043f6b0c,2026-10-26
