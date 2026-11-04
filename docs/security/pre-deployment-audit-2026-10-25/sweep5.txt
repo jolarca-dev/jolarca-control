@@ -1,0 +1,64 @@
+=== jolarca-consent ===
+  -- declared required contexts --
+    legacy: {"message":"Branch not protected","documentation_url":"https://docs.github.com/rest/branches/branch-protection#get-status-checks-protection","status":"404"}
+  -- job names a pull_request can actually report --
+    job: lint -> reported-as: Lint (ruff) (.github/workflows/ci.yml)
+    job: types -> reported-as: Type check (mypy) (.github/workflows/ci.yml)
+    job: test -> reported-as: Test (pytest) (.github/workflows/ci.yml)
+    job: smoke-check -> reported-as: Repository smoke-check (.github/workflows/ci.yml)
+    job: analyze -> reported-as: CodeQL (python) (.github/workflows/codeql.yml)
+    job: verify-chain -> reported-as: Verify Chain (.github/workflows/integrity.yml)
+    job: gitleaks -> reported-as: Gitleaks (secret scanning) (.github/workflows/security.yml)
+    job: dependency-review -> reported-as: Dependency review (.github/workflows/security.yml)
+
+=== jolarca-dr ===
+  -- declared required contexts --
+    legacy: {"message":"Branch not protected","documentation_url":"https://docs.github.com/rest/branches/branch-protection#get-status-checks-protection","status":"404"}
+    ruleset: lint
+    ruleset: gitleaks
+  -- job names a pull_request can actually report --
+    job: lint -> reported-as: lint (.github/workflows/ci.yml)
+    job: gitleaks -> reported-as: gitleaks (.github/workflows/ci.yml)
+
+=== jolarca-vendor ===
+  -- declared required contexts --
+    legacy: {"message":"Branch not protected","documentation_url":"https://docs.github.com/rest/branches/branch-protection#get-status-checks-protection","status":"404"}
+  -- job names a pull_request can actually report --
+    job: lint -> reported-as: lint (.github/workflows/ci.yml)
+
+=== jolarca-identity ===
+  -- declared required contexts --
+    legacy: shellcheck
+    legacy: gitleaks (full history)
+  -- job names a pull_request can actually report --
+    job: secret-scan -> reported-as: gitleaks (full history) (.github/workflows/ci.yml)
+    job: lint -> reported-as: shellcheck (.github/workflows/ci.yml)
+
+=== jolarca-payments ===
+  -- declared required contexts --
+    legacy: ci
+    legacy: security
+  -- job names a pull_request can actually report --
+    job: ci -> reported-as: ci (.github/workflows/ci.yml)
+    job: security -> reported-as: security (.github/workflows/ci.yml)
+
+=== .github ===
+  -- declared required contexts --
+  -- job names a pull_request can actually report --
+    job: governance -> reported-as: Governance Files (.github/workflows/ci-base.yml)
+    job: conventional-commits -> reported-as: Conventional Commits (.github/workflows/ci-base.yml)
+    job: secret-scan -> reported-as: Secret Scan (gitleaks) (.github/workflows/ci-base.yml)
+    job: file-hygiene -> reported-as: File Hygiene (.github/workflows/ci-base.yml)
+    job: python-lint -> reported-as: Python Lint (.github/workflows/ci-base.yml)
+    job: js-lint -> reported-as: JavaScript Lint (.github/workflows/ci-base.yml)
+    job: terraform-fmt -> reported-as: Terraform Format (.github/workflows/ci-base.yml)
+    job: evidence-integrity -> reported-as: Evidence Integrity (.github/workflows/compliance-base.yml)
+    job: policy-review-dates -> reported-as: Policy Review Dates (.github/workflows/compliance-base.yml)
+    job: vendor-assessment-dates -> reported-as: Vendor Assessment Dates (.github/workflows/compliance-base.yml)
+    job: dsr-sla-monitoring -> reported-as: DSR SLA Monitoring (.github/workflows/compliance-base.yml)
+    job: retention-compliance -> reported-as: Retention Compliance (.github/workflows/compliance-base.yml)
+    job: dependency-scan -> reported-as: Dependency Scan (.github/workflows/security-scan.yml)
+    job: container-scan -> reported-as: Container Scan (.github/workflows/security-scan.yml)
+    job: iac-scan -> reported-as: IaC Scan (.github/workflows/security-scan.yml)
+    job: license-check -> reported-as: License Compliance (.github/workflows/security-scan.yml)
+    job: secret-scan -> reported-as: Secret Scan (.github/workflows/security-scan.yml)

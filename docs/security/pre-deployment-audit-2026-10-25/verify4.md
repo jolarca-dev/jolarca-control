@@ -1,0 +1,26 @@
+# raw probe — verify4.txt (wrapped 2026-10-26 so hash_evidence.sh:115 covers it)
+```
+=== Does ANY workflow actually RUN repo_readiness_audit.py? (run: steps only) ===
+--- (comment lines excluded above; empty = never invoked) ---
+
+=== what compliance-scan.yml actually runs ===
+31:name: Compliance Scan
+50:    name: Validate Repo Allow-List
+88:        run: python3 scripts/check_declared_contexts.py
+102:        run: python3 scripts/check_deploy_gates.py
+116:        run: python3 scripts/check_findings_register.py
+120:    name: Policy Compliance Check
+137:    name: Repository Secret Pattern Scan
+144:        run: |
+149:        run: gitleaks git . --no-banner --redact
+153:    name: Regression Tests
+171:        run: sudo apt-get update -q && sudo apt-get install -yq age
+173:        run: bash tests/test_state_backup.sh
+180:        run: python -m pytest tests/ -q
+184:    name: Lint
+196:        run: sudo apt-get update -q && sudo apt-get install -yq shellcheck
+202:    name: Terraform Format
+
+=== context-parity.yml claim '15 of 16 BLOCKED' vs today's actual ===
+actual verdict_counts = {'READY': 1, 'READY-WITH-FIXES': 10, 'BLOCKED': 5}
+```

@@ -1,0 +1,67 @@
+=== ALL script/tool invocations in compliance-scan.yml ===
+8:#   1. "Validate Repo Allow-List"        — scripts/validate_repos.py +
+9:#                                          scripts/check_required_context_baseline.py (D-62) +
+10:#                                          scripts/check_declared_contexts.py (D-67) +
+11:#                                          scripts/check_deploy_gates.py (D-58) +
+12:#                                          scripts/check_findings_register.py (A-07)
+13:#   2. "Policy Compliance Check"         — scripts/compliance_check.py
+14:#   3. "Repository Secret Pattern Scan"  — gitleaks (full history)
+44:  # otherwise redden every merge); `make findings-check` runs the cross-PR form locally.
+60:      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+61:      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+65:      - run: python3 scripts/validate_repos.py
+71:      - run: python3 scripts/check_required_context_baseline.py
+76:      # repo reports 'gitleaks (full history)'/shellcheck, and the plan carried
+88:        run: python3 scripts/check_declared_contexts.py
+95:      # way to make the check quiet -- an expired allowance fails again by itself (D-25). Advisory
+102:        run: python3 scripts/check_deploy_gates.py
+111:      # Deliberately WITHOUT --cross-pr: cross-PR comparison would make a required context depend on
+114:      # that is what is enforced here. The cross-PR view stays local as `make findings-check`.
+116:        run: python3 scripts/check_findings_register.py
+123:      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+124:      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+128:      - run: python3 scripts/compliance_check.py
+131:  # The full readiness audit (scripts/repo_readiness_audit.py) checks local
+134:  # deadlocked the merge gate. The secret scan itself is simpler: gitleaks
+135:  # covers tracked files AND history with the project's .gitleaks.toml.
+140:      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+143:      - name: Install gitleaks
+146:          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz" \
+147:            | sudo tar xz -C /usr/local/bin gitleaks
+148:      - name: Run gitleaks (full history)
+149:        run: gitleaks git . --no-banner --redact
+156:      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+157:      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+162:      # D-02: the backup tool's fixtures are shell, not pytest, and this job is a
+176:      # through and the fallback owned the verdict. requirements-dev.txt pins pytest exactly and is
+180:        run: python -m pytest tests/ -q
+182:  # ── Lint (ruff + shellcheck + yamllint) ────────────────────────────────────
+187:      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+188:      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+192:      - run: ruff check scripts/ tests/
+193:      - run: ruff format --check scripts/ tests/
+195:      - name: Install shellcheck
+196:        run: sudo apt-get update -q && sudo apt-get install -yq shellcheck
+197:      - run: shellcheck -x scripts/*.sh tests/*.sh
+205:      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+206:      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+207:      - run: terraform fmt -check -recursive
+
+=== reusable-workflow calls (uses: with owner/repo/path@ref) fleet-wide in jolarca-control ===
+--- (empty = no cross-repo reusable workflow calls) ---
+
+=== is repo_readiness_audit or compliance_check named ANYWHERE in workflows (incl. multiline run blocks)? ===
+.github/workflows/context-parity.yml:10:# scripts/repo_readiness_audit.py but no workflow invoked it, so the defect was only
+.github/workflows/compliance-scan.yml:13:#   2. "Policy Compliance Check"         — scripts/compliance_check.py
+.github/workflows/compliance-scan.yml:25:# compliance_check.py. Bandit previously ran here as a non-required job
+.github/workflows/compliance-scan.yml:128:      - run: python3 scripts/compliance_check.py
+.github/workflows/compliance-scan.yml:131:  # The full readiness audit (scripts/repo_readiness_audit.py) checks local
+.github/workflows/sast.yml:118:      # at tests/test_repo_readiness_audit.py:489 as the pattern).
+.github/workflows/apply.yml:160:          python3 scripts/compliance_check.py --output compliance-snapshot.json
+
+=== AGENTS.md exact claim ===
+48:**`make lint` is not the whole CI surface.** `compliance-scan.yml` additionally
+49-runs `scripts/compliance_check.py` (`make compliance`) and
+50-`scripts/repo_readiness_audit.py --no-live`, and neither is in `lint`. Run both
+51-before pushing, or CI will surface failures the local gates never checked.
+52-As of 2026-10-06 both required contexts pass on `main` (verified on PRs #42/#43);

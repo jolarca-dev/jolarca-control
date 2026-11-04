@@ -1,0 +1,186 @@
+# raw probe — sweep3.txt (wrapped 2026-10-26 so hash_evidence.sh:115 covers it)
+```
+=== G. RULESETS on consent/dr/vendor (what do they ACTUALLY enforce?) ===
+--- jolarca-consent ---
+id=24087580 name=protect-main target=branch enforcement=active
+{"name":"protect-main","enforcement":"active","conditions":{"ref_name":{"exclude":[],"include":["~DEFAULT_BRANCH"]}},"rules":["deletion","non_fast_forward","required_linear_history"],"bypass":[]}
+--- jolarca-dr ---
+id=24136490 name=protect-main target=branch enforcement=active
+{"name":"protect-main","enforcement":"active","conditions":{"ref_name":{"exclude":[],"include":["~DEFAULT_BRANCH"]}},"rules":["deletion","non_fast_forward","required_linear_history","pull_request","required_status_checks"],"bypass":[]}
+--- jolarca-vendor ---
+id=24138288 name=protect-main target=branch enforcement=active
+{"name":"protect-main","enforcement":"active","conditions":{"ref_name":{"exclude":[],"include":["~DEFAULT_BRANCH"]}},"rules":["deletion","non_fast_forward","required_linear_history","pull_request","required_status_checks"],"bypass":[]}
+
+=== H. ORG TEAMS (is require_code_owner_reviews satisfiable?) ===
+TEAMS-UNREADABLE
+
+=== I. ORG SECURITY / 2FA / MEMBER COUNT ===
+two_factor=null plan=free members=? default_perm=none blog=http://jolarca.com
+-- org-level security.md served from .github repo --
+exists bytes=2420 sha=a7c5165aba664bc3e4b26c563b86860ec17216ff
+
+=== J. LICENSE FILE REALITY CHECK (recursive tree, independent of /license API) ===
+--- jolarca-hermes-agents ---
+LICENSE bytes=53
+  CODEOWNERS paths:
+  .github/CODEOWNERS
+  (empty above = genuinely absent)
+--- jolarca-payments ---
+  CODEOWNERS paths:
+  .github/CODEOWNERS
+  (empty above = genuinely absent)
+--- jolarca-infrastructure ---
+LICENSE bytes=796
+  CODEOWNERS paths:
+  (empty above = genuinely absent)
+
+=== K. .github REPO: shared workflows + action pin integrity ===
+.github
+.github/CODEOWNERS
+.github/ISSUE_TEMPLATE
+.github/ISSUE_TEMPLATE/config.yml
+.github/PULL_REQUEST_TEMPLATE.md
+.github/workflows
+.github/workflows/ci-base.yml
+.github/workflows/compliance-base.yml
+.github/workflows/security-scan.yml
+.gitignore
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+README.md
+SECURITY.md
+profile
+profile/README.md
+-- reusable workflows referenced BY the fleet --
+--- jolarca-consent workflows ---
+.github/workflows
+.github/workflows/ci.yml
+.github/workflows/codeql.yml
+.github/workflows/integrity.yml
+.github/workflows/security.yml
+--- jolarca-dr workflows ---
+.github/workflows
+.github/workflows/ci.yml
+--- jolarca-vendor workflows ---
+.github/workflows
+.github/workflows/ci.yml
+--- jolarca-identity workflows ---
+.github/workflows
+.github/workflows/ci.yml
+
+=== L. jolarca (app repo) tree: what is actually being deployed ===
+blob	.env.example
+blob	.env.prod.example
+blob	.envrc
+tree	.github
+blob	.gitignore
+blob	.pre-commit-config.yaml
+blob	.sops.yaml
+blob	CONTRIBUTING.md
+blob	LICENSE
+blob	Makefile
+blob	QODER.md
+blob	README.md
+blob	SECURITY.md
+tree	audits
+tree	backend
+blob	docker-compose.dev.yml
+blob	docker-compose.prod.yml
+blob	docker-compose.test.yml
+blob	docker-compose.yml
+tree	docs
+tree	frontend
+tree	nginx
+blob	ruff.toml
+tree	scripts
+tree	secrets
+-- backend/frontend/docker presence --
+backend/Dockerfile
+backend/db/Dockerfile
+backend/manage.py
+backend/project/settings
+backend/project/settings/__init__.py
+backend/project/settings/base.py
+backend/project/settings/dev.py
+backend/project/settings/env.py
+backend/project/settings/production.py
+backend/project/settings/test.py
+backend/project/settings/validation.py
+backend/requirements
+backend/requirements/base.txt
+backend/requirements/dev.txt
+backend/requirements/prod.txt
+docker-compose.dev.yml
+docker-compose.prod.yml
+docker-compose.test.yml
+docker-compose.yml
+frontend/Dockerfile
+frontend/package.json
+nginx
+nginx/nginx.conf
+nginx/nginx.prod.conf
+
+=== M. WORKFLOW ACTION PIN AUDIT (fleet-wide: uses: lines not pinned to 40-hex SHA) ===
+sed: -e expression #1, char 44: unknown option to `s'
+sed: -e expression #1, char 52: unknown option to `s'
+sed: -e expression #1, char 50: unknown option to `s'
+sed: -e expression #1, char 39: unknown option to `s'
+sed: -e expression #1, char 54: unknown option to `s'
+sed: -e expression #1, char 51: unknown option to `s'
+sed: -e expression #1, char 45: unknown option to `s'
+sed: -e expression #1, char 65: unknown option to `s'
+sed: -e expression #1, char 50: unknown option to `s'
+sed: -e expression #1, char 64: unknown option to `s'
+sed: -e expression #1, char 63: unknown option to `s'
+sed: -e expression #1, char 66: unknown option to `s'
+sed: -e expression #1, char 70: unknown option to `s'
+sed: -e expression #1, char 60: unknown option to `s'
+sed: -e expression #1, char 56: unknown option to `s'
+sed: -e expression #1, char 65: unknown option to `s'
+sed: -e expression #1, char 47: unknown option to `s'
+sed: -e expression #1, char 51: unknown option to `s'
+sed: -e expression #1, char 54: unknown option to `s'
+sed: -e expression #1, char 53: unknown option to `s'
+sed: -e expression #1, char 50: unknown option to `s'
+sed: -e expression #1, char 60: unknown option to `s'
+sed: -e expression #1, char 59: unknown option to `s'
+sed: -e expression #1, char 57: unknown option to `s'
+sed: -e expression #1, char 63: unknown option to `s'
+sed: -e expression #1, char 67: unknown option to `s'
+sed: -e expression #1, char 49: unknown option to `s'
+sed: -e expression #1, char 49: unknown option to `s'
+sed: -e expression #1, char 44: unknown option to `s'
+sed: -e expression #1, char 58: unknown option to `s'
+sed: -e expression #1, char 54: unknown option to `s'
+sed: -e expression #1, char 48: unknown option to `s'
+sed: -e expression #1, char 59: unknown option to `s'
+sed: -e expression #1, char 50: unknown option to `s'
+sed: -e expression #1, char 50: unknown option to `s'
+sed: -e expression #1, char 46: unknown option to `s'
+sed: -e expression #1, char 42: unknown option to `s'
+sed: -e expression #1, char 53: unknown option to `s'
+sed: -e expression #1, char 48: unknown option to `s'
+sed: -e expression #1, char 59: unknown option to `s'
+sed: -e expression #1, char 54: unknown option to `s'
+sed: -e expression #1, char 68: unknown option to `s'
+sed: -e expression #1, char 67: unknown option to `s'
+sed: -e expression #1, char 74: unknown option to `s'
+sed: -e expression #1, char 65: unknown option to `s'
+sed: -e expression #1, char 61: unknown option to `s'
+sed: -e expression #1, char 45: unknown option to `s'
+sed: -e expression #1, char 59: unknown option to `s'
+sed: -e expression #1, char 60: unknown option to `s'
+sed: -e expression #1, char 54: unknown option to `s'
+sed: -e expression #1, char 58: unknown option to `s'
+sed: -e expression #1, char 51: unknown option to `s'
+sed: -e expression #1, char 67: unknown option to `s'
+sed: -e expression #1, char 53: unknown option to `s'
+sed: -e expression #1, char 66: unknown option to `s'
+sed: -e expression #1, char 48: unknown option to `s'
+sed: -e expression #1, char 48: unknown option to `s'
+sed: -e expression #1, char 54: unknown option to `s'
+sed: -e expression #1, char 50: unknown option to `s'
+sed: -e expression #1, char 46: unknown option to `s'
+(no UNPINNED lines above = every third-party action is SHA-pinned)
+```

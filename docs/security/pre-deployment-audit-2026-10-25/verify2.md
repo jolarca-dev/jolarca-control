@@ -1,0 +1,66 @@
+# raw probe — verify2.txt (wrapped 2026-10-26 so hash_evidence.sh:115 covers it)
+```
+=== make lint ===
+ok   empty-object                     exit=2
+ok   empty-response-refused           exit=2
+ok   missing-response-refused         exit=2
+ok   no-argument-refused              exit=2
+
+workspace-execution-mode tests: 13 passed, 0 failed
+bash tests/test_state_backup.sh
+ok   round-trip-verified                exit=0
+ok   artifact-and-manifest-written
+ok   manifest-digest-matches-plaintext
+ok   refuse-missing-dest                exit=1
+ok   refuse-dest-absent                 exit=1
+ok   refuse-bad-public-key              exit=1
+ok   refuse-wrong-identity              exit=1
+ok   corrupt-state-unreachable-backend  exit=2
+ok   no-token-no-local-state            exit=2
+ok   skip-verify-is-not-a-pass          exit=2
+
+state-backup tests: 10 passed, 0 failed
+.venv/bin/python -m pytest tests/ -q
+........................................................................ [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 77%]
+.............................................................            [100%]
+277 passed in 11.63s
+lint_exit=0
+
+=== make compliance ===
+      "total": 16,
+      "violations": []
+    },
+    {
+      "check": "sast_gate_wiring",
+      "status": "pass",
+      "compliant": 1,
+      "total": 1,
+      "sast_required_for_tier": true,
+      "primary_context": "SAST (semgrep)",
+      "scope": "self (repos/jolarca-control.yml); siblings carry the same tier requirement and must land their own SAST workflow",
+      "violations": []
+    }
+  ]
+}
+compliance_exit=0
+
+=== repo_readiness_audit --no-live ===
+          "remediation": "cd /opt/jolarca/repos/jolarca-vendor && pre-commit install",
+          "status": "VERIFIED"
+        }
+      ],
+      "unverified": [
+        "live GitHub state: skipped via --no-live"
+      ]
+    }
+  ],
+  "verdict_counts": {
+    "READY": 1,
+    "READY-WITH-FIXES": 10,
+    "BLOCKED": 5
+  }
+}
+readiness_exit=1
+```
