@@ -243,8 +243,12 @@ each gap means.
 
 ### The approved catalogue is not yet connected to what executes (M-10)
 
-**Closed for nine of ten declarations on 2026-11-03 — see the Closure section of
-ADR-0010.** Rule R8 in `scripts/check_toolchain_baseline.py` now reads every
+**Closed for nine of ten declarations, and landed:** PR #128 merged as `0ebc198` on
+2026-11-03, so rule R8 governs this repository's default branch. Its printed verdict
+on the merge push is `13 workflow runtime step(s) examined against the approved
+releases`. See the Closure and Landed sections of ADR-0010 — including why the
+commit that merged is not the commit that was signed off. Rule R8 in
+`scripts/check_toolchain_baseline.py` now reads every
 workflow in this repository and requires `python-version` and `terraform_version` to
 equal the approved release. The text below is kept as the measurement that justified
 the rule.
@@ -267,3 +271,7 @@ The remaining gap is `apply.yml`: it holds the tenth declaration and is itself a
 apply trigger path, so pinning it is a deploy decision rather than a toolchain edit.
 It is excused by a dated `workflow_exceptions` entry covering R8 only, expiring
 2027-05-03.
+
+`terraform fmt -check` also gained `terraform_version: "1.16.1"`, closing row 3 of
+the table above — a skew that predates mise and was found by accident when the new
+rule was run before it was satisfied.
