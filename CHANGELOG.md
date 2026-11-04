@@ -10,6 +10,30 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Docs — 2026-11-04 (D-92: `/home` filled to zero and silently disabled commit signing)
+
+- Measured mid-task: `df /home` = 92G of 92G used, **1.4 MB available, 100 %**, and a `git commit -S` failed
+  with a *git*-looking error whose cause was the filesystem — `gpg: error writing to
+  '/home/jol/.gnupg/.#lk….ubuntu.2992374': No space left on device`, `can't allocate lock for
+  'pubring.kbx'`, `fatal: failed to write commit object`. The signature packet was emitted (`SIG_CREATED`)
+  before cleanup failed, so the transcript reads half-successful. Nothing was committed, 46 staged files
+  survived, and the same commit succeeded on retry after the volume recovered.
+- Why it belongs in a security finding rather than an ops note: the same unencrypted volume also holds the
+  age key that decrypts the state archives, `~/.gnupg` (the signing control), the **installed copy** of
+  `jolarca-state-backup.{service,timer}` — the third device that appears in no archive — and the mise
+  installs. A full `/home` can therefore stop a signed governance commit and block reinstalling the backup
+  timer's unit, while surfacing as a VCS failure. The tempting wrong fix is an unsigned commit, which is the
+  convention §6 exists to keep.
+- Space was **not** reclaimed by this session: the consumers are IDE, browser and build caches, and deleting
+  another session's caches is not licensed by a "do the rest" instruction. It recovered on its own between two
+  probes (1.4 MB -> 11.59 GB).
+- Also recorded so a future reader does not chase it: `df` and `lsblk` disagree on this volume's usage (87 %
+  vs 82 %) because they count reserved blocks differently — quote the tool with the number.
+- Three dated rows inserted inside D-92's own table above `| Related |`, so the heading set is byte-identical
+  (105 `###` lines, 94 gate-visible ids, all unique) and the collision guard cannot fire. The existing
+  "85 % full" figure in that row's Scope cell is a dated observation from 2026-10-29 and was left untouched:
+  correcting a measurement by overwriting it is falsification, which is why this is a new row.
+
 ### Docs — 2026-11-04 (runbook: enacting the D-91 suspension by hand)
 
 - `docs/runbooks/d91-consent-dependency-review-hand-apply.md` records the sequence, because PR #107 left the
