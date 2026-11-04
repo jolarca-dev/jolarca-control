@@ -299,12 +299,62 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   declared unacceptable). Measured: `/opt/jolarca/backups` is device **64513** — the
   same ext4 volume as the working copy, so every archive ever taken there survives
   operator error and nothing else — while `/mnt/jol-backup/jol-state-backup` is
-  device **2065** (`sdb1`, a separate physical disk), which is where the nightly job
-  points (`17 4 * * *`, installed 2026-10-27 with `REQUIRE_OFF_HOST=1`).
-  **What is still not true:** that scheduled run has not happened yet, so the cadence
-  is configured and unproven; the age identity still lives on the same machine as the
-  working copy; and a second disk inside one host survives volume loss, not host loss.
-  So this is a verified, scheduled, off-*volume* copy — **not** a 3-2-1 copy. Do not
+  device **2065** (`sdb1`, a separate physical disk), and that is the destination.
+  **Read the schedule; do not trust this sentence to carry it.** The source of truth is the
+  committed `systemd/jolarca-state-backup.{service,timer}`; `make backup-timer-install` copies it
+  into `~/.config/systemd/user/` and **diffs after copying**, so the running unit and the reviewed
+  unit cannot silently diverge. The installed copy is a build output on a third device (`/home`,
+  66319) that sits in no archive — which is exactly why the definition belongs in the repository:
+  measured 2026-10-28, zero tracked files mentioned the schedule and its only copy was one
+  hand-written file in a home directory. Inspect with `make backup-timer-status`, or directly:
+  `systemctl --user list-timers --all | grep jolarca` and
+  `journalctl --user -u jolarca-state-backup -n 20`. The history of this bullet is the
+  reason for that instruction: a crontab entry installed 2026-10-27 was documented here
+  as the schedule and **never fired once** — the host was suspended across 04:17 and
+  user crontabs do not backfill (measured: zero `CRON` syslog entries 04:00–06:00, the
+  five-minute heartbeat gap 00:25→19:05, `Stopped target suspend.target` on resume).
+  `uptime` reported "up 1 week" throughout, because **uptime measures *booted*, not
+  *awake*** — which is why the check this file recommended the previous evening could
+  not have found the failure. A `systemd` timer with `Persistent=true` replaces cron and
+  backfills after a suspend; its own residual gap is that a **user** timer requires a
+  login session, so a reboot with nobody logged in runs nothing until
+  `loginctl show-user jol --property=Linger` reports `yes`.
+  **What tonight proved (2026-10-29):** the backfill works and the failure was a race, not a
+  misconfiguration. The host was asleep across 04:17, `Persistent=true` fired the unit at **12:16:50** —
+  the instant of resume, while NetworkManager was still bringing the link up (8 connect/up events in that
+  window) — and the run exited **2** with `CANNOT VERIFY: cloud state could not be retrieved from the
+  backend — no backup was taken and no claim is made`. It wrote nothing and claimed nothing: the §3
+  contract held under real conditions. The same unit at 22:12 exited 0 and archived serial 17, so the
+  configuration was never wrong. The unit now retries (`Restart=on-failure`, `RestartSec=2min`, bounded
+  by `StartLimitBurst` in `[Unit]`), because a scheduler that fires once at the moment the network
+  returns is a scheduler that loses nights.
+  **Corrected 2026-10-30 — the next sentence was false.** It claimed the *cause* is not retained
+  because the fetch log lives in a temp directory the trap deletes. It **is** retained:
+  `scripts/state_backup.sh:214` runs `cat "$work/fetch.log" >&2` *before* the trap fires, `:215`
+  extracts `(HTTP <code>)` when the response carried a status, and `:179` names the exception class and
+  the endpoint. Tonight's journal shows exactly that — `backend unreachable at
+  https://app.terraform.io/api/v2/organizations/jolarca-dev/workspaces/…`. The error was concluding a
+  property of the script from a `-n 14` journal window that had cut those lines off: §1 and §7 again,
+  in my own prose.
+  **What "nightly" does not mean** (measured 2026-10-29, -30 and -31): **no configured window has ever
+  been reached.** 04:17 was missed on two consecutive nights (zero `CRON` heartbeat entries 03:00–05:59),
+  and the hour was moved to 09:17 on the reasoning that the host is awake mid-morning — a **Friday
+  observation generalised to all days**, which Saturday falsified within a day: zero `CRON` entries
+  08:00–10:59 on 2026-10-31 and the job backfilled at **12:12:45** instead. The guarantee is "one verified
+  copy per login session, backfilled on resume" — never "at HH:MM". The value lives only in `OnCalendar=`
+  in the unit file; this sentence has gone stale five times chasing it, which is the entire argument for
+  pointing instead of describing.
+  **The retry has now absorbed the same race twice.** 2026-10-30: `21:22:42` failed (`exit 2`) →
+  `21:24:43 Scheduled restart job, restart counter is at 1` → `BACKUP OK (round-trip verified)`.
+  2026-10-31: `12:12:45` failed → `12:14:45` retry → `terraform.tfstate.s17.20261031T101447Z.age`. A
+  backfill fires the instant the session starts, while the network is still settling, so the **first
+  attempt of every backfill is effectively always lost** and the bounded retry absorbs it at a cost of two
+  minutes and no operator action. Read `NRestarts>0` with `Result=success` as the *normal healthy* state
+  of this control, not a regression — `Result` describes only the final attempt, which is why
+  `make backup-timer-status` prints `NRestarts` at all.
+  **What is still not true:** the age identity still lives on the same machine as the working copy, on
+  an unencrypted volume (D-92), and a second disk inside one host survives volume loss, not host loss.
+  So this is a verified, login-cadenced, retrying, off-*volume* copy — **not** a 3-2-1 copy. Do not
   delete an account, org or workspace, and do not treat D-02 as closed.
 - **A merge to `main` that touches `apply.yml`'s own paths triggers a real
   apply.** `apply.yml` fires on `push: main` for `repos/**`, `policy/**`, `*.tf`,
@@ -340,10 +390,18 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   was **skipped** — so no apply happened. Read that as the current state of a
   broken CI credential (D-56), not as a control; after the init fix in D-64 the
   plan gets further before dying, and once the token is repaired the refusal gate
-  is what has to stop it. Measured 2026-10-26 against HCP directly (D-82): the
-  workspace has **three runs, all `Triggered via CLI`**, and none originated from
+  is what has to stop it. Measured 2026-10-26 against HCP directly (D-82) and
+  re-measured 2026-11-04: the workspace has **three runs, all `source:
+  terraform+cloud`**, newest `2026-10-12T10:54:52Z`, and none originated from
   GitHub Actions — the CI apply path has never reached the backend at all, so the
-  48-resource state is what the last human CLI run left.
+  state is whatever the last human CLI run left. **The resource count is pointed at
+  here, not carried:** read the workspace `resource-count`, or
+  `terraform state list | wc -l`. This bullet asserted "48-resource" from
+  2026-10-26 until 2026-11-04, when measurement returned **49** — the extra address
+  is consent's adopted ruleset, imported 2026-10-27, so the state grew as recorded
+  and only the prose went stale. Same failure this file already documents for the
+  backup schedule: a sentence that carries a number rots faster than the gate that
+  reads it.
 - **The production apply now has a 30-minute wait, and it is not an approval.**
   Measured 2026-10-16 after `gh api -X PUT
   repos/jolarca-dev/jolarca-control/environments/production -F wait_timer=30
@@ -357,20 +415,47 @@ relying on any of these; details and expiries in `policy/compliance-gates.yml`.
   prompts and a non-interactive shell looks like it failed). Proven 2026-10-16 on
   run 38813823199: cancelled mid-wait with `steps_started: 0` and the workspace
   unchanged at 48 resources, i.e. nothing executed before the stop.
-  (2) Delay is not approval —
-  `required_approving_review_count` is still 0 and no reviewer signs anything, so
-  treat the merge as the apply decision, as before; (3) assert on the **array**, not
+  (2) Delay is not approval, and **the rest of this clause was false from
+  2026-10-17 until 2026-11-04**: `required_approving_review_count` is still 0, so no
+  *pull request* needs a sign-off — but the `production` environment has had a
+  **required reviewer** since D-75. Re-read 2026-11-04, `protection_rules` is
+  `[{type: wait_timer, wait_timer: 30}, {type: required_reviewers,
+  prevent_self_review: false, reviewers: [JourneyOfLife]}]` with
+  `can_admins_bypass: false` and `last_deployed_at: null`. A deployment approval is
+  therefore mandatory, and one `gh run approve` by the same sole identity releases it
+  — friction, not separation of duties, so D-58 stays open. Treat the merge as the
+  apply decision, as before, and `check_plan_safety.sh` as the substantive brake;
+  (3) assert on the **array**, not
   the scalar: the top-level `wait_timer` field reads `null` even when the timer is
   active (this is the trap that made an earlier probe report "no wait configured"
   when the row was then written as fact); (4) `-F` not `-f` — that endpoint wants an
-  integer and a boolean, and `-f` answers HTTP 422 having changed nothing. Reviewers
-  were deliberately **not** added: the solo-operator self-approval constraint is
-  untested here, and an unsatisfiable reviewer would wedge every deploy. See D-70 and
-  D-58.
+  integer and a boolean, and `-f` answers HTTP 422 having changed nothing. The
+  sentence that used to close this bullet — that reviewers "were deliberately **not**
+  added" — was overtaken by D-75 on 2026-10-17 and is removed rather than left
+  standing, because a description of a brake that has changed is worse than no
+  description: an agent trusting it would not expect an approval step, would not look
+  for a run sitting in `status=waiting` on the deployment gate, and could leave an
+  apply armed. See D-70, D-75 and D-58.
 - **There is no targeted-apply mechanism.** `apply.yml` runs a whole-state
   `terraform apply -auto-approve tfplan`; the safety comes from the pre-apply
   `check_plan_safety.sh` gate plus `prevent_destroy`. `terraform plan -target`
   appears only as printed advice in `scripts/repo_readiness_audit.py`.
+- **The PR-time plan gate does not run on most merges — silence, not a red badge.**
+  `plan.yml` is path-filtered on both events: `pull_request` fires on `**.tf`,
+  `**.tfvars`, `repos/**`, `policy/**`, `.terraform.lock.hcl` and the workflow itself;
+  `push: main` on that list minus the workflow. Measured 2026-11-03: twelve merge
+  commits reached `main` that day and
+  `GET /repos/…/actions/workflows/plan.yml/runs` shows **none** of them — all six runs
+  were `pull_request` events on branches that did touch Terraform, and every one of
+  those failed at `terraform init` on the D-56 credential. So for a `docs/**`,
+  `scripts/**`, `tests/**` or `.github/workflows/**` change there is no plan-review
+  signal at PR time either, and `Validate & Plan` is deliberately not a required
+  context (`repos/jolarca-control.yml`: requiring a path-filtered check would wedge
+  docs-only PRs — the D-90 shape). This is arranged, not broken; the brake on the
+  apply path lives inside `apply.yml`. The trap is reading "continuously red" and
+  "never triggered" as the same defect — for any gate, ask first *did it run for this
+  commit*, then *did the step execute or was it skipped behind a guard*, and only
+  then *what was its conclusion* (§7).
 - **The previously-red required contexts now pass AND are enforced.** Verified
   2026-10-06 on PRs #42/#43: `Policy Compliance Check` is green
   (`jolarca-hermes-agents` now declares `pci-dss`) and `Repository Secret Pattern

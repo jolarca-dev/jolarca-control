@@ -31,6 +31,695 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
   queue.
 - Sequencing that the operator must respect: merge → **apply** → then merge consent #12 → graph builds
   → verify → restore. Merging #12 first changes nothing, because the apply is what edits the ruleset.
+### Added — 2026-11-04 (the D-33 enforcement rehearsal evidence lands; #54's registry conflict resolved by regeneration)
+
+- `docs/security/d33-enforcement-rehearsal-2026-10-08.md` (337 lines) has been PR #54's content since
+  2026-10-07, and D-71's queue audit on `main` records it as **absent** precisely because that PR never
+  merged. It is the only retained record of two refusals actually exercised against the protected branch:
+  a direct `git push` to `main` rejected with `GH006`, and canary secrets rejected by push protection.
+- **The merge conflicted on exactly one file, `docs/evidence-registry.csv`, and it was resolved by
+  regenerating — never by hand-merging hashes.** Take `main`'s registry whole, run `hash_evidence.sh`, and
+  the result differs from `main` by one added row, the new artifact, with every pre-existing row untouched
+  (verified: `49 files scanned, 0 mismatches`). Hand-merging a registry is a failure this repository has
+  already recorded — a cherry-pick once resolved a registry conflict to `main`'s rows and left a newly
+  hashed file unattested.
+- **A claim from the queue sweep is corrected here rather than repeated.** It was reported that `main`
+  cited this file as evidence and that its absence made the citation a dead pointer. That is wrong: the
+  single mention sits inside D-71's 2026-10-16 audit row enumerating each open PR's files, which says
+  `#54 (docs/security/d33-enforcement-rehearsal-2026-10-08.md) — absent` — i.e. `main` correctly recording
+  an unmerged PR. The artifact's value is that it is unique evidence `main` lacks, not that a reference is
+  broken.
+- The document already carries `## Status note, added at rebase 2026-10-17 — read this before acting on
+  anything below`, recording that the `required_approving_review_count: 1` flip was rehearsal-only and that
+  the matching `repos/jolarca-control.yml` declaration was dropped at rebase. It is left intact, and the
+  live value was re-read today: `0` on `main` (D-04), with `strict=true` and `enforce_admins=true`.
+- This section also supplies the changelog entry #54 itself never had; the rehearsal doc changes a hashed
+  path, so under §6 the audit trail and the registry both have to move with it.
+
+### Corrected — 2026-11-04 (AGENTS.md §8 described two brakes that are not what they say)
+
+- **The reviewer claim was flatly false.** §8's production-apply bullet asserted "no reviewer signs
+  anything" and that reviewers "were deliberately **not** added", while D-75 had installed a `production`
+  required reviewer on 2026-10-17. Re-read 2026-11-04: `protection_rules` is
+  `[{type: wait_timer, wait_timer: 30}, {type: required_reviewers, prevent_self_review: false,
+  reviewers: [JourneyOfLife]}]` with `can_admins_bypass: false` and `last_deployed_at: null`. The clause
+  now says what is true — approval is mandatory, and the same sole identity can grant it, so it is
+  friction rather than separation of duties and **D-58 stays open**. This is not tidiness: an agent
+  trusting the old sentence would not expect an approval step, would not look for a run sitting in
+  `status=waiting`, and could leave an apply armed.
+- **The state count is pointed at rather than carried.** §8 asserted "the 48-resource state"; the
+  workspace `resource-count` measures **49** today — the extra address is consent's adopted ruleset,
+  imported 2026-10-27, so the state grew as recorded and only the prose aged. The bullet now names the
+  two commands that read it. Dated measurements in the same bullets — the 2026-10-16 cancellation
+  recorded as "the workspace unchanged at 48 resources" — were **left untouched**: they were true when
+  taken, and correcting a dated observation is falsification, not maintenance.
+- **A new §8 bullet records a control that is not enforced at PR time.** Twelve merge commits reached
+  `main` on 2026-11-03 and `plan.yml` ran for **none** of them: its path filters exclude `docs/**`,
+  `scripts/**`, `tests/**` and `.github/workflows/**`, and all six runs that day were `pull_request`
+  events that died at `terraform init` on the D-56 credential. "Continuously red" and "never triggered"
+  are different defects, and §8 exists precisely so an agent does not assume protection that is absent.
+- **Scope, stated because it is not uniform:** the reviewer and resource-count edits are corrections of
+  demonstrably false text; the plan-gate bullet is new content. Drop it if this PR should stay narrow.
+- No new finding id. D-75 already owns the reviewer change and D-56/D-77 the credential, so §8 now
+  points at them instead of restating them. `AGENTS.md` sits at the repository root — outside
+  `EVIDENCE_DIRS` and outside every `apply.yml` push path — so nothing is re-registered and no apply is
+  armed by merging this.
+- Verified before opening: `grep -c 'no reviewer signs anything' AGENTS.md` → **0**; the surviving
+  `48-resource` match is the quoted phrase inside the correction itself, not a live claim; full suite
+  and governance gates per the PR body.
+
+### Corrected — 2026-11-03 (D-77 re-measured: still open 15 days on, and none of today's twelve commits ran the plan gate)
+
+- A dated status row on **D-77** and a `Last verified` refresh on the `TFC_TOKEN` row of
+  `docs/security/key-custody.md`. **No new finding id**: D-77 already owns the defect and D-82 already
+  closed the differential, so this is a re-measurement, not a discovery.
+- **Nothing has been repaired.** `gh api repos/jolarca-dev/jolarca-control/actions/secrets` returns
+  `TFC_TOKEN created=2026-10-10T16:14:14Z updated_at=2026-10-19T16:26:30Z` — untouched for 15 days — and
+  the gate's latest execution, run **41713583778** on head `00c7f9c` at `2026-11-03T20:32:57Z`, fails with
+  the same `Failed to read organization "jolarca-dev" … unauthorized` recorded on 2026-10-19. `expires`
+  stays `unknown`: no read path exists, which is that row's own measured claim, not an omission.
+- **The sharpest new fact is a coverage one, not a credential one.** Twelve commits landed on `main`
+  today and **not one ran `plan.yml`**: `GET /actions/workflows/plan.yml/runs` returns six runs for the
+  day, every one a `pull_request` event, and no merge-commit SHA appears as a `head_sha`. `plan.yml`'s
+  `push:` paths are `**.tf`, `**.tfvars`, `repos/**`, `policy/**`, `.terraform.lock.hcl` and none of the
+  twelve touched one. So the PR-time plan gate is not merely red on the apply path: on a documentation or
+  workflow merge it is **silent**, and "the plan job is failing" understates the position.
+- **The backend has still never seen CI.** `GET /api/v2/workspaces/ws-w6NSnTXXmYgh78Su/runs` → 200 with
+  **three** runs, newest `2026-10-12T10:54:52Z`, all `source=terraform+cloud`. D-82's row said the CI plan
+  cannot reach the backend; 22 days, twelve commits and five merges later the accurate claim is that no CI-triggered
+  operation has ever reached it.
+- **A number moved, and it is the documents that went stale:** `resource-count` is now **49** against the 48
+  recorded here on 2026-10-26 — consistent with the operator's 2026-10-27 `terraform import` of
+  `github_repository_ruleset.main["jolarca-consent"]`, so the state grew as recorded. `AGENTS.md` §8 still
+  says "the 48-resource state"; that correction is left for its own edit rather than bundled here.
+- Stated as an inference, not a fact: the operator's `~/.terraformrc` credential answers
+  `/api/v2/account/details` with a username, which is what a **user** token does — but the CI secret's kind
+  remains unidentifiable because Actions secrets are write-only, so the register's existing claim stands.
+- Nothing previously recorded is re-stated as new. `prevent_self_review: false` (D-75) and the three-way
+  Terraform version skew (D-64, D-74) were both checked against the register **before** writing, and are
+  only cited here where they bear on the ordering of the fix.
+- Companion edit required by the repository's own rule: `docs/security/key-custody.md` is inside
+  `EVIDENCE_DIRS`, so `docs/evidence-registry.csv` is re-registered in this same commit — the integrity gate
+  attests the committed tree, so a hash left stale would fail `make evidence-check`.
+- Two claims in the first version of this section were wrong and are corrected in place rather than left
+  for a follow-up, because this branch has not landed: it named run `41710558509` on `896ca6a` as the
+  gate's latest execution (two later `pull_request` runs exist, `41712475617` and `41713583778`), and it
+  inferred "each SHA fired exactly three workflows" from a capped `gh run list` page, which silently drops
+  older SHAs as new runs arrive — the same query re-run now returns nothing at all for three of them.
+  Absence from a capped listing is not absence of runs; the workflow-scoped endpoint is what the counts
+  above rest on.
+### Fixed — 2026-11-03 (the D-94 label guard could be bypassed by the very flag its refusal message recommended)
+
+- **This corrects the section below it, written the same day.** #131's entry and commit `8a2ce48` claim
+  "the refusal, the no-write property and the exit code are unchanged" and that the contract is enforced
+  "in exactly one place". Both hold for the default path and are **false for the flag path**. Appended as a
+  dated correction rather than edited in place, because this file is the audit trail.
+- **The defect.** `vet()` computed `want = resource_name or default_resource_name(repo)` and compared the
+  parsed fence against `want`, while the emitted body was the fence **verbatim**. So `--resource-name` could
+  only lower the expectation, never rename anything: `--resource-name main` on a `main`-labelled vendor
+  fence returned **rc=0 and wrote the file**, while the correct label `vendor` was **refused**. The refusal
+  message ended "…or pass `--resource-name vendor`" — recommending the argument that defeated the guard.
+- **Proven with the real toolchain, both directions.** Placing the bypassed output beside the tracked
+  `rulesets.tf` gives, on Terraform **v1.16.1** (the approved release): `Error: Duplicate resource
+  "github_repository_ruleset" configuration … already declared at rulesets-vendor.tf:2,1-44`. The positive
+  control the other way: generating consent and vendor from one runbook with the fixed tool yields `"main"`
+  + `"vendor"`, and `terraform validate` reports `Success! The configuration is valid.`
+- **Fix.** The flag is deleted — a CLI argument whose only effect is to weaken a contract should be removed,
+  not documented — and the label is now derived from `repo` alone in `vet()` and in the emitted import hint.
+  `make adoption-block` never threaded the flag, so no documented path changes.
+- **New `label_problem()`** refuses the three derivations that must never be emitted: the empty slug falling
+  back to `"main"` for a second repository (`jolarca-`, `jolarca--`), a label invalid as a Terraform
+  identifier (`jolarca-2fa` → `2fa`), and a slug that silently dropped case (`jolarca-Vendor` → `endor`).
+  Each is a fixture; the grandfathering of `"main"` for the historical target is asserted unchanged.
+- **Four tests, proven red before green** against `956efc2` (`4 failed, 403 passed` — a real red, with the
+  module importing cleanly): the flag is no longer parsed (argparse rc=2, nothing written), a
+  `main`-labelled fence cannot be admitted by any argument, the refusal no longer recommends the flag, and
+  `label_problem` refuses the three bad derivations. After the fix: `27 passed` in the file, **407 passed**
+  for the suite, and consent's emitted bytes remain **identical** to the pre-#131 tool (`cmp` rc=0).
+- D-94's heading in `docs/drift-findings.md` said **OPEN** although #117 and #131 had landed and no dated
+  status row had ever been appended. Its status segment now reads **FIXED in code**, with the title segment
+  kept byte-identical because `check_findings_register.py` compares exactly that segment for collisions.
+  What genuinely remains is content, not code: the runbook still holds no vendor adoption fence.
+- **The process lesson, recorded because this register is where it belongs.** The flag had **zero test
+  coverage** — `grep resource_name tests/` matched only `default_resource_name()` assertions — so four
+  required contexts, 403 tests, a mutation control and a fresh-clone sweep all stayed green over a guard
+  that was bypassable by design. Mutation testing proved the check could fail; it never asked whether the
+  check could be **sidestepped**. §4 rates `scripts/**` high blast radius because the operator is the only
+  reviewer, and this defect survived a review conducted by its own author.
+
+### Fixed — 2026-11-03 (D-94's second half: the resource LABEL was a consent-specificity too)
+
+- `scripts/extract_adoption_block.py` parameterised the *target* repository in PR #117 but still emitted
+  every block under the label `"main"`. That label is not free: `rulesets.tf` is tracked, declares
+  `resource "github_repository_ruleset" "main"` for `jolarca-consent`, and consent's state address already
+  *is* `github_repository_ruleset.main["jolarca-consent"]` (imported 2026-10-27; runbook lines 701 and 818),
+  so a second file reusing the label fails `terraform validate` with `Duplicate resource
+  "github_repository_ruleset" configuration` (measured 2026-10-31). `default_resource_name()` now derives a
+  per-repo label and `main` is grandfathered **only** for the historical target, so the tree this tool can
+  emit is always planable.
+- **The contract is enforced in one place now.** A standalone early refusal was removed: its
+  `len(candidates) == 1` test was always true at that point (the real candidate-count refusal returns
+  above it), it printed to **stdout** where every other refusal in the file uses stderr, and it duplicated
+  what `vet()` already asserts. `vet()` runs before anything is written, so the refusal, the no-write
+  property and the exit code are unchanged — and its message now names the colliding file and the remedy
+  instead of only the symptom.
+- **Three already-shipped fixtures were asserting an unplanable shape.** `VENDOR_ADOPTION` carried the
+  label `"main"` while targeting `jolarca-vendor`, and
+  `test_the_emitted_import_command_carries_no_hardcoded_ruleset_id` positively asserted the hint said
+  `main["jolarca-vendor"]`. Both are corrected to `vendor`. Per AGENTS.md §5 the gate was fixed together
+  with its fixtures rather than deleted to make the suite pass, and the bad shape keeps its own fixture
+  (`VENDOR_FENCE_NAMED_MAIN`, derived from the good one so the label is the only difference) so the
+  refusal still has something to refuse.
+- **An earlier reading of this was wrong and is corrected here rather than dropped.** The refusal was
+  first characterised as an over-refusal, on the grounds that it fired on a lone vendor fence in an
+  isolated fixture where no duplicate existed. That is true only of the fixture: the collision is with
+  `rulesets.tf`, which the tool never reads. Measured before this sentence was written —
+  `git show origin/main:rulesets.tf` declares `"main"` for consent, and that address is in state. The
+  guard was correct and is kept.
+- **Consent's output is byte-for-byte unchanged**, proven against the artifact rather than asserted: the
+  committed tool from `origin/main` and this one, both run over the real runbook, emit identical bytes
+  (`cmp` rc=0) with an identical import hint. The reproducibility property Step 6b depends on survives.
+  Separately, regenerating `rulesets.tf` itself is still expected to differ — the file is stage 2 while the
+  runbook's step-1 fence is the stage-1 mirror, which D-94's earlier row already records.
+- **Proven red before green:** disabling `vet()`'s name check makes exactly
+  `test_a_second_repo_fence_named_main_is_refused` fail (1 failed / 22 passed, rc=1) with the module
+  importing cleanly, so the red is a real failure and not a collection error; the script was then restored
+  byte-identically (sha256 equal). The first attempt at that control produced `if False and if …` — a
+  SyntaxError and pytest rc=2 — which proved nothing and was redone.
+- Gates, exit codes captured with no intervening pipe: `pytest tests/` **403 passed** rc=0 (this tree read
+  3 failed / 400 passed before the fix) · `ruff check` 0 · `ruff format --check` 0 · `mypy --strict` 0 over
+  13 files · `check_gate_parity.py` 0 (20 scripts) · `check_findings_register.py` 0 (92 headings) ·
+  `hash_evidence.sh --check` 0, 48 files, 0 mismatches (`scripts/**`, `tests/**` and `CHANGELOG.md` are all
+  outside `EVIDENCE_DIRS`, so no re-registration) · `compliance_check.py` 0 · `check_toolchain_baseline.py`
+  0 · `validate_repos.py` 0 · `check_apply_path_trigger.py` 0 — "2 changed file(s), none in apply.yml's
+  push paths — no apply armed".
+- This commit carries the operator's in-flight D-94 work — the derived label, `--resource-name` and four
+  new fixtures — together with the corrections above, at the operator's explicit request. The three
+  failures it resolves were that in-flight work's own guard reporting a contract conflict, not a
+  regression introduced here.
+
+### Fixed — 2026-11-03 (M-10 route (a): rule R8 pins the CI runtimes, and a dead fallback that blinded bandit)
+
+- **This section was missing when the two commits landed** (`a779f18` and `2ed617d`, both 2026-11-03) and is
+  added afterwards in its own commit, because this file declares itself part of the SOC 2 CC8.1 /
+  ISO 27001 A.8.32 audit trail and is not optional. Recorded as a late entry rather than quietly backfilled.
+- **The gap R8 closes.** ADR-0010's M-10 measured that the toolchain gate read only `mise.toml`, so the
+  interpreter producing this repository's required-check evidence was announced nowhere: run 41690569251
+  got Python **3.12.15** from `python-version: "3.12"` and run 41693066694 got **3.12.16** an hour later
+  with no file changed. R8 walks every `.github/workflows/*.yml`, finds each `actions/setup-python` and
+  `hashicorp/setup-terraform` step, and requires the approved release. Offline, deterministic and
+  token-free, so it runs in `make lint` via `toolchain-catalogue` and as a step inside the required
+  `Validate Repo Allow-List` job.
+- **Observed firing before it was satisfied, not assumed correct.** The first run returned
+  `FAIL: 10 finding(s)` — nine floating python requests plus `compliance-scan.yml`'s terraform-format job
+  running `setup-terraform` with no `terraform_version` at all, a pre-existing skew the new rule exposed
+  by accident, closing row 3 of ADR-0010's Context table.
+- **Nine `python-version` declarations now pin `3.12.16`** — `compliance-scan.yml` (4), `sast.yml` (2),
+  `context-parity.yml`, `deploy-gates.yml`, `plan.yml` — and `terraform_version: "1.16.1"` was added to the
+  format job. Re-measured on the branch rather than taken from the commit message:
+  `grep -rn 'python-version:' .github/workflows/` returns those nine plus exactly one other.
+- **`apply.yml` is deliberately NOT pinned.** It holds the tenth declaration (`apply.yml:81`,
+  `python-version: "3.12"`) and is one of its own `on.push.paths`, so editing it arms a real
+  `terraform apply -input=false -auto-approve tfplan` on merge, gated only by the production environment's
+  30-minute wait timer — delay, not approval (D-58, D-70) — plus `check_plan_safety.sh`. Bundling a
+  production apply into a toolchain PR is the failure mode this repository documents, so the pin stays an
+  operator decision, excused by a dated `workflow_exceptions` entry in
+  `docs/security/toolchain-catalogue.yml` that `covers: [R8]` only and **expires 2027-05-03**.
+- **Non-vacuity, three ways:** `runtime_steps_examined` is printed in the OK line so a clean pass over zero
+  files is visible; if the catalogue approves python or terraform and no consuming step is found the gate
+  exits **2 CANNOT VERIFY**, never 0; and reverting one pin in `sast.yml` turned the shipped-artifact test
+  red with the exact R8 line, then was restored byte-identically. Nine further fixtures cover a floating
+  request, a wrong-but-exact release, a missing `python-version`, a missing `terraform_version`, an honoured
+  override, an exception that does not cover R8 failing to suppress it, and an empty workflows directory
+  refusing to pass.
+- **The bandit red on this PR was this branch's own and is attributed that way**, not filed as noise.
+  `bandit -ll -ii` reported B506 `yaml_load` at `tests/test_check_toolchain_baseline.py:753`. That line's
+  `Loader=tb.DuplicateKeyLoader if hasattr(...) else yaml.SafeLoader` referenced a class deleted two commits
+  earlier, when duplicate-key detection moved to `compose()` — so the conditional was dead code, and a
+  conditional a static checker cannot resolve is indistinguishable from an unsafe loader. A dead fallback is
+  not merely dead: it blinded the scanner. Fixed to `safe_load`, verified with the exact CI invocation and
+  pinned version — `bandit -r scripts/ tests/ -ll -ii` → rc=0 over 12060 lines, so the pass is not a scanner
+  that found nothing to look at.
+- **The pin is proven by a CI log line, not by the diff:** the bandit job reports
+  `pythonLocation: /opt/hostedtoolcache/Python/3.12.16/x64`, where M-10 measured 3.12.15 before the change.
+- Two authoring errors were recorded in the commit rather than dropped: a C8 insertion silently moved C6's
+  expiry check into the new loop and deleted it from the old one, and two ADR heading edits lost content's
+  position. Both were caught by reading the diff back and re-listing headings — not by a gate.
+
+### Found — 2026-11-03 (D-60 re-measured: a squash merge also replaces the operator's signature with GitHub's)
+
+- One dated status row appended to **D-60** in `docs/drift-findings.md`. **No new finding id**, because
+  the defect is already recorded: D-60's "Correction later the same day" row measured on 2026-10-15 that
+  a squash merge takes the commit author from the GitHub account email setting rather than from local
+  `git config`. A second row for the same defect would duplicate it, so the new measurement went into
+  the row that owns it.
+- **What was not recorded is the signature half.** PR #129's branch commit `e17e9cd` was authored with
+  the noreply form and signed `sig=G` by `609F7926A8254CDB`; the squash commit on `main` (`f414672`) is
+  authored with the base mailbox, committed `noreply@github.com`, and signed by `B5690EEEBB952194` —
+  GitHub's own key. Across all 130 commits on `main`: **105 GitHub-signed, 23 operator-signed,
+  2 unsigned**, and every one of the twelve most recent is GitHub-signed. That key is absent from the
+  operator's keyring, so `main` reads `sig=E` locally while GitHub's API reports the signature present
+  and `reason: "valid"` — the API field is the evidence, not the local status. D-05's compensating
+  control ("signed operator commits"; PCI-DSS Req 8.2, SOC 2 CC6.2, ISO 27001 A.8.16) therefore rests on
+  GitHub's assertion on the default branch rather than on the operator's key. `B5690EEE` appeared nowhere
+  in the register before this row.
+- **The noreply identity does survive the squash**, as a `Co-authored-by` trailer inside the commit
+  payload, so §6's authorship rule is honoured on `main` only in a field nobody reads for attribution.
+- **D-60's Evidence row is stale in one particular**, and the new row says so rather than leaving it
+  standing: it records `gh api user/emails` returning exactly one address, while the account holds two
+  today. The addition is a second personal mailbox, not the noreply form, so the outstanding owner
+  decision is unchanged and its symptom still reproduces — `reason: "bad_email"` on a commit made
+  nineteen days after the fix was applied.
+- D-60 keeps its status (**S2 · FORWARD-FIXED, history residual ACCEPTED**). What the row adds is the
+  scope of that forward fix: it reaches branch commits and does not reach `main`.
+
+### Added — 2026-11-03 (QODER.md: a behavioural layer for agents that points at AGENTS.md instead of restating it)
+
+- `QODER.md` at the repository root carries four principles — think before coding, simplicity first,
+  surgical changes, goal-driven execution — derived from Andrej Karpathy's published observations on how
+  LLM coding agents fail: assuming on the user's behalf without checking, overcomplicating until 1000
+  lines do what 100 would, and editing code and comments they do not sufficiently understand. Each is
+  bound to an artefact that already exists here rather than left as advice: blast-radius routing (§4),
+  the pinning rule and gate-parity's R1–R4 (§5, §7), the evidence and changelog companion edits, the
+  three-valued exit-code contract (§3), and "proven red before green" (§7).
+- **It is deliberately not a second source of truth.** `AGENTS.md` keeps precedence and is cited by
+  section number, the way `scripts/` and `.github/workflows/` already cite it. Volatile facts are pointed
+  at, not copied — required contexts to `policy/repo-defaults.yml`, the backup schedule to
+  `systemd/jolarca-state-backup.timer`, finding status to `docs/drift-findings.md`, unenforced controls
+  to `AGENTS.md` §8 — because §8 itself records one schedule value going stale five times while prose
+  tried to carry it.
+- **It cites no finding ids.** A reference whose register heading lives only on an unmerged branch
+  reddens the required `Validate Repo Allow-List` context through the dangling-reference guard, so each
+  lesson is attributed to the section that carries it instead of to a finding number.
+- Location was chosen, not defaulted. A root-level `.md` matches none of `apply.yml`'s push paths and no
+  `EVIDENCE_DIRS` entry in `scripts/hash_evidence.sh`, so merging this arms no production apply and needs
+  no hash re-registration; the same text under `policy/` would do both. Measured before committing:
+  `check_apply_path_trigger.py --changed QODER.md --actor-type User` exits 0 reporting "no apply armed",
+  and `hash_evidence.sh --check` still reports 48 files scanned, 0 mismatches.
+
+### Fixed — 2026-10-31 (D-94 closed in code: the adoption generator is no longer consent-only)
+
+- `scripts/extract_adoption_block.py` takes `--repo` (defaulting to the historical target so every
+  existing invocation behaves identically). Selection, `vet()`'s assertions and the refusal messages are
+  derived from the requested repository instead of a hard-coded constant, and the tool now prints which
+  repository each fence targets, so a mismatch is visible instead of silent.
+- **The dangerous line is gone:** the emitted next-step hint used to print
+  `'jolarca-consent:24087580'` unconditionally — for any other repo that is a specific, plausible, WRONG
+  import command. It now prints `'<repo>:<ruleset-id>'` plus the `gh api … /rulesets` call that discovers
+  the real id. A fixture asserts the literal id can never come back.
+- The single-candidate guard survives, narrowed rather than removed: ambiguity **within one repo** is
+  still fatal (fixture), while two repos are now selectable independently — which is what D-93 step (1)
+  needed and what hand-editing generated config would have quietly broken.
+- Wrong-repo requests **refuse with rc=1 and write nothing**, naming the repos that do have fences. The
+  dangerous failure mode was never the error; it was the confident wrong choice.
+- `make adoption-block REPO=jolarca-vendor OUT=rulesets-vendor.tf` is now the documented path.
+- **Proven red before green:** reverting the script to the committed version and keeping the six new
+  fixtures gives `6 failed, 13 passed`; restoring gives 19/19 and 351/351 for the suite. The old 13
+  fixtures were never edited — backward compatibility is asserted, not assumed.
+- Gates, exit codes captured with no intervening pipe: pytest 0, gate-parity 0, findings-register 0,
+  `hash_evidence --check` 0, yamllint 0, terraform fmt/validate 0, ruff check + format 0, mypy 0,
+  shellcheck 0, validate_repos 0, required-context-baseline 0, compliance_check 0, `make -n` 0.
+- Not included, deliberately: vendor's Step 6b fence and the generated file. The fence is a runbook edit
+  and the output is a `*.tf` protection object — that lands in the PR that runs the import, per D-46's
+  own sequencing, with the operator's apply.
+
+
+### Found — 2026-10-31 (D-94: Step 6b can only ever adopt one repo, and a CHANGELOG line could get consent downgraded)
+
+- D-46 and D-93 both point at Step 6b to fix vendor. **Step 6b cannot run for a second repo.**
+  `scripts/extract_adoption_block.py` hard-codes consent in four places — `_REPO_KEY`, two `vet()`
+  messages, and the printed `terraform import … 'jolarca-consent:24087580'` hint, which for vendor would
+  emit a **wrong command that looks right**.
+- The single-candidate guard was measured, not assumed: appending a vendor stage-1 fence to a **copy** of
+  the runbook gives `adoption candidates: 2` → **rc=1, REFUSED, no file written**; the real runbook gives
+  1 → rc=0. So "just add the block" hard-stops by design, and that design is the limitation.
+- **A stale line in the audit trail with real teeth:** `CHANGELOG.md:569` says `rulesets.tf` is
+  "byte-identical to the block `make adoption-block` extracts from Step 6b". True while the file held the
+  stage-1 inert mirror; false now that it is stage 2 (pull_request + seven required checks). A reader
+  trusting it would regenerate and **downgrade consent's protection to a ruleset with no rules** — caught
+  only by the pre-apply brake. Corrected by a dated entry, not by rewriting history.
+- Work order is written into the row: parameterise the extractor by repo, keep `vet()`'s semantics but
+  assert them against the target, add four fixtures (including the two-candidate refusal, which is true
+  in code and untested today), and only then add vendor's fence. Cost: zero — a script and its tests.
+- Also recorded, so the next session does not re-derive it: vendor's full mirror-live rule set, and that
+  `lint` is observed `success` on vendor's `main`, so stage 2 clears D-90.
+- Three of my own inferences were disproved by testing during this investigation, and are noted rather
+  than quietly dropped: `make adoption-block` is **not** broken (I misread `select()`'s return shape);
+  a source-file probe returning 172 bytes was **vacuous**; and a `sim_rc=0` was again `tail`'s status,
+  not the extractor's — the third time today that a piped exit code nearly became a finding.
+
+
+### Corrected — 2026-10-31 (D-46's deferral premise does not hold for vendor, and there is no provider upgrade to wait for)
+
+- The reason dr/vendor adoption was deferred is that provider 6.13.0 does not model
+  `dismissal_restriction` or `require_extra_approval_for_unattributed_changes`, so a Terraform PUT —
+  `rules` is `max_items = 1`, so an update replaces the whole object — was assumed to reset live
+  protections. Tested rather than repeated:
+  - `terraform providers schema -json` → **0 hits** for both names in `github_repository_ruleset`.
+  - `gh api repos/integrations/terraform-provider-github/releases/latest` → **v6.13.0**, the version
+    already pinned by `~> 6.0`. **There is no newer release to wait for**, so "defer until the provider
+    grows the field" is not a plan, it is a stall.
+  - Consent's own step-4 apply is a natural experiment: the provider never sent
+    `require_extra_approval_for_unattributed_changes` and GitHub **defaulted it to `true`**.
+  - vendor's live ruleset reads `require_extra_approval_for_unattributed_changes: true` and
+    `dismissal_restriction: {enabled: false, allowed_actors: []}` — the field that could be lost is
+    **already off**, and the one that could flip defaults **upward**.
+- And the tightening passes the satisfiability test this register keeps failing: `lint` is recorded
+  **`success` on vendor's `main`**, with a real `ci.yml` behind it. So requiring it cannot produce the
+  D-90/A-01 deadlock.
+- What still needs doing before dr is adopted: the same two measurements on `jolarca-dr` (24136490),
+  whose live values were not re-read in this pass. **Stated as not-yet-known rather than assumed.**
+- A vacuous probe, discarded: fetching the provider's ruleset source by tag returned 172 bytes, so its
+  "0 hits" proves nothing. The schema dump against the actually-pinned binary is the authority — which
+  is the §7 rule about checking that a probe can return a non-zero answer, applied to my own tooling.
+- Register edits: a dated status row on D-46 with re-derive commands, and D-93's remediation step (1)
+  sharpened to `lint` + `strict` with the provider excuse removed.
+
+
+### Found — 2026-10-31 (D-93: a PCI/GDPR repo merges with zero required checks, the detector says so, nothing enforces it)
+
+- First fleet-wide guard sweep (all 17 repos, live API, not declarations): **`jolarca-vendor`** —
+  `tier: governance`, declaring **`gdpr` and `pci-dss`** — has a ruleset with a `pull_request` rule but
+  **0 required status checks**, while `repos/jolarca-vendor.yml` declares 1. `policy/repo-defaults.yml`
+  calls an empty list non-negotiable: *"a protected branch with zero required contexts enforces nothing,
+  which is how unreviewed code reached main before the 2026-09-17 delivery-chain audit."*
+- **This is not a visibility gap.** `drift_detect.py` exits **1** with
+  `ruleset requires 0 status check(s), need >= 1`. It is invoked from `apply.yml:170` — a path that
+  cannot reach the backend (D-56) — and from `make drift`, i.e. a human choosing to look. A red verdict
+  has been blocking nothing. That is the D-67 advisory-gate shape, re-proven with commands.
+- **`.github` is invisible by design and that is the second finding**: no `repos/.github.yml`, **0**
+  addresses in state, and `drift_detect` reports `"health_repo_excluded": ".github"`. It publishes the
+  org-wide SECURITY.md (2420 bytes, the file GitHub serves for every repo), runs
+  `secret_scanning=disabled`, `push_protection=null`, and requires **0** checks to change it. D-15 says
+  the disclosure address is hand-edited there; this adds that the control plane neither declares,
+  imports, nor checks it.
+- The reassuring half, now measured rather than assumed: **no repository's `main` is directly pushable**
+  across all 17, and `bypass_actors` is empty everywhere read. dr and vendor do carry `pull_request`
+  rules — so "unmanaged" was always shorthand for "unmanaged by Terraform", and consent's closed S0 was
+  the real hole.
+- Remediation order matters and is written down: fix vendor's live baseline first, decide whether
+  `.github` is governed (silence is the one unacceptable option, because the exclusion is currently
+  invisible), and only then consider wiring the drift gate into a required context — wiring it today
+  would wedge every merge on a repo that is already red, which is A-01/D-44/D-90 all over again.
+- Cost: zero for the first and third steps; the middle one is a decision, not a purchase.
+
+
+### Corrected — 2026-10-31 (four register headings contradicted measured state; all four now carry dated status)
+
+A sweep of every S0/S1 heading against its own dated rows found four places where the file's headline
+disagreed with what is measurable today. Each is corrected by **insertion, not deletion**, following the
+`Status at salvage` precedent, so the original claim stays greppable:
+
+- **D-01** (`BLOCKING DECISION`) — the rows still say "this repo declares `visibility: private` for all
+  four". Measured: `repos/*.yml` declares **`public` 16 times and `private` zero times**, live is
+  `PUBLIC` everywhere, `forks_count: 0` on all. The decision was overtaken by events and is now an
+  expiring risk acceptance (`fleet-public-2026-10`), not a pending choice.
+- **D-33** (`only 2 of 16 repositories are guarded`) — measured `.protected = true` on **all 17**, with
+  14 branch-protection addresses and 1 ruleset address in state. The surviving problem is narrower and
+  already tracked as D-46: dr and vendor are guarded by rulesets no configuration declares, and vendor's
+  status-checks rule lists **zero** contexts. "Guarded" must mean "guarded with the declared checks".
+- **D-55** (`S0, OPEN`, and its `Related` line said the backup "did not" land) — the schedule exists, on
+  device 2065 (`sdb1`), with a retry proven twice in the field. What D-55 still correctly blocks is
+  stated: key custody co-located on an unencrypted host, no second site, no account/org/workspace
+  deletion. D-02 stays PARTIALLY FIXED / S0.
+- **D-56** (`FIXED in #67, needs live proof`) — the proof is now **negative**: `plan.yml` failed on
+  2026-10-27, 2026-10-27 and 2026-10-28, and run 40581973366 still dies at `Terraform Init` with
+  `unauthorized` reading the org. The PR-time plan gate has never executed post-migration; the CI apply
+  path cannot reach HCP, which is a broken credential and not a control — and the reason to repair it
+  **last**, while the plan still reads `2 to change`.
+
+Also checked and clean: **no exception in `policy/compliance-gates.yml` has lapsed** (nearest is D-58,
+16 days), and the consent dependency-review exception is correctly absent from the active list because
+#107 is unmerged — it is not in force, and neither is the trim. (The guard flagged my first draft of this
+very sentence for citing that exception by id before its register heading exists on `main`; the
+required context `Validate Repo Allow-List` fails on a dangling citation, as it did on #108, so the
+reference is written in prose instead of by id.)
+
+Method note, because it bit me three times today: `docs/drift-findings.md` is **not in ascending id
+order** (first headings are D-02, D-13, D-01, D-03…), so `awk '/^### D-01 /,/^### D-02 /'` silently runs
+past the section and returns another finding's rows. Two of my first-pass "stale" conclusions came from
+that and were discarded; the four above come from block-splitting on `^### D-` plus live API reads.
+
+Docs only: `docs/drift-findings.md`, `CHANGELOG.md`. No apply trigger path, no state change, no
+credential touched. Rollback: revert one commit.
+
+
+### Corrected — 2026-10-31 (the new window missed too; the retry has now saved the backup twice)
+
+- 09:17 was chosen because the host was measurably awake at that hour — **on a Friday**. Saturday
+  falsified it: zero `CRON` heartbeat entries 08:00–10:59, and the job backfilled at `12:12:45` again.
+  **No configured window has ever fired on time**; every run since install is a session-start catch-up.
+  My reasoning error was generalising one weekday observation into a property of the machine, and it is
+  recorded rather than quietly rewritten.
+- The retry absorbed the same race a second time: `12:12:45` failed → `12:14:45` →
+  `terraform.tfstate.s17.20261031T101447Z.age`, `NRestarts=1`, `Result=success`. The pattern is now
+  understood rather than patched: a backfill fires while the network is still settling, so the first
+  attempt of every catch-up is effectively always lost. `NRestarts>0` with `Result=success` is this
+  control's **normal healthy state** — the opposite of what I implied when I wrote yesterday that a good
+  morning would show `NRestarts=0`.
+- Chasing the hour is the wrong lever. A true time-based guarantee on a sleeping single host needs
+  `WakeSystem=true` on **system-level** units, or an always-on second machine; neither is proportionate
+  for a control plane whose state last changed on 2026-10-27 and which is copied on every login.
+- The timer file's comment and AGENTS.md §8 now carry the falsification instead of the claim, and the
+  stale-count confession went from four to five.
+
+
+### Changed — 2026-10-30 (the backup window moved to a time the host is actually awake)
+
+- `OnCalendar` was `*-*-* 04:17:00` and was reached on **neither** night — zero `CRON` heartbeat entries
+  across 03:00–05:59 on 2026-10-29 and 2026-10-30 — so every run so far has been a `Persistent=true`
+  backfill on first login, not a scheduled one. It is now `09:17:00`, chosen because the host is
+  measurably awake then. Verified after the change: `NEXT Sat 2026-10-31 09:17:00`, live units
+  byte-identical to the committed ones, `systemd-analyze verify` rc=0, `make -n` rc=0.
+- Honest about what this does **not** fix: a day with no login and no resume is still a day with no
+  backup, and `Linger=no` still means a reboot with nobody logged in runs nothing. The guarantee is
+  session-bound; only a second machine or a wake alarm would change that.
+- A contradiction the `sed` left behind, fixed in the same commit: the timer file carried
+  `OnCalendar=*-*-* 09:17:00` on line 8 while its own comment block still explained why **04:17** was
+  never reached — a file arguing with itself. Also corrected a typo in that block (`CADECE` → `CADENCE`)
+  and removed the hour from AGENTS.md §8 entirely.
+- Structural decision, stated once and enforced: **the number now lives only in the unit file.** §8
+  points at it instead of repeating it, because that sentence has gone stale four times in 24 hours
+  chasing one line — describing a control is how records rot; referencing it is not.
+
+
+### Fixed — 2026-10-30 (the retry was proven by reality, and two of my own claims about it were wrong)
+
+- **The retry works, measured on live failure:** `21:22:42` → `backend unreachable at
+  https://app.terraform.io/api/v2/organizations/jolarca-dev/workspaces/…` → `CANNOT VERIFY … no backup was
+  taken and no claim is made` (`exit 2`) → `21:24:43 Scheduled restart job, restart counter is at 1` →
+  `BACKUP OK (round-trip verified)`, `NRestarts=1`, archive
+  `terraform.tfstate.s17.20261030T192446Z.age`. The same race that failed unattended yesterday was
+  absorbed today without a human in the loop.
+- **A false claim I made yesterday, corrected in place:** AGENTS.md §8 said the failure *cause* is not
+  retained because the fetch log lives in a temp dir the trap deletes. It is retained —
+  `state_backup.sh:214` cats the log to stderr before the trap, `:215` extracts `(HTTP <code>)`, `:179`
+  names the exception class and the URL. I had read a `-n 14` journal window that cut those lines off and
+  generalised from a truncated view. That is §1's own rule broken by §8's own text.
+- **"Nightly" was not true either.** 04:17 was reached on neither night (zero `CRON` heartbeat entries
+  03:00–05:59 on 2026-10-29 and 2026-10-30); the host sleeps, and `Persistent=true` runs the job on first
+  login. The guarantee is "one verified copy per login session, backfilled on resume" — a day with no
+  login is a day with no backup. The unit's `Description=` now says that instead of "Nightly".
+- **`make backup-timer-status` now prints `Result`, `ExecMainStatus` and `NRestarts`.** Before this it
+  showed `Result=success` for tonight's run, which is true of the *last attempt only* — a control that
+  failed and then retried would have looked like a clean pass in the only view an operator reads.
+  `NRestarts` is the difference between "worked" and "worked after breaking".
+- Still open and unchanged: `Linger=no`, the age identity on an unencrypted volume in the same machine
+  (D-92), and one host with two disks is not a second site. D-02 stays PARTIALLY FIXED / S0.
+
+
+### Changed — 2026-10-30 (D-92 blast-radius cut performed: GitHub no longer authenticates with the hypervisor root key)
+
+- `Host github.com` now resolves to exactly one identity, `~/.ssh/jol_github_ed25519`, with
+  `IdentitiesOnly yes`. Verified the way the last attempt was not: `ssh -v` shows `Offering public key:
+  …/jol_github_ed25519` **and** `Server accepts key`, so the dedicated credential is the one GitHub
+  authenticates rather than a fallback that happens to succeed. The other six host stanzas (root on `pve`
+  and `pbs01`, operator on four prod hosts) were verified line-identical, and `git ls-remote` exits 0.
+- The edit was gated on an isolation probe that ran **before** the config changed, and rolled back to an
+  explicitly named file (`config.bak.1793312449`) if any post-check failed. That structure exists because
+  the previous claim of the same fact was false: `IdentityFile` accumulates across `Host` blocks, so a
+  success cannot be attributed to a key without `-F /dev/null` plus `IdentitiesOnly`.
+- **What is still open, and it is the part that matters:** `https://github.com/JourneyOfLife.keys` lists
+  **both** keys, so `id_ed25519` — root on the hypervisor and the backup server — remains *authorized*
+  against GitHub even though nothing on this host uses it that way. The separation is behavioural until
+  that key is de-registered.
+- Not recommended blind: the key comment `ubuntu24-jol-server-auth` suggests copies exist on other
+  machines, and this host cannot enumerate them. GitHub's per-key **last used** timestamp is the empirical
+  gate; deleting a key that other infrastructure still pushes with produces an outage rather than a
+  warning.
+- Register handled per this file's own rule: the 2026-10-29 rows are kept and marked superseded rather
+  than rewritten, so the sequence — claim, refutation, then the verified cut — stays auditable.
+
+
+### Added — 2026-10-29 (the one-command test for "is this SSH key registered?", and the cut is still blocked)
+
+- `curl -s https://github.com/<account>.keys` lists an account's SSH keys with no token and no new scope,
+  and `ssh-keygen -lf -` turns each entry into the same `SHA256:…` fingerprint `ssh -v` prints when
+  offering a key. Measured: `JourneyOfLife.keys` contains **exactly one** key — `id_ed25519`, the
+  credential that is also root on `pve` and `pbs01` — and the dedicated `jol_github_ed25519`
+  (`SHA256:EnOjKXinbT…`) is **absent**.
+- So the blast-radius cut was **not performed**: repointing `Host github.com` at a key GitHub rejects
+  would break every push, and the precondition was checked rather than assumed after the operator's go
+  ahead. `git ls-remote` still exits 0 on the current single-block config.
+- The isolation probe was clean this time and is worth copying: `ssh -F /dev/null -i <key> -o
+  IdentitiesOnly=yes -o BatchMode=yes -T git@github.com` removes the config file from the equation, and
+  `ssh -v`'s `Offering public key:` line names the key that was actually tried — the check whose absence
+  produced the false claim earlier today.
+- Also recorded: a key's *comment* is not an account name. `journeyoflife-platform` is a comment; the
+  account is `JourneyOfLife`, and guessing from the comment would have sent the registration to the wrong
+  place.
+
+
+### Corrected — 2026-10-29 (a false claim I wrote into D-92, and the config cleanup that exposed it)
+
+- **Retraction:** D-92's row said the dedicated GitHub key "authenticates to the same account under
+  `BatchMode` with no prompt, so pointing `Host github.com` at it is a verified, reversible cut." It is
+  not. Isolated with the config file out of the equation (`ssh -F /dev/null -i ... -o IdentitiesOnly=yes
+  -o BatchMode=yes`): **`Permission denied (publickey)`, exit 255 — the key is not registered on GitHub
+  at all.** The earlier "success" came from a config listing *both* `IdentityFile` entries, so
+  `id_ed25519` authenticated while the credit went to the other key, and the exit code I read was
+  `head`'s, not `ssh`'s, because the command was piped.
+- **Exit-code trap, second instance today:** `ssh -T git@github.com` returns **1 on success** (GitHub
+  refuses shell access after authenticating). A guard requiring `rc == 0` misjudges every real success as
+  a failure — which is exactly what my verify-then-restore did, and why it rolled back a config that was
+  in fact offering the right key.
+- **Config fixed properly:** the regex `
+Host github\.com
+` could not match the block starting at byte 0,
+  so the earlier cleanup deleted the wrong block and left both. Replaced with stanza parsing; the file now
+  has exactly **one** `github.com` block on the working key, the other six host stanzas verified
+  line-identical, and `git ls-remote` exits 0.
+- **Rollback bug owned:** `cp ~/.ssh/config.bak.* ~/.ssh/config` failed with "Not a directory" because the
+  glob matched two backups. A rollback that cannot run is not a rollback; name one file.
+- Both private keys now carry passphrases, measured: `ssh-keygen -y -P ''` returns **rc=255** for
+  `id_ed25519` (23:19:40) and for `jol_github_ed25519` (23:49:15). The earlier row saying the second was
+  "still bare" is kept and marked superseded rather than deleted, because the order of operations is
+  itself the finding.
+- Net security change tonight: two credentials that were offline-readable with no protection are now
+  passphrase-protected. Net **unchanged**: the blast-radius cut (GitHub off the hypervisor root key) is
+  blocked on registering the dedicated public key in GitHub's web UI — a browser action, not a config edit.
+
+
+### Updated — 2026-10-29 (D-92 remediation is half done, and measuring it found a worse credential problem)
+
+- `~/.ssh/id_ed25519` **now has a passphrase** (verified: empty-passphrase test returns rc=255, file
+  rewritten 23:19:40, `ssh -T` and `git ls-remote` both still succeed via the GNOME Keyring agent).
+  Nothing unattended broke: zero SSH client invocations in any scheduled job, and the every-10-minute
+  guard ran normally after the change.
+- `~/.ssh/jol_github_ed25519` **still has no passphrase** — so item 1 of the remediation is not finished,
+  it is only started. Recorded rather than assumed done.
+- The bigger finding: `~/.ssh/config` maps `root@pve`, `root@pbs01`, four production hosts **and**
+  `github.com` onto that single key. One credential spans hypervisor root, backup-server root and push
+  access to thirteen governed repositories. The dedicated GitHub key authenticates to the same account
+  under `BatchMode` with no prompt, so separating them is a verified, reversible cut.
+- My own two errors, recorded: the `IdentitiesOnly`/`IdentityFile` block I suggested was **appended**
+  beside an existing `Host github.com` block (duplicate config, and it pins GitHub to the root key while
+  excluding the purpose-built one), and a probe that tested both keys over **HTTPS** reported success
+  while proving nothing — HTTPS never consults an SSH key on a public repo.
+- Method note that earned its keep: ask in the direction that can fail. `ssh -T` succeeding proves
+  authentication, not protection; `ssh-keygen -y -P ''`, `BatchMode=yes` and `ssh -v`'s "Offering public
+  key" are the probes that can actually be wrong in the safe direction.
+
+
+### Found — 2026-10-29 (D-92: the keys that unlock the estate are on unencrypted volumes, SSH key unprotected)
+
+- Surfaced while deciding whether `loginctl enable-linger` was safe. It is the smaller question. Measured:
+  `/home`, `/opt/jolarca` and the backup disk `/mnt/jol-backup` have **no crypto layer** under their
+  filesystems, and they hold the age identity that decrypts the state backups, the HCP organization token,
+  and the operator's SSH private key.
+- `ssh-keygen -y -P '' -f ~/.ssh/id_ed25519` **succeeded** — the private key has **no passphrase**. Mode 600
+  protects against other users on a running system, not against a stolen or imaged disk read offline.
+- The backup archives themselves are correctly encrypted (verified this week, off-host, decrypt round trip
+  proven). The finding is that the decrypting key lives on an unencrypted disk in the same box, which turns
+  an encryption control into an access-control convention.
+- Noted in the same probe: `sdc`/`sdd` **are** `crypto_LUKS` (`DR-JOL`, `DR-JOLM`, unmounted) — this host
+  already uses LUKS for removable media, so the internal volumes are the exception rather than the norm.
+- Cheapest fix first: add a passphrase to the SSH key (minutes, no infrastructure). Then move the age
+  identities off plaintext disk. Full-disk encryption is the correct long answer and is a planned change,
+  not a weekend task.
+- Registered as a finding, not silently fixed: changing key material or disk layout is the operator's
+  decision under §5, and this session's own rule is that an observation which only exists in a chat log is
+  not evidence.
+
+
+### Fixed — 2026-10-29 (the timer backfilled correctly and the run still failed: a resume-time network race)
+
+- First real scheduled attempt: the host was asleep across 04:17, `Persistent=true` fired the unit at
+  **12:16:50** — the instant of resume — and the fetch failed with **exit 2**, journal line
+  `CANNOT VERIFY: cloud state could not be retrieved from the backend — no backup was taken and no claim
+  is made`. **The control behaved exactly as specified**: no archive, no false `BACKUP OK`, unit marked
+  `failed`. The same unit at 22:12 exited 0 and archived serial 17, so nothing was misconfigured.
+- Cause, measured rather than assumed: boot was Oct 21 (so 12:16 was a **resume**, not a start), the user
+  manager had been alive since 00:00:01, and NetworkManager logged **8** link-up events in 12:10–12:20.
+  The backfill fires before the link is usable.
+- `systemd/jolarca-state-backup.service` now retries: `Restart=on-failure`, `RestartSec=2min`, bounded by
+  `StartLimitIntervalSec=1h` / `StartLimitBurst=10`. The bound is deliberate — unbounded retries cannot
+  distinguish "transient" from "broken for a week".
+- `StartLimit*` were placed in `[Unit]`, **not** `[Service]`, because systemd ignores them in the latter
+  with only a warning: a limit that is not applied is worse than no limit, since it reads like a guard.
+  `tests/test_backup_unit.py` now asserts section placement, not mere presence (7 checks).
+- Mutation-checked again rather than trusted: dropping `Restart`, dropping `RestartSec`, and moving
+  `StartLimitBurst` into `[Service]` each make the suite fail, alongside the six earlier breakages.
+- Remaining gap recorded honestly: **the cause is not retained.** The script writes its fetch log into a
+  temp directory that its own trap deletes, so `CANNOT VERIFY` carries no HTTP status and the reason had
+  to be reconstructed from NetworkManager. Surfacing the underlying error in the script is the follow-up.
+- And the meta-lesson: this PR exists to stop §8 going stale, and §8 went stale again while it sat
+  unmerged — the fix for a lying description is to merge it, not to write a better one.
+
+
+### Added — 2026-10-28 (the backup schedule becomes a governed artifact, not a home-directory file)
+
+- Measured before fixing: **zero tracked files** mentioned the nightly backup. Its only definition was
+  `~/.config/systemd/user/jolarca-state-backup.{service,timer}` on device **66319** (`/home`, 86% full)
+  — a third device relative to the repository (64513) and the backup disk (2065) — and no archive
+  contained it. One lost home directory would have destroyed the definition of the control that
+  protects the state, leaving a chat log as the only record. That is the D-85 class: a real fix that
+  lived on one machine.
+- `systemd/jolarca-state-backup.{service,timer}` are now committed with the reasoning in comments
+  (why `Persistent=true` replaced cron, and the `Linger=no` residual gap stated rather than hidden).
+  `make backup-timer-install` is the only supported install path and **diffs after copying**, so the
+  repo copy is the source of truth rather than a second description free to drift.
+- `tests/test_backup_unit.py`: 5 checks, **mutation-tested — six deliberate breakages (drop
+  `Persistent`, drop `REQUIRE_OFF_HOST`, bad `ExecStart` path, `Unit=` typo, same-disk `BACKUP_DEST`,
+  planted credential shape) were all detected, zero vacuous**, files restored byte-identically. They
+  assert the unit's own properties instead of comparing against the installed copy, because in CI that
+  copy does not exist and a check that passes on absent input is the vacuous-green pattern this
+  register exists to catch.
+- Two self-inflicted faults found on the way, recorded because both were near-misses: an appended
+  `.PHONY` name landed **after a trailing backslash**, breaking the line continuation so `make` failed
+  to parse the whole file (rc=2, `missing separator`) — and the first repair attempt aborted on its
+  own `AssertionError` without writing anything, which I nearly accepted because I had clipped the
+  evidence with `cut -c1-110` and the backslash sat past column 110. Also: the new files were created
+  while checked out on the **#107 branch**, and the `AGENTS.md` anchor did not exist there — caught by
+  reading the file instead of assuming the branch.
+
+
+### Changed — 2026-10-28 (the backup schedule is now a pointer to the unit, because the sentence describing it went stale three times in 24 hours)
+
+- The crontab entry documented yesterday as "the nightly job" **never fired**. Measured: zero `CRON`
+  syslog entries between 04:00 and 06:00 on 2026-10-28, the five-minute `health-check` heartbeat gap
+  running 00:25 → 19:05, and `Stopped target suspend.target` on resume — the host was suspended across
+  04:17, and user crontabs do not backfill.
+- **A recommended check that could not have found the failure:** AGENTS.md told the reader to "check
+  `uptime`" if the run looked missing. `uptime` reported "up 1 week 4 hours" the whole time, because it
+  measures *booted*, not *awake*. Corrected in the record rather than quietly dropped.
+- Replaced by `~/.config/systemd/user/jolarca-state-backup.{service,timer}` with `Persistent=true`, so a
+  missed window runs on resume. Verified **through systemd, not through a shell**:
+  `systemctl --user start` → `status=0/SUCCESS`, journal `off-host: yes (dest_dev=2065 repo_dev=64513)`
+  and `BACKUP OK (round-trip verified)`, archive `terraform.tfstate.s17.20261028T175728Z.age` plus a
+  matching `backup-probes.tsv` row. An earlier `env -i` test proved the *script* runs under cron's PATH;
+  it proved nothing about the unit file's own path resolution.
+- New residual gap, stated rather than glossed: a **user** timer needs a login session, so a reboot with
+  nobody logged in runs nothing until `loginctl show-user jol --property=Linger` says `yes`. Linger
+  measured `no` tonight.
+- Structural change to how this is documented: §8 no longer restates the schedule, it points at the unit
+  files and gives the two commands that read them. A sentence describing a control goes stale every time
+  the control changes; a pointer cannot. That is the third stale backup sentence in one day and the last
+  one intended.
+- Still not claimed: that any *scheduled* run has happened (only a manual one), that key custody is
+  separate (the age identity is on the same machine), or that one host with two disks is a second site.
+  D-02 stays PARTIALLY FIXED / S0.
+
 
 ### Fixed — 2026-10-27 (CHANGELOG anchor collisions: a merge driver for the file, and a guard for the driver)
 
@@ -1091,6 +1780,32 @@ Verification: plan on `main` `0 to add, 20 to change, 0 to destroy` · gate exit
 lines (4 of them `+ required_status_checks`) · plan-gate fixtures 22/22 · `make lint` · evidence
 re-registered and `--check` exit 0. `scripts/**` is not an `apply.yml` trigger path, so this PR
 starts no apply.
+
+### Fixed — 2026-10-17 (tenth batch: D-72 — a dead guard pointer, and a rule the register thought had landed)
+
+- `compliance-scan.yml:178` cited `tests/test_ci_steps_are_real.py`, which **does not exist**
+  (only `test_ci_gates_are_real.py` does). Dead since 2026-10-05, when the module was renamed
+  before the commit that referenced it. Nothing in CI reads comments, so nothing could fail.
+- The bigger finding: the register row for that fix claims PR #40 "also adds the rule that catches
+  it". Measured on `main`, the landed module has five tests — exit-status swallow, `continue-on-error`,
+  phantom interpreter, suite wiring, parse non-vacuity — and **no path-existence test**. `gh pr diff 40`
+  shows the rule lives only on that unmerged branch. So a control was documented as in place while the
+  defect it guards survived twelve days: claim-vs-mechanism again (D-22/D-62/D-67/D-58).
+- Fixed by implementing the rule (`test_cited_repo_paths_in_workflows_exist`), scanning raw workflow
+  text including comments, requiring ≥10 parsed citations so it cannot pass vacuously. **Observed red
+  first** (`1 failed, 5 passed`, naming the file and line), green after. The pointer is corrected with
+  its own history in the comment.
+- Consequence: PR #40 is now superseded for this rule and should be closed rather than merged, or the
+  suite grows two tests asserting one property.
+- Done while closing that gap: #40's unique register row (`| Comment correction (2026-10-05) |`, the fact
+  that the guard's own comment was dead on arrival) is **ported into D-50's table on this branch**, because
+  it exists on no other branch and closing #40 would have lost it. It is ported **corrected** -- that row
+  claimed #40 "also adds the rule that catches it", which is the very falsehood D-72 registers, so the
+  ported text names this PR as where the rule actually lands.
+- #40's own `test_comments_point_at_files_that_exist` is deliberately **not** ported: the rule here
+  (`test_cited_repo_paths_in_workflows_exist`) covers every `tests/…py` and `scripts/…` citation in a
+  workflow including comments, so it is a superset, and two tests asserting one property is the outcome
+  the bullet above warns about.
 
 ### Fixed — 2026-10-17 (eleventh batch: D-73 — ids cited across the repo with no row defining them)
 

@@ -4,9 +4,9 @@
 
 .PHONY: help setup validate compliance context-parity context-baseline backup adoption-block drift fleet-audit org-audit readiness \
         first-commit evidence-check evidence-register findings-check gate-parity secrets-inventory \
-        apply-path-trigger \
+        apply-path-trigger toolchain-catalogue toolchain-baseline \
         init fmt fmt-check lint tf-validate py-lint py-fmt-check py-type sh-lint yaml-lint \
-        test plan apply list-repos count-repos clean
+        test plan apply list-repos count-repos clean backup-timer-install backup-timer-status
 
 .DEFAULT_GOAL := help
 
@@ -31,7 +31,7 @@ validate: ## Validate all repo YAML definitions against policy
 compliance: ## Run the full compliance report (JSON)
 	python3 scripts/compliance_check.py
 
-lint: fmt-check tf-validate validate context-baseline gate-parity py-lint py-fmt-check py-type sh-lint yaml-lint test ## Everything CI runs before a plan
+lint: fmt-check tf-validate validate context-baseline gate-parity toolchain-catalogue py-lint py-fmt-check py-type sh-lint yaml-lint test ## Everything CI runs before a plan
 
 fmt: ## Format Terraform files in place
 	terraform fmt -recursive
@@ -147,6 +147,30 @@ apply-path-trigger: ## Report whether this branch would start a production apply
 findings-check: ## Every `### D-nn` heading must be unique on main and across open PRs
 	python3 scripts/check_findings_register.py --cross-pr
 
+# ADR-0010 M-06. Per-repository mise configuration is the right decision and it has
+# a cost: seventeen lockfiles, one answer per repo, and no way to see divergence.
+# Measured 2026-11-03, 1 of 17 default branches carried any mise configuration at
+# all and nothing in this repository could report it — the number had to be
+# assembled by hand from gh output. docs/security/toolchain-catalogue.yml is the
+# single approved answer; this is the check that reads it.
+#
+# Two modes, deliberately wired differently:
+#   toolchain-catalogue  offline, deterministic, no token. Validates the approval
+#     record itself — exact pins, named reviewer, unexpired deadline, full-SHA
+#     action pin, 64-hex digest, no duplicate YAML key. Runs in `lint` and inside
+#     the required Validate Repo Allow-List job, because it can go green today.
+#   toolchain-baseline   LIVE. Reads every repository's default branch and reports
+#     divergence (L1-L7). NOT a required context: it cannot pass today, and a
+#     required check that cannot be satisfied wedges every pull request in the
+#     repository including the ones that would fix it (D-90).
+#   0 coherent · 1 findings · 2 could not verify (unreadable catalogue, unreachable
+#   repository, empty scope, no gh). Never a silent pass.
+toolchain-catalogue: ## Validate the approved toolchain catalogue itself (offline)
+	python3 scripts/check_toolchain_baseline.py
+
+toolchain-baseline: ## Diff every fleet repository's default branch against the catalogue (live, gh)
+	python3 scripts/check_toolchain_baseline.py --live
+
 readiness: ## Per-repo verdict: READY / READY-WITH-FIXES / BLOCKED
 	# No `>/dev/null` here: this script puts its one-line table on stderr and its
 	# detail (findings JSON when OUT= is omitted) on stdout, so redirecting stdout
@@ -174,6 +198,32 @@ backup: ## Encrypted, decrypt-verified off-host backup of Terraform state
 	@test -n "$(BACKUP_DEST)" || { echo "usage: BACKUP_DEST=<off-host-dir> make backup"; exit 1; }
 	BACKUP_DEST=$(BACKUP_DEST) bash scripts/state_backup.sh
 
+# The systemd units are committed, not hand-written into ~/.config: this target is the
+# only supported way to install them, so the running schedule and the reviewed schedule
+# cannot diverge. Before this existed the schedule lived only in one home directory.
+backup-timer-install: ## Install the nightly state-backup timer from the committed units
+	@install -d "$(HOME)/.config/systemd/user"
+	@for u in service timer; do \
+	  cp "systemd/jolarca-state-backup.$$u" "$(HOME)/.config/systemd/user/" && \
+	  diff -q "systemd/jolarca-state-backup.$$u" "$(HOME)/.config/systemd/user/jolarca-state-backup.$$u" >/dev/null || { echo "FAIL: $$u did not land byte-identically"; exit 1; }; \
+	done
+	systemctl --user daemon-reload
+	systemctl --user enable --now jolarca-state-backup.timer
+	@echo "installed. verify: systemctl --user list-timers | grep jolarca"
+	@test "$$(loginctl show-user $$(whoami) --property=Linger --value 2>/dev/null)" = "yes" \
+	  || echo "WARNING: Linger=no -- a user timer will not run after a reboot with no login. See systemd/jolarca-state-backup.timer."
+
+backup-timer-status: ## Show the backup timer, its next run and the last journal entries
+	systemctl --user list-timers --all | grep jolarca || echo "timer not installed"
+	-loginctl show-user $$(whoami) --property=Linger
+	-journalctl --user -u jolarca-state-backup -n 12 --no-pager
+	@systemctl --user show jolarca-state-backup.service \
+	  --property=Result --property=ExecMainStatus --property=NRestarts | tr '\n' ' '; \
+	  echo ""; \
+	  echo "  read NRestarts: Result describes only the LAST attempt, so a control that failed and then \
+succeeded on retry reports 'success' and the failure is invisible here (measured 2026-10-30: \
+NRestarts=1 with Result=success)"
+
 # Step 6b step 1 of docs/state-migration-runbook.md. The instruction used to be "land this file only
 # in the PR that runs step 2", i.e. transcribe a protection object by hand — the friction D-87 row
 # (3) says trains humans to hand-write protection objects. Two scripted replacements for that failed
@@ -181,11 +231,12 @@ backup: ## Encrypted, decrypt-verified off-host backup of Terraform state
 # because its own comment mentions `pull_request`, and an awk variant emitted zero lines which
 # `terraform fmt -check` then reported as clean. So this extracts by BLOCK syntax, asserts the result
 # is inert, and refuses rather than write something an operator will import.
-#   make adoption-block                 # writes rulesets.tf (refuses if it already exists)
+#   make adoption-block                 # writes rulesets.tf for jolarca-consent (refuses to overwrite)
+#   make adoption-block REPO=jolarca-vendor OUT=rulesets-vendor.tf   # D-94: any ruleset-only repo
 #   make adoption-block OUT=/tmp/preview.tf
 #   0 one inert adoption · 1 refused (ambiguous, contaminated, or would overwrite) · 2 cannot verify
 adoption-block: ## Extract Step 6b's inert adoption block for terraform import
-	python3 scripts/extract_adoption_block.py --out $(if $(OUT),$(OUT),rulesets.tf)
+	python3 scripts/extract_adoption_block.py --repo $(if $(REPO),$(REPO),jolarca-consent) --out $(if $(OUT),$(OUT),rulesets.tf)
 
 # Phase 3 first-commit pipeline gate — docs/runbooks/first-commit-pipeline.md.
 # STRICTLY READ-ONLY: every subprocess call passes an allowlist, so this target

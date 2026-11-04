@@ -74,7 +74,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
       - run: pip install -r requirements.txt
       - run: python3 scripts/validate_repos.py
       # D-62: this job's own name is a required status check, and the policy
@@ -154,6 +154,21 @@ jobs:
       # tests/test_check_gate_parity.py in the same commit.
       - name: Gate parity — every gate has a control that can fail (D-80)
         run: python3 scripts/check_gate_parity.py
+      # ADR-0010 M-06. docs/security/toolchain-catalogue.yml is the fleet's single
+      # approved toolchain answer, and a catalogue nobody checks is documentation.
+      # This step validates the approval RECORD offline: exact pins rather than
+      # version requests, a named reviewer, an unexpired review deadline, a full-SHA
+      # action pin with a 64-hex artifact digest, and no duplicate YAML key — the last
+      # because yaml keeps the LAST duplicate silently, so appending `python:` twice
+      # would delete an approval and still load. It is deterministic and needs no
+      # token, which is why it can sit in a required context.
+      # The fleet comparison (--live, L1-L7 over every repository's default branch) is
+      # deliberately NOT wired here. It cannot go green today — 16 of 17 default
+      # branches carry no mise configuration at all — and a required check that cannot
+      # be satisfied wedges every pull request, including the ones that would fix it
+      # (D-90). Run it with `make toolchain-baseline`.
+      - name: Approved toolchain catalogue is coherent and unexpired (M-06)
+        run: python3 scripts/check_toolchain_baseline.py
       # D-81: apply.yml fires on `push: main` for repos/**, policy/**, *.tf, *.tfvars and
       # ITSELF, then runs `terraform apply -input=false -auto-approve tfplan`. Measured on the two
       # open Dependabot PRs: #87 (setup-python 7.0.0->7.1.0) and #68 (upload-artifact 7.0.1->7.0.2)
@@ -194,7 +209,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
       - run: pip install -r requirements.txt
       - run: python3 scripts/compliance_check.py
 
@@ -227,7 +242,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
       - run: pip install -r requirements-dev.txt
       - run: bash tests/test_check_plan_safety.sh
       # FA-control-05: scripts/hash_evidence.sh enforced evidence integrity for months with
@@ -264,7 +279,10 @@ jobs:
       # .gitignore excludes it), so the previous `.venv/bin/python ... || python ...` always fell
       # through and the fallback owned the verdict. requirements-dev.txt pins pytest exactly and is
       # installed into this interpreter by the step above, so `python` IS the pinned environment.
-      # Guarded by tests/test_ci_steps_are_real.py.
+      # Guarded by tests/test_ci_gates_are_real.py (the module was renamed from
+      # test_ci_steps_are_real.py before the commit that cited it, leaving this pointer dead from
+      # 2026-10-05 until D-72; tests/test_ci_gates_are_real.py now also fails on any workflow that
+      # cites a nonexistent tests/ or scripts/ path, comments included, so the class cannot recur).
       - name: Regression tests
         run: python -m pytest tests/ -q
 
@@ -276,7 +294,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.16"
       - run: pip install -r requirements-dev.txt
       - run: ruff check scripts/ tests/
       - run: ruff format --check scripts/ tests/
@@ -293,4 +311,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          # M-10: without this the format check ran on whatever the runner image offered,
+          # while plan.yml and apply.yml pinned 1.16.1. Same tool, two answers, one repo --
+          # the third row of ADR-0010's Context table, now closed.
+          terraform_version: "1.16.1"
       - run: terraform fmt -check -recursive
