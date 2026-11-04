@@ -10,6 +10,26 @@ part of the SOC 2 CC8.1 / ISO 27001 A.8.32 audit trail and is not optional.
 
 ## [Unreleased]
 
+### Docs — 2026-11-04 (D-91 re-measured: merged but NOT enacted, and one forecast that did not come true)
+
+- PR #107 squash-merged as `d21b56b`; its armed `Production — Apply` run was force-cancelled at
+  **`steps_started=0`**, so the plan, the refusal gate and the apply never ran. Measured after: live
+  ruleset `24087580` still requires **seven** contexts with `Dependency review` among them
+  (`updated_at` unchanged at `2026-10-27T20:53:08`), the legacy `branches/main/protection` endpoint
+  answers HTTP 404 so the ruleset is the only enforcement layer, and `Dependency review` is
+  `failure` on **all five** open consent PRs (#9 #10 #11 #12 #13). The exception is committed;
+  nothing is relieved until a human runs the apply §5 reserves.
+- D-91's own forecast corrected. The row predicted `drift_detect` would report consent as weakened or
+  strengthened when the two governed places disagreed. It does **neither**: consent is filed under
+  `branch_protection.ruleset_protected`, a bucket that reaches no output, and the single `DRIFT:` line
+  belongs to `jolarca-vendor`'s empty required-context list (D-93). Declared vs live is **6 vs 7**
+  contexts right now and no gate says so — recorded because silence, not a false alarm, is the weaker
+  outcome: nothing flags a suspension that is still pending.
+- Both rows were inserted inside D-91's own table, so the heading set is unchanged (105 `###`,
+  94 gate-visible ids, all unique) and this is a dated status update, not a new finding id.
+- No hashed artifact changed: `docs/drift-findings.md` and this file sit outside `EVIDENCE_DIRS`, the
+  evidence registry is untouched and `hash_evidence.sh --check` still exits 0.
+
 ### Changed — 2026-10-27 (D-91: `Dependency review` suspended on consent under a dated exception, because it could never pass)
 
 - Measured, not inferred: consent's `main` has **no** `requirements.txt` (only `pyproject.toml`, which
