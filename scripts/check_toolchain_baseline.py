@@ -49,6 +49,12 @@ Runtime check, always run, offline and deterministic (M-10):
       the same unchanged declarations produced 3.12.15 on one run and 3.12.16 an
       hour later. Absent is worse: the version is then whatever the action defaults
       to, which is announced nowhere.
+  R8 also resolves `uses: ./.github/actions/...` local composite actions, in the
+      order GitHub applies them — caller `with:`, then the composite's own step
+      value, then the composite's `inputs.<field>.default` — and sweeps composites no
+      workflow calls, so a pin cannot hide by being unreferenced today. Without this
+      the rule passed over jolarca-infrastructure's only Terraform pin, which lives
+      in .github/actions/terraform-setup/action.yml as an input default.
 
 Fleet check, run against a real source (--live or --from-dir):
   L1  a declared tool absent from the catalogue and not overridden for that repo
@@ -266,14 +272,106 @@ RUNTIME_ACTIONS = {
     "actions/setup-python": ("python-version", "python"),
     "hashicorp/setup-terraform": ("terraform_version", "terraform"),
 }
+RUNTIME_ACTIONS = {
+    "actions/setup-python": ("python-version", "python"),
+    "hashicorp/setup-terraform": ("terraform_version", "terraform"),
+}
+
+# `uses: ./.github/actions/something` is a LOCAL composite action. GitHub resolves it
+# to <path>/action.yml, then to <path>.yml. R8 originally walked only
+# .github/workflows/*.yml, so a pin living inside a composite was invisible: measured
+# on jolarca-dev/jolarca-infrastructure, terraform_version 1.9.8 sits in
+# .github/actions/terraform-setup/action.yml as an input default, consumed by
+# `uses: ./.github/actions/terraform-setup`. That is D-84's shape again — a gate that
+# reports coverage because its glob happens to overlap the objects it must see.
+LOCAL_REF = re.compile(r"^\./(.+)$")
 
 
-def runtime_errors(cat: dict[str, Any], workflows_dir: Path, repo: str) -> tuple[list[str], int]:
+def _normalise(name: object) -> str:
+    """`terraform-version` and `terraform_version` are the same knob spelled twice."""
+    return str(name).replace("-", "_").strip().lower()
+
+
+def _is_literal(value: Any) -> bool:
+    """A composite step normally carries `${{ inputs.terraform_version }}`, not a version.
+
+    Treating that template as the pin would compare the literal string
+    `${{ inputs.terraform_version }}` against the approved release and report a false
+    finding on every correctly-written composite — a gate that cries wolf is a gate
+    that gets its exception filed. Template values fall through to the next source.
+    """
+    return value is not None and "${{" not in str(value)
+
+
+def _runtime_steps(doc: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """(locator, step) for every step in a workflow job or in a composite's runs."""
+    found: list[tuple[str, dict[str, Any]]] = []
+    jobs = doc.get("jobs")
+    if isinstance(jobs, dict):
+        for job_id, job in jobs.items():
+            if isinstance(job, dict):
+                for index, step in enumerate(job.get("steps") or []):
+                    if isinstance(step, dict):
+                        found.append((f"{job_id}[{index}]", step))
+    runs = doc.get("runs")
+    if isinstance(runs, dict):
+        for index, step in enumerate(runs.get("steps") or []):
+            if isinstance(step, dict):
+                found.append((f"runs[{index}]", step))
+    return found
+
+
+def _resolve_composite(root: Path, rel: str) -> Path | None:
+    for candidate in (root / rel / "action.yml", Path(str(root / rel) + ".yml")):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _input_default(doc: dict[str, Any], field: str) -> Any:
+    inputs = doc.get("inputs")
+    if not isinstance(inputs, dict):
+        return None
+    for name, spec in inputs.items():
+        if _normalise(name) == _normalise(field) and isinstance(spec, dict):
+            return spec.get("default")
+    return None
+
+
+def _verdict(
+    where: str, ref: str, field: str, tool: str, value: Any, source: str, approved: dict[str, str]
+) -> str | None:
+    want = approved.get(tool)
+    if value is None:
+        return (
+            f"R8: {where} runs {ref} with no {field} from any of {source}; the version is "
+            "whatever the action defaults to and is announced nowhere"
+        )
+    if not want or str(value) != want:
+        return (
+            f"R8: {where} declares {tool} {value!r} via {source}, approved is {want!r}; "
+            "a prefix is a request, not a release"
+        )
+    return None
+
+
+def runtime_errors(
+    cat: dict[str, Any], root: Path, workflows_dir: Path, actions_dir: Path, repo: str
+) -> tuple[list[str], int]:
     """R8: the interpreter a required check runs on must be the approved release.
 
-    Returns (findings, steps_examined). The count is the non-vacuity guard: a glob
-    that matched nothing would otherwise report a clean pass over zero files, and
-    this repository has been fooled by that shape three times already.
+    Resolution order for a value is the order GitHub applies it, not the order that is
+    easiest to read: the caller's `with:` wins, then the composite's own step value,
+    then the composite's `inputs.<field>.default`. Only after all three is the pin
+    genuinely unannounced. Checking just the composite default would flag correct
+    callers and pass broken ones.
+
+    A composite nobody calls is still swept, so a floating pin cannot hide by being
+    unreferenced today and wired up tomorrow.
+
+    Returns (findings, steps_examined). The count is the non-vacuity guard: a glob that
+    matched nothing would otherwise report a clean pass over zero files, and this
+    repository has been fooled by that shape repeatedly.
     """
     findings: list[str] = []
     tools_raw = cat.get("tools")
@@ -292,46 +390,139 @@ def runtime_errors(cat: dict[str, Any], workflows_dir: Path, repo: str) -> tuple
         if isinstance(item, dict) and isinstance(item.get("covers"), list):
             exc[str(item.get("file"))] = {str(rule) for rule in item["covers"]}
 
-    examined = 0
-    for path in sorted(workflows_dir.glob("*.yml")):
-        covered = exc.get(f".github/workflows/{path.name}", set())
+    def covered_by(rel_path: str) -> bool:
+        return "R8" in exc.get(rel_path, set())
+
+    def load(path: Path) -> dict[str, Any] | None:
         try:
             doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         except (OSError, yaml.YAMLError) as parse_error:
             findings.append(f"R8: {path.name}: could not be parsed ({parse_error})")
+            return None
+        return doc if isinstance(doc, dict) else None
+
+    examined = 0
+    visited: set[Path] = set()
+
+    for path in sorted(workflows_dir.glob("*.yml")):
+        rel_wf = f".github/workflows/{path.name}"
+        doc = load(path)
+        if doc is None:
             continue
-        if not isinstance(doc, dict):
-            continue
-        jobs = doc.get("jobs")
-        if not isinstance(jobs, dict):
-            continue
-        for job_id, job in jobs.items():
-            if not isinstance(job, dict):
+        for locator, step in _runtime_steps(doc):
+            uses = step.get("uses")
+            if not isinstance(uses, str):
                 continue
-            for step in job.get("steps") or []:
-                if not isinstance(step, dict) or not isinstance(step.get("uses"), str):
+            ref = uses.split("@", 1)[0]
+            local = LOCAL_REF.match(ref)
+            if local:
+                comp = _resolve_composite(root, local.group(1))
+                if comp is None:
+                    findings.append(
+                        f"R8: {path.name}:{locator} calls {ref}, which resolves to no "
+                        "action.yml — the pin cannot be evaluated and is not assumed safe"
+                    )
                     continue
-                ref = step["uses"].split("@", 1)[0]
-                spec = RUNTIME_ACTIONS.get(ref)
+                visited.add(comp)
+                comp_doc = load(comp)
+                if comp_doc is None:
+                    continue
+                rel_comp = comp.relative_to(root).as_posix()
+                for comp_locator, comp_step in _runtime_steps(comp_doc):
+                    comp_ref = comp_step.get("uses")
+                    if not isinstance(comp_ref, str):
+                        continue
+                    spec = RUNTIME_ACTIONS.get(comp_ref.split("@", 1)[0])
+                    if spec is None:
+                        continue
+                    field, tool = spec
+                    examined += 1
+                    if covered_by(rel_wf):
+                        continue
+                    caller_with = step.get("with")
+                    value = caller_with.get(field) if isinstance(caller_with, dict) else None
+                    sources = [f"caller {path.name}"]
+                    if not _is_literal(value):
+                        own_with = comp_step.get("with")
+                        value = own_with.get(field) if isinstance(own_with, dict) else None
+                        sources.append(f"step {rel_comp}:{comp_locator}")
+                    if not _is_literal(value):
+                        value = _input_default(comp_doc, field)
+                        sources.append(f"default in {rel_comp}")
+                    if not _is_literal(value):
+                        examined_local = f"{path.name}:{locator}"
+                        findings.append(
+                            f"R8: {examined_local} runs {comp_ref} through {rel_comp} with no "
+                            f"literal {field} at the caller, in the composite step, or as an "
+                            "input default; the version is announced nowhere"
+                        )
+                        continue
+                    verdict = _verdict(
+                        f"{path.name}:{locator}",
+                        comp_ref,
+                        field,
+                        tool,
+                        value,
+                        ", ".join(sources),
+                        approved,
+                    )
+                    if verdict:
+                        findings.append(verdict)
+                continue
+            spec = RUNTIME_ACTIONS.get(ref)
+            if spec is None:
+                continue
+            field, tool = spec
+            examined += 1
+            if covered_by(rel_wf):
+                continue
+            with_block = step.get("with")
+            value = with_block.get(field) if isinstance(with_block, dict) else None
+            verdict = _verdict(
+                f"{path.name}:{locator}", ref, field, tool, value, path.name, approved
+            )
+            if verdict:
+                findings.append(verdict)
+
+    # Orphan sweep: a composite that no workflow calls today is still a pin that can be
+    # wired up tomorrow, and its own default is the value it would contribute.
+    if actions_dir.is_dir():
+        # Recursive: GitHub permits a composite at any depth under .github/actions, and
+        # a one-level glob would reintroduce the exact blindness this change removes.
+        for comp in sorted(actions_dir.glob("**/action.yml")):
+            if comp in visited:
+                continue
+            rel_comp = comp.relative_to(root).as_posix() if root in comp.parents else comp.name
+            if covered_by(rel_comp):
+                continue
+            comp_doc = load(comp)
+            if comp_doc is None:
+                continue
+            for _locator, step in _runtime_steps(comp_doc):
+                uses = step.get("uses")
+                if not isinstance(uses, str):
+                    continue
+                spec = RUNTIME_ACTIONS.get(uses.split("@", 1)[0])
                 if spec is None:
                     continue
                 field, tool = spec
                 examined += 1
-                if "R8" in covered:
+                own_with = step.get("with")
+                value = own_with.get(field) if isinstance(own_with, dict) else None
+                if not _is_literal(value):
+                    value = _input_default(comp_doc, field)
+                if not _is_literal(value):
+                    findings.append(
+                        f"R8: {rel_comp} (unreferenced) runs {uses} with no literal {field} "
+                        "in its step or as an input default; the version is announced nowhere"
+                    )
                     continue
-                with_block = step.get("with")
-                value = with_block.get(field) if isinstance(with_block, dict) else None
-                want = approved.get(tool)
-                if value is None:
-                    findings.append(
-                        f"R8: {path.name}:{job_id} runs {ref} with no {field}; the version "
-                        "is whatever the action defaults to and is announced nowhere"
-                    )
-                elif not want or str(value) != want:
-                    findings.append(
-                        f"R8: {path.name}:{job_id} declares {tool} {value!r}, approved is "
-                        f"{want!r}; a prefix is a request, not a release"
-                    )
+                verdict = _verdict(
+                    f"{rel_comp} (unreferenced)", uses, field, tool, value, rel_comp, approved
+                )
+                if verdict:
+                    findings.append(verdict)
+
     return findings, examined
 
 
@@ -483,6 +674,18 @@ def main(argv: list[str] | None = None) -> int:
         help="workflow directory to apply R8 to (for tests)",
     )
     parser.add_argument(
+        "--root",
+        type=Path,
+        default=REPO_ROOT,
+        help="repository root used to resolve `uses: ./...` composite paths",
+    )
+    parser.add_argument(
+        "--actions-dir",
+        type=Path,
+        default=REPO_ROOT / ".github" / "actions",
+        help="composite-action directory for R8's orphan sweep (for tests)",
+    )
+    parser.add_argument(
         "--repo",
         default=REPO_ROOT.name,
         help="repository name whose per-repo overrides apply (for tests)",
@@ -518,7 +721,9 @@ def main(argv: list[str] | None = None) -> int:
     errors = catalogue_errors(cat, today)
     unverifiable: list[str] = []
 
-    runtime_findings, examined = runtime_errors(cat, args.workflows_dir, args.repo)
+    runtime_findings, examined = runtime_errors(
+        cat, args.root, args.workflows_dir, args.actions_dir, args.repo
+    )
     errors.extend(runtime_findings)
 
     # Non-vacuity: the catalogue approves runtimes, so if no step that consumes them
@@ -577,20 +782,23 @@ def main(argv: list[str] | None = None) -> int:
             print(line, file=sys.stderr)
 
     if unverifiable:
-        print(
-            f"CANNOT VERIFY: {len(unverifiable)} repository(s) could not be read; "
-            f"{len(errors)} finding(s) are reported but the scope is not complete",
-            file=sys.stderr,
-        )
+        if not args.as_json:
+            print(
+                f"CANNOT VERIFY: {len(unverifiable)} repository(s) could not be read; "
+                f"{len(errors)} finding(s) are reported but the scope is not complete",
+                file=sys.stderr,
+            )
         return 2
     if errors:
-        print(f"FAIL: {len(errors)} finding(s)", file=sys.stderr)
+        if not args.as_json:
+            print(f"FAIL: {len(errors)} finding(s)", file=sys.stderr)
         return 1
-    print(
-        f"OK: catalogue coherent ({args.catalogue.name}); {len(cat.get('tools') or {})} "
-        f"approved tool(s); {examined} workflow runtime step(s) examined against the "
-        "approved releases"
-    )
+    if not args.as_json:
+        print(
+            f"OK: catalogue coherent ({args.catalogue.name}); {len(cat.get('tools') or {})} "
+            f"approved tool(s); {examined} workflow runtime step(s) examined against the "
+            "approved releases"
+        )
     return 0
 
 
