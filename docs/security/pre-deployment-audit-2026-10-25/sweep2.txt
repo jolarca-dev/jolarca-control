@@ -1,0 +1,145 @@
+=== A. SECRET SCANNING / PUSH PROTECTION / VULN ALERTS ===
+.github	secret_scan=disabled	push_prot=disabled	adv_sec=NULL
+jolarca	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-compliance	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-consent	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-control	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-data	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-docs	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-dr	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-hermes-agents	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-identity	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-infrastructure	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-legal	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-observability	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-payments	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-runbooks	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-security	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+jolarca-vendor	secret_scan=enabled	push_prot=enabled	adv_sec=NULL
+
+=== B. BRANCH PROTECTION DETAIL (main) ===
+.github	reviews=0	codeowner=n/a	strict=n/a	enforce_admins=true	contexts=[]	linear=true
+jolarca	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["gitleaks","codeql","docker-scan","secrets","frontend-typecheck","frontend-lint","backend","trivy","dependency-audit","frontend-unit","frontend-openapi-drift","frontend-build"]	linear=true
+jolarca-compliance	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["lint","governance","security","retention-tests"]	linear=true
+jolarca-consent	reviews=none	codeowner=n/a	strict=n/a	enforce_admins=n/a	contexts=[]	linear=n/a
+jolarca-control	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["Validate Repo Allow-List","Policy Compliance Check","Repository Secret Pattern Scan","SAST (semgrep)"]	linear=true
+jolarca-data	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["compliance","security","ci"]	linear=true
+jolarca-docs	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["lint"]	linear=true
+jolarca-dr	reviews=none	codeowner=n/a	strict=n/a	enforce_admins=n/a	contexts=[]	linear=n/a
+jolarca-hermes-agents	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["lint","test","security"]	linear=true
+jolarca-identity	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["shellcheck","gitleaks (full history)"]	linear=true
+jolarca-infrastructure	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["ci","security","compliance"]	linear=true
+jolarca-legal	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["security","ci"]	linear=true
+jolarca-observability	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["Lint & Type Check","Tests"]	linear=true
+jolarca-payments	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["ci","security"]	linear=true
+jolarca-runbooks	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["lint-validate-test","secret-scan"]	linear=true
+jolarca-security	reviews=0	codeowner=n/a	strict=true	enforce_admins=true	contexts=["secret-scan","yaml-lint","markdown-lint","policy-tests"]	linear=true
+jolarca-vendor	reviews=none	codeowner=n/a	strict=n/a	enforce_admins=n/a	contexts=[]	linear=n/a
+
+=== C. RULESETS ===
+.github	rulesets=0
+jolarca	rulesets=0
+jolarca-compliance	rulesets=0
+jolarca-consent	rulesets=1
+jolarca-control	rulesets=0
+jolarca-data	rulesets=0
+jolarca-docs	rulesets=0
+jolarca-dr	rulesets=1
+jolarca-hermes-agents	rulesets=0
+jolarca-identity	rulesets=0
+jolarca-infrastructure	rulesets=0
+jolarca-legal	rulesets=0
+jolarca-observability	rulesets=0
+jolarca-payments	rulesets=0
+jolarca-runbooks	rulesets=0
+jolarca-security	rulesets=0
+jolarca-vendor	rulesets=1
+
+=== D. COMMIT VOLUME / FIRST+LAST COMMIT ===
+.github	commits~=4	last=2026-10-15T14:16:23Z	contributors=JourneyOfLife
+jolarca	commits~=108	last=2026-10-10T14:08:01Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-compliance	commits~=21	last=2026-10-10T13:51:58Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-consent	commits~=3	last=2026-10-15T14:25:39Z	contributors=JourneyOfLife
+jolarca-control	commits~=95	last=2026-10-20T19:20:07Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-data	commits~=13	last=2026-09-28T20:52:42Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-docs	commits~=3	last=2026-09-30T14:57:46Z	contributors=JourneyOfLife
+jolarca-dr	commits~=2	last=2026-09-28T19:49:10Z	contributors=JourneyOfLife
+jolarca-hermes-agents	commits~=40	last=2026-10-04T13:43:56Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-identity	commits~=7	last=2026-10-04T15:13:19Z	contributors=JourneyOfLife
+jolarca-infrastructure	commits~=43	last=2026-10-10T12:27:58Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-legal	commits~=17	last=2026-09-28T21:47:53Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-observability	commits~=2	last=2026-10-15T14:25:34Z	contributors=JourneyOfLife
+jolarca-payments	commits~=5	last=2026-10-10T14:08:10Z	contributors=JourneyOfLife
+jolarca-runbooks	commits~=12	last=2026-10-10T12:34:05Z	contributors=JourneyOfLife
+jolarca-security	commits~=19	last=2026-10-15T14:25:29Z	contributors=JourneyOfLife,dependabot[bot]
+jolarca-vendor	commits~=3	last=2026-10-04T15:59:08Z	contributors=JourneyOfLife
+
+=== E. OPEN PRs (all repos, with author + age) ===
+.github	#4	JourneyOfLife	draft=false	mergeable=UNKNOWN	2026-10-04T15:00:55Z	ci: finish pinning the shared workflows; remove the last fabricated SHA (D-43 part 1)
+jolarca	#210	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-21T00:56:58Z	chore(deps-dev): Bump vite from 8.2.1 to 8.3.4 in /frontend
+jolarca	#209	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-18T14:06:53Z	chore(deps): Bump the weekly-minor-patch group across 1 directory with 22 updates
+jolarca	#208	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-18T14:04:31Z	chore(deps): Bump the weekly-minor-patch group across 1 directory with 14 updates
+jolarca	#207	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-18T14:03:11Z	chore(deps): Bump @stripe/stripe-js from 10.0.0 to 10.1.0 in /frontend in the stripe-js-patch group
+jolarca	#206	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-18T14:03:04Z	chore(deps-dev): Bump the vitest-patch group in /frontend with 2 updates
+jolarca	#205	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-18T14:02:46Z	chore(deps): Bump aquasecurity/trivy-action from c03d123cb480c08c69b054af418ea5e69fe6e57e to 6abccf398f78b4c337599c0656f933d91efb91a0
+jolarca	#204	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-11T14:10:25Z	chore(deps): Bump django from 6.1.1 to 6.1.2 in /backend
+jolarca	#202	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-11T14:06:38Z	chore(deps): Bump @tanstack/react-table from 8.21.3 to 9.2.6 in /frontend
+jolarca	#201	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-11T14:06:21Z	chore(deps): Bump zod from 3.25.76 to 4.6.5 in /frontend
+jolarca	#198	JourneyOfLife	draft=false	mergeable=MERGEABLE	2026-10-08T11:04:50Z	docs(incident): close JOL-PROC-20261008-01 with the merge proof and the disk-full epilogue
+jolarca	#195	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-08T10:05:00Z	chore(deps): Bump next from 15.5.26 to 15.5.27 in /frontend
+jolarca	#194	JourneyOfLife	draft=true	mergeable=MERGEABLE	2026-10-07T21:01:54Z	feat(infra): assert every dependabot label exists (§8 G40, wiring inert)
+jolarca	#161	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-04T19:16:38Z	chore(deps): Bump the next-toolchain-major group across 1 directory with 2 updates
+jolarca	#159	JourneyOfLife	draft=false	mergeable=CONFLICTING	2026-10-04T16:27:39Z	docs(core): name the real peer-drop cause, and withdraw the @swc/helpers override CI rejected
+jolarca	#120	JourneyOfLife	draft=false	mergeable=MERGEABLE	2026-09-28T17:24:29Z	feat(compliance): add consent API endpoints (GAP-C01/C04)
+jolarca	#91	JourneyOfLife	draft=true	mergeable=CONFLICTING	2026-09-17T19:59:08Z	chore: land outstanding WIP (PG 17 alignment + formatter reflow)
+jolarca-compliance	#18	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-16T23:33:46Z	chore(deps-dev): bump pre-commit from 4.6.2 to 4.7.0
+jolarca-compliance	#17	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-16T23:33:37Z	chore(deps): bump actions/setup-python from 5.6.0 to 7.0.0
+jolarca-consent	#8	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-19T06:25:42Z	ci(deps): bump github/codeql-action/init from 3.38.2 to 4.39.0
+jolarca-consent	#7	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-19T06:24:36Z	ci(deps): bump github/codeql-action/analyze from 3.38.2 to 4.39.0
+jolarca-consent	#2	app/dependabot	draft=false	mergeable=UNKNOWN	2026-09-28T15:02:42Z	ci(deps): Bump gitleaks/gitleaks-action from 2.3.9 to 3.0.0
+jolarca-control	#85	JourneyOfLife	draft=false	mergeable=UNKNOWN	2026-10-19T17:43:47Z	docs(classification): register data stores outside git, correct stale repo table (D-79)
+jolarca-control	#84	JourneyOfLife	draft=false	mergeable=UNKNOWN	2026-10-19T16:52:07Z	docs(D-77): the positive control failed -- identity defect, not a token defect
+jolarca-control	#82	app/dependabot	draft=false	mergeable=UNKNOWN	2026-10-19T06:22:38Z	chore(deps)(deps-dev): bump ruff from 0.16.10 to 0.17.1
+jolarca-control	#79	JourneyOfLife	draft=false	mergeable=UNKNOWN	2026-10-17T11:34:52Z	test(ci): workflows may not cite paths that do not exist (D-72); fix a 12-day dead guard pointer
+jolarca-control	#68	app/dependabot	draft=false	mergeable=UNKNOWN	2026-10-12T19:13:29Z	ci(deps)(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2
+jolarca-control	#54	JourneyOfLife	draft=false	mergeable=UNKNOWN	2026-10-07T22:05:42Z	docs(d33): capture enforcement rehearsal and reconcile declared branch protection [A-06]
+jolarca-control	#40	JourneyOfLife	draft=false	mergeable=UNKNOWN	2026-10-05T16:18:01Z	ci: correct a dead path in a workflow comment, and forbid the class
+jolarca-docs	#2	app/dependabot	draft=false	mergeable=MERGEABLE	2026-09-28T21:22:20Z	build(deps): bump pyyaml from 6.0.2 to 6.0.3
+jolarca-docs	#1	app/dependabot	draft=false	mergeable=MERGEABLE	2026-09-28T21:22:00Z	ci(deps): bump actions/checkout from 4.2.2 to 7.0.1
+jolarca-dr	#1	JourneyOfLife	draft=false	mergeable=MERGEABLE	2026-10-05T20:42:54Z	ci: the actions/checkout pin is v5.0.0, not v4.3.0 (two comment labels)
+jolarca-hermes-agents	#46	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-14T19:32:17Z	build(deps): bump actions/setup-node from 7.0.0 to 7.1.0
+jolarca-hermes-agents	#45	JourneyOfLife	draft=false	mergeable=MERGEABLE	2026-10-04T14:44:56Z	ci: declare engines.node >=22 and gate it against the CI node-version
+jolarca-identity	#4	JourneyOfLife	draft=false	mergeable=MERGEABLE	2026-10-04T18:50:36Z	chore(ci): enable dependabot for the SHA pins added under D-44
+jolarca-infrastructure	#48	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-23T08:34:07Z	chore(deps): bump bpg/proxmox from 0.113.1 to 0.117.0 in /terraform/environments/staging
+jolarca-infrastructure	#47	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-23T08:34:00Z	chore(deps): bump hashicorp/google from 8.1.0 to 8.7.0 in /terraform/environments/production
+jolarca-infrastructure	#46	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-23T08:34:00Z	chore(deps): bump hashicorp/google from 6.50.0 to 8.7.0 in /terraform/environments/staging
+jolarca-infrastructure	#45	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-23T08:33:52Z	chore(deps): bump bpg/proxmox from 0.113.1 to 0.117.0 in /terraform/environments/production
+jolarca-infrastructure	#34	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-01T08:40:13Z	chore(deps): update ansible-core requirement from <2.19,>=2.17 to >=2.17,<2.20
+jolarca-infrastructure	#33	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-01T08:40:03Z	chore(deps): bump ansible-lint from 24.10.0 to 26.9.0
+jolarca-observability	#2	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-09T20:49:11Z	chore(deps): Bump the python-dependencies group across 1 directory with 5 updates
+jolarca-observability	#1	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-09T20:33:26Z	ci(deps): Bump the github-actions group across 1 directory with 2 updates
+jolarca-payments	#3	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-10T14:09:00Z	chore(deps): bump actions/setup-python from 5.3.0 to 7.0.0 in the actions group
+jolarca-runbooks	#5	app/dependabot	draft=false	mergeable=MERGEABLE	2026-10-16T22:24:31Z	chore(deps): update ruff requirement from <0.17,>=0.16.9 to >=0.16.9,<0.18
+jolarca-runbooks	#3	app/dependabot	draft=false	mergeable=UNKNOWN	2026-10-10T12:05:10Z	ci(deps): bump actions/checkout from 4.4.0 to 7.0.1
+jolarca-runbooks	#2	app/dependabot	draft=false	mergeable=UNKNOWN	2026-10-10T12:05:06Z	ci(deps): bump actions/setup-python from 5.6.0 to 7.0.0
+jolarca-security	#6	JourneyOfLife	draft=false	mergeable=UNKNOWN	2026-10-05T21:40:59Z	ci: the pin comment must not name a version dependabot cannot update
+jolarca-vendor	#3	JourneyOfLife	draft=false	mergeable=MERGEABLE	2026-10-04T18:50:40Z	chore(ci): enable dependabot for the SHA pins added under D-44
+
+=== F. LICENSE FILE IDENTIFICATION ===
+.github	spdx=NOASSERTION | LICENSE	head=INTERNAL USE ONLY
+jolarca	spdx=AGPL-3.0 | LICENSE	head=                    GNU AFFERO GENERAL PUBLIC LICENSE                        Version 3, 19 November 2007
+jolarca-compliance	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 jolarca-dev. All rights reserved.
+jolarca-consent	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Jolarca (jolarca-dev). All Rights Reserved.
+jolarca-control	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Journey of Life. All rights reserved.
+jolarca-data	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Journey of Life. All rights reserved.
+jolarca-docs	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Journey of Life. All rights reserved.
+jolarca-dr	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 JOL Infrastructure / jolarca-dev. All rights reserved.
+jolarca-hermes-agents	spdx={"message":"Not Found","documentation_url":"https://docs.github.com/rest/licenses/licenses#get-the-license-for-a-repository","status":"404"}NO-LICENSE-ENDPOINT	head=Copyright (c) 2026 jolarca-dev. All rights reserved.
+jolarca-identity	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 jolarca-dev. All Rights Reserved.
+jolarca-infrastructure	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Journey of Life. All rights reserved.
+jolarca-legal	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Journey of Life. All rights reserved.
+jolarca-observability	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 jolarca-dev. All Rights Reserved.
+jolarca-payments	spdx={"message":"Not Found","documentation_url":"https://docs.github.com/rest/licenses/licenses#get-the-license-for-a-repository","status":"404"}NO-LICENSE-ENDPOINT	head=
+jolarca-runbooks	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Jolarca. All rights reserved.
+jolarca-security	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 JolArca / jolarca-dev. All Rights Reserved.
+jolarca-vendor	spdx=NOASSERTION | LICENSE	head=Copyright (c) 2026 Journey Of Life (journeyoflife-org). All rights reserved.

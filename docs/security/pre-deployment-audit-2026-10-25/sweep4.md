@@ -1,0 +1,244 @@
+# raw probe — sweep4.txt (wrapped 2026-10-26 so hash_evidence.sh:115 covers it)
+```
+=== M2. ACTION PIN INTEGRITY (fixed verifier; uses: not on a 40-hex SHA) ===
+UNPINNED  .github/.github/workflows/ci-base.yml  139:        uses: actions/setup-python@v5
+UNPINNED  .github/.github/workflows/ci-base.yml  157:        uses: actions/setup-node@v4
+UNPINNED  .github/.github/workflows/ci-base.yml  175:        uses: hashicorp/setup-terraform@v3
+UNPINNED  .github/.github/workflows/compliance-base.yml  64:        uses: actions/setup-python@v5
+UNPINNED  .github/.github/workflows/compliance-base.yml  102:        uses: actions/setup-python@v5
+UNPINNED  .github/.github/workflows/compliance-base.yml  136:        uses: actions/setup-python@v5
+UNPINNED  .github/.github/workflows/compliance-base.yml  170:        uses: actions/setup-python@v5
+UNPINNED  .github/.github/workflows/compliance-base.yml  223:        uses: actions/setup-python@v5
+UNPINNED  .github/.github/workflows/security-scan.yml  97:        uses: github/codeql-action/upload-sarif@v3
+UNPINNED  .github/.github/workflows/security-scan.yml  183:        uses: github/codeql-action/upload-sarif@v3
+UNPINNED  jolarca/.github/workflows/ci.yml  299:        uses: actions/upload-artifact@v7
+UNPINNED  jolarca-infrastructure/.github/workflows/terraform.yml  40:        uses: terraform-linters/setup-tflint@v6
+UNPINNED  jolarca-infrastructure/.github/workflows/terraform.yml  87:        uses: actions/github-script@v9
+TOTAL uses: lines scanned = 55
+(UNPINNED lines listed above are real; if none, every third-party action is SHA-pinned)
+
+=== N. FULL RULESET PARAMETERS (consent / dr / vendor) ===
+--- jolarca-consent ruleset 24087580 ---
+{
+  "enforcement": "active",
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_linear_history"
+    }
+  ]
+}
+--- jolarca-dr ruleset 24136490 ---
+{
+  "enforcement": "active",
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_linear_history"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "required_reviewers": [],
+        "require_code_owner_review": false,
+        "dismissal_restriction": {
+          "enabled": false,
+          "allowed_actors": []
+        },
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": true,
+        "require_extra_approval_for_unattributed_changes": true,
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {
+            "context": "lint"
+          },
+          {
+            "context": "gitleaks"
+          }
+        ]
+      }
+    }
+  ]
+}
+--- jolarca-vendor ruleset 24138288 ---
+{
+  "enforcement": "active",
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_linear_history"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "required_reviewers": [],
+        "require_code_owner_review": false,
+        "dismissal_restriction": {
+          "enabled": false,
+          "allowed_actors": []
+        },
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": true,
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": []
+      }
+    }
+  ]
+}
+
+=== O. ORG TEAMS (error surfaced, not swallowed) ===
+[]-- team count via /orgs/ teams list length --
+0
+
+=== P. jolarca /secrets DIR (public AGPL repo) ===
+tree secrets
+tree secrets/encrypted
+blob secrets/encrypted/README.md 730
+-- sops config --
+# JOL Platform — SOPS creation rules (ADR-003 amendment PR #35; Gate 8 GO 2026-08-27)
+# TREE: Marketplace (/opt/jol-m/**) — recipient below ONLY. Cross-tree recipients are a segregation
+# incident (amendment rule 1). Private key: Vaultwarden SOPS-Custody + Shamir
+# custody. Counterpart config: church: jol-infrastructure .sops.yaml. PUBLIC recipient only.
+creation_rules:
+  - path_regex: \.enc\.ya?ml$
+    age: age1h6knxanpsq332ufrh54mh5y0wgzhu43vgq8flh55hrnc2zvuwe8qjn4n47  # pragma: allowlist secret
+  - path_regex: \.enc\.json$
+    age: age1h6knxanpsq332ufrh54mh5y0wgzhu43vgq8flh55hrnc2zvuwe8qjn4n47  # pragma: allowlist secret
+  - path_regex: ^secrets/encrypted/
+    age: age1h6knxanpsq332ufrh54mh5y0wgzhu43vgq8flh55hrnc2zvuwe8qjn4n47  # pragma: allowlist secret
+-- any obviously-plaintext secret material in secrets/ ? --
+  [file] secrets/encrypted/README.md  first-lines:
+      # Encrypted secrets root (ADR-003 amendment, R3 convention)
+
+      Files committed here MUST be genuine SOPS output (`sops --encrypt --in-place`).
+      Plaintext in this directory is a security incident: remove from history and
+
+=== Q. CODEQL / CODE-SCANNING ANALYSES PER REPO ===
+.github	CODEQL=no analysis found
+jolarca	analyses=1	last=794ad55a
+jolarca-compliance	CODEQL=no analysis found
+jolarca-consent	analyses=1	last=7e5f8404
+jolarca-control	CODEQL=no analysis found
+jolarca-data	CODEQL=no analysis found
+jolarca-docs	CODEQL=no analysis found
+jolarca-dr	CODEQL=no analysis found
+jolarca-hermes-agents	CODEQL=no analysis found
+jolarca-identity	CODEQL=no analysis found
+jolarca-infrastructure	CODEQL=no analysis found
+jolarca-legal	CODEQL=no analysis found
+jolarca-observability	CODEQL=no analysis found
+jolarca-payments	CODEQL=no analysis found
+jolarca-runbooks	CODEQL=no analysis found
+jolarca-security	CODEQL=no analysis found
+jolarca-vendor	CODEQL=no analysis found
+
+=== R. DEPENDABOT CONFIG PRESENCE ===
+.github	dependabot.yml={"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}ABSENT
+jolarca	dependabot.yml=7688
+jolarca-compliance	dependabot.yml=280
+jolarca-consent	dependabot.yml=771
+jolarca-control	dependabot.yml=1357
+jolarca-data	dependabot.yml=497
+jolarca-docs	dependabot.yml=830
+jolarca-dr	dependabot.yml={"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}ABSENT
+jolarca-hermes-agents	dependabot.yml=779
+jolarca-identity	dependabot.yml={"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}ABSENT
+jolarca-infrastructure	dependabot.yml=956
+jolarca-legal	dependabot.yml=497
+jolarca-observability	dependabot.yml=1791
+jolarca-payments	dependabot.yml=497
+jolarca-runbooks	dependabot.yml=681
+jolarca-security	dependabot.yml=1207
+jolarca-vendor	dependabot.yml={"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}ABSENT
+
+=== S. jolarca-control PRODUCTION ENVIRONMENT (verify D-70 wait_timer claim) ===
+{
+  "name": "production",
+  "protection_rules": [
+    {
+      "id": 68964533,
+      "node_id": "GA_kwDOUrmib84EHFC1",
+      "type": "wait_timer",
+      "wait_timer": 30
+    },
+    {
+      "id": 69161592,
+      "node_id": "GA_kwDOUrmib84EH1J4",
+      "type": "required_reviewers",
+      "prevent_self_review": false,
+      "reviewers": [
+        {
+          "type": "User",
+          "reviewer": {
+            "login": "JourneyOfLife",
+            "id": 227570927,
+            "node_id": "U_kgDODZB07w",
+            "avatar_url": "https://avatars.githubusercontent.com/u/227570927?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/JourneyOfLife",
+            "html_url": "https://github.com/JourneyOfLife",
+            "followers_url": "https://api.github.com/users/JourneyOfLife/followers",
+            "following_url": "https://api.github.com/users/JourneyOfLife/following{/other_user}",
+            "gists_url": "https://api.github.com/users/JourneyOfLife/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/JourneyOfLife/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/JourneyOfLife/subscriptions",
+            "organizations_url": "https://api.github.com/users/JourneyOfLife/orgs",
+            "repos_url": "https://api.github.com/users/JourneyOfLife/repos",
+            "events_url": "https://api.github.com/users/JourneyOfLife/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/JourneyOfLife/received_events",
+            "type": "User",
+            "user_view_type": "public",
+            "site_admin": false
+          }
+        }
+      ]
+    }
+  ],
+  "can_admins_bypass": false
+}
+-- raw protection_rules array (assert on ARRAY not scalar) --
+{"wait_timer_top":null,"rules":[{"type":"wait_timer","wait_timer":30},{"type":"required_reviewers","wait_timer":null}]}
+```

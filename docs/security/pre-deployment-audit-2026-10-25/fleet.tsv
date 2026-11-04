@@ -1,0 +1,18 @@
+repo	size_kb	protected	codeowners	secret_scan	push_prot	dep_alerts	license	branches	workflows	commits	open_prs	open_issues	last_commit
+.github	27	true	.github/CODEOWNERS		disabled	204	NOASSERTION	3	3	1	1	1	2026-10-15T14:16:23Z
+jolarca	2560	true	.github/CODEOWNERS		enabled	204	AGPL-3.0	21	4	1	16	16	2026-10-10T14:08:01Z
+jolarca-compliance	255	true	.github/CODEOWNERS		enabled	204	NOASSERTION	3	10	1	2	3	2026-10-10T13:51:58Z
+jolarca-consent	116	true	.github/CODEOWNERS		enabled	204	NOASSERTION	4	4	1	3	3	2026-10-15T14:25:39Z
+jolarca-control	2074	true	.github/CODEOWNERS		enabled	204	NOASSERTION	11	8	1	7	8	2026-10-20T19:20:07Z
+jolarca-data	131	true	.github/CODEOWNERS		enabled	204	NOASSERTION	1	9	1	0	1	2026-09-28T20:52:42Z
+jolarca-docs	88	true	.github/CODEOWNERS		enabled	204	NOASSERTION	3	1	1	2	2	2026-09-30T14:57:46Z
+jolarca-dr	47	true	.github/CODEOWNERS		enabled	204	NOASSERTION	2	1	1	1	1	2026-09-28T19:49:10Z
+jolarca-hermes-agents	246	true	.github/CODEOWNERS		enabled	204	NONE	3	1	1	2	2	2026-10-04T13:43:56Z
+jolarca-identity	46	true	.github/CODEOWNERS		enabled	204	NOASSERTION	3	1	1	1	1	2026-10-04T15:13:19Z
+jolarca-infrastructure	439	true	{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}ABSENT		enabled	204	NOASSERTION	8	8	1	6	9	2026-10-10T12:27:58Z
+jolarca-legal	238	true	.github/CODEOWNERS		enabled	204	NOASSERTION	1	8	1	0	0	2026-09-28T21:47:53Z
+jolarca-observability	66	true	.github/CODEOWNERS		enabled	204	NOASSERTION	3	2	1	2	2	2026-10-15T14:25:34Z
+jolarca-payments	43	true	.github/CODEOWNERS		enabled	204	NONE	2	1	1	1	1	2026-10-10T14:08:10Z
+jolarca-runbooks	84	true	.github/CODEOWNERS		enabled	204	NOASSERTION	4	1	1	3	3	2026-10-10T12:34:05Z
+jolarca-security	125	true	.github/CODEOWNERS		enabled	204	NOASSERTION	2	2	1	1	1	2026-10-15T14:25:29Z
+jolarca-vendor	134	true	.github/CODEOWNERS		enabled	204	NOASSERTION	3	1	1	1	1	2026-10-04T15:59:08Z

@@ -1,0 +1,73 @@
+# raw probe — scope.txt (wrapped 2026-10-26 so hash_evidence.sh:115 covers it)
+```
+=== hash_evidence.sh SCOPE ===
+8:#   1. Scans docs/adr/, audit/, policy/, repos/ for evidence files.
+9:#   2. Computes SHA-256 for each file.
+10:#   3. Writes/updates docs/evidence-registry.csv with file, hash, date.
+22:#      check" for the same reason (D-22/D-23).
+25:#   --check only means something if docs/evidence-registry.csv is under version
+28:#   tautological: it reported OK for every input, including tampered evidence.
+32:REGISTRY="$REPO_ROOT/docs/evidence-registry.csv"
+35:EVIDENCE_DIRS=(
+36:  "docs/adr"
+40:  "docs/runbooks"
+41:  "docs/security"
+77:for dir in "${EVIDENCE_DIRS[@]}"; do
+115:  done < <(find "$target" -type f \( -name '*.yml' -o -name '*.md' -o -name '*.sh' -o -name '*.py' -o -name '*.tf' \) -print0 | sort -z)
+
+=== Makefile evidence targets ===
+83:evidence-check: ## Verify evidence hashes against the committed registry
+84-	bash scripts/hash_evidence.sh --check
+85-
+86:evidence-register: ## Regenerate docs/evidence-registry.csv (commit the diff)
+87-	bash scripts/hash_evidence.sh
+88-
+89-# Pre-first-commit readiness gate. Registry-driven (repos/*.yml), read-only, and
+90-# the only tool that inspects the LOCAL working copy — the gap that let D-28
+
+=== existing audit-plan doc heading structure ===
+1:# Comprehensive Audit Plan — `jolarca-control` + `jolarca-dev` fleet
+29:## 1. Why this audit, and why this shape
+55:## 2. Rules of evidence (the audit's constitution)
+91:## 3. Severity model & finding schema
+128:## 4. Phase 0 — Reconcile the record  *(OFFLINE, runnable now)*
+185:## 5. Phase 1 — Declared-vs-live drift, fleet-wide  *(LIVE — gated on shell + `gh`)*
+232:## 6. Phase 2 — Control & gate effectiveness ("verify the verifier")  *(OFFLINE mostly; some LIVE)*
+277:## 7. Phase 3 — Compliance conformance (risk-based) + crosswalk  *(OFFLINE map + LIVE evidence)*
+313:## 8. Phase 4 — State custody, Terraform & org controls  *(OFFLINE + gated LIVE)*
+353:## 9. Phase 5 — Remediation backlog + re-verification  *(synthesis)*
+383:## 10. Risk-ranked execution order
+396:## 11. Success criteria (measurable)
+411:## 12. Constraints & caveats
+433:## 13. Professional opinion
+507:## Phase 0 results — record reconciliation *(executed 2026-10-06)*
+518:### 0.1 Documentary contradiction table (Verified, `file:line`)
+531:### 0.2 A-05 — resolved (Verified)
+540:### 0.3 A-02 — the PCI visibility gate is satisfiable by editing a label (Verified + live)
+556:### 0.4 A-06 — **VERIFIED LIVE: D-20 "FIXED" is false**
+576:### 0.5 G10 — false-empty confirmed live
+584:### 0.6 "FIXED" re-verification queue for the remaining live phases
+593:### 0.7 Phase 0 conclusion
+604:## Phase 1 results — declared-vs-live, fleet-wide *(executed 2026-10-06, read-only)*
+611:### 1.1 "FIXED" claims CONFIRMED live (register was right)
+621:### 1.2 NEW live findings
+629:### 1.3 D1-D9 matrix coverage
+639:### 1.4 Could-not-verify (exit 2 — recorded honestly, not asserted)
+650:### 1.5 Phase 1 conclusion
+673:## Recommended remediation path (professional opinion)
+731:## Phase 2 results — control & gate effectiveness ("verify the verifier") *(read-only)*
+
+=== drift-findings highest D-number ===
+D-75
+D-76
+D-77
+D-78
+D-79
+=== A-number ===
+A-02
+A-07
+A-08
+
+=== working tree ===
+(empty = clean)
+```
